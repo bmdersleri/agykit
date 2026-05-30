@@ -378,6 +378,27 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
                     }
                 )
 
+    # Enrich each account with Google profile picture (parallel refresh_token→userinfo)
+    accounts_dir_path = os.path.expanduser("~/.gemini/accounts")
+    for acct in accounts:
+        acct["picture"] = None
+        acct_file = os.path.join(accounts_dir_path, acct["email"] + ".json")
+        if os.path.isfile(acct_file):
+            try:
+                rt = json.load(open(acct_file))["token"]["refresh_token"]
+                at = _refresh_access_token(rt)
+                import urllib.request as _ur
+                _req = _ur.Request(
+                    "https://www.googleapis.com/oauth2/v3/userinfo",
+                    headers={"Authorization": f"Bearer {at}"},
+                )
+                with _ur.urlopen(_req, timeout=5) as _r:
+                    _info = json.loads(_r.read())
+                acct["picture"] = _info.get("picture")
+                acct["name"]    = _info.get("name", "")
+            except Exception as _e:
+                acct["_avatar_err"] = str(_e)[:60]
+
     return {"accounts": accounts, "quota_window_seconds": quota_window, "warning": None}
 
 
@@ -652,24 +673,35 @@ def agy_refresh_all_accounts(*, agykit_path: str | None = None) -> dict:
     return {"results": results, "warning": None}
 
 
+def _google_userinfo(access_token: str) -> dict:
+    """Fetch Google userinfo (email, name, picture) for a given access token."""
+    import urllib.request
+    req = urllib.request.Request(
+        "https://www.googleapis.com/oauth2/v3/userinfo",
+        headers={"Authorization": f"Bearer {access_token}"},
+    )
+    with urllib.request.urlopen(req, timeout=5) as r:
+        return json.loads(r.read())
+
+
 def agy_active_account() -> dict:
-    """Return the currently active agy account email via Google userinfo API."""
+    """Return active agy account info (email, name, picture) via Google userinfo."""
     import urllib.request, urllib.error
     try:
         import keyring
         v = keyring.get_password("gemini", "antigravity")
         if not v:
-            return {"email": None, "warning": "No keyring entry"}
-        token = __import__("json").loads(v)["token"]["access_token"]
-        req = urllib.request.Request(
-            "https://www.googleapis.com/oauth2/v3/userinfo",
-            headers={"Authorization": f"Bearer {token}"},
-        )
-        with urllib.request.urlopen(req, timeout=5) as r:
-            email = __import__("json").loads(r.read()).get("email", "")
-        return {"email": email, "warning": None}
+            return {"email": None, "picture": None, "warning": "No keyring entry"}
+        token = json.loads(v)["token"]["access_token"]
+        info = _google_userinfo(token)
+        return {
+            "email":   info.get("email", ""),
+            "name":    info.get("name", ""),
+            "picture": info.get("picture"),
+            "warning": None,
+        }
     except Exception as e:
-        return {"email": None, "warning": str(e)[:80]}
+        return {"email": None, "picture": None, "warning": str(e)[:80]}
 
 
 # Model ID → human display name (from agy UI)

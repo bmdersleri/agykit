@@ -4,8 +4,16 @@ import json
 import glob
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
 
-# Allow importing dashboard modules when run directly
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+# Always import from the repo containing this server.py — not from cwd
+_REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _REPO_DIR not in sys.path:
+    sys.path.insert(0, _REPO_DIR)
+# Invalidate any stale cached import before loading
+import importlib
+if "dashboard.collectors" in sys.modules:
+    del sys.modules["dashboard.collectors"]
+if "dashboard" in sys.modules:
+    del sys.modules["dashboard"]
 from dashboard import collectors
 
 

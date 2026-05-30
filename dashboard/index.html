@@ -293,18 +293,62 @@
 
         .qcard-identity {
             display: flex;
+            align-items: center;
+            gap: 0.65rem;
+        }
+
+        .qcard-avatar {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            object-fit: cover;
+            border: 2px solid var(--border);
+            flex-shrink: 0;
+        }
+
+        .qcard-avatar-fallback {
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            background: linear-gradient(135deg, var(--accent), #818cf8);
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1rem;
+            font-weight: 700;
+            color: #fff;
+            flex-shrink: 0;
+        }
+
+        .qcard-identity-text {
+            display: flex;
             flex-direction: column;
         }
 
         .qcard-handle {
-            font-size: 1.15rem;
+            font-size: 1.05rem;
             font-weight: 700;
             color: var(--text);
         }
 
         .qcard-domain {
-            font-size: 0.8rem;
+            font-size: 0.75rem;
             color: var(--muted);
+        }
+
+        /* Light mode contrast improvements */
+        body[data-theme="light"] .qcard {
+            border-color: #cbd5e1;
+        }
+        body[data-theme="light"] .qcard-active {
+            border-color: var(--accent);
+            background: linear-gradient(135deg, rgba(2,132,199,0.03), #fff);
+        }
+        body[data-theme="light"] .mq-bar-container {
+            background: #e2e8f0;
+        }
+        body[data-theme="light"] .qcard-status-section {
+            background: #f8fafc;
         }
 
         .qcard-badges {
@@ -1623,11 +1667,21 @@
 
                     const card = document.createElement('div');
                     card.className = `qcard ${isActive ? 'qcard-active' : ''} ${exhausted ? 'qcard-exhausted' : 'qcard-ok'}`;
+
+                    // Avatar: Google profile picture or gradient fallback
+                    const avatarHtml = acct.picture
+                        ? `<img class="qcard-avatar" src="${acct.picture}" alt="${handle}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
+                          + `<div class="qcard-avatar-fallback" style="display:none">${handle[0].toUpperCase()}</div>`
+                        : `<div class="qcard-avatar-fallback">${handle[0].toUpperCase()}</div>`;
+
                     card.innerHTML = `
                         <div class="qcard-header">
                             <div class="qcard-identity">
-                                <span class="qcard-handle">${handle}</span>
-                                <span class="qcard-domain">${domain}</span>
+                                ${avatarHtml}
+                                <div class="qcard-identity-text">
+                                    <span class="qcard-handle">${acct.name || handle}</span>
+                                    <span class="qcard-domain">${acct.email}</span>
+                                </div>
                             </div>
                             <div class="qcard-badges">
                                 ${isActive ? '<span class="qcard-active-badge">● AKTİF</span>' : ''}
