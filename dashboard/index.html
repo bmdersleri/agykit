@@ -102,12 +102,12 @@
 
         .version-badge {
             font-size: 0.75rem;
-            font-weight: 600;
+            font-weight: 700;
             background: var(--surface2);
             color: var(--accent);
             padding: 0.15rem 0.5rem;
             border-radius: 9999px;
-            border: 1.5px solid var(--accent);
+            border: 2px solid var(--accent);
             -webkit-text-fill-color: var(--accent);
         }
 
@@ -495,7 +495,7 @@
             white-space: nowrap;
         }
         @media (min-width: 480px) {
-            .mq-model-name { width: auto; max-width: 160px; flex-shrink: 1; }
+            .mq-model-name { width: auto; max-width: none; flex-shrink: 0; overflow: visible; text-overflow: clip; }
         }
 
         .mq-bar-container {
@@ -735,7 +735,7 @@
         .chart-card {
             background-color: var(--surface);
             border: 1px solid var(--border);
-            border-left: 3px solid var(--accent);
+            border-left: 3px solid var(--accent) !important;
             border-radius: 12px;
             padding: 1.5rem;
             box-shadow: var(--shadow);
@@ -1054,7 +1054,8 @@
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                 </svg>
-                <h1 class="logo-title">agykit · Quota Dashboard <span class="version-badge">v1.0.0</span></h1>
+                <h1 class="logo-title">agykit · Quota Dashboard</h1>
+                <span class="version-badge">v1.0.0</span>
             </div>
             <div class="header-actions">
                 <div class="live-indicator">
@@ -1310,6 +1311,11 @@
                 showWarning(`Veri yüklenemedi: ${err.message}`);
                 noDataContainer.style.display = 'block';
                 chartsGrid.style.display = 'none';
+            } finally {
+                const el = document.getElementById('footer-ts');
+                if (el) {
+                    el.textContent = new Date().toLocaleString('tr-TR');
+                }
             }
         }
 
@@ -1437,7 +1443,7 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            x: { grid: { color: cColors.grid }, ticks: { color: cColors.text } },
+                            x: { grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
                             y: {
                                 type: 'linear',
                                 display: true,
@@ -1445,7 +1451,7 @@
                                 beginAtZero: true,
                                 title: { display: true, text: 'Oturumlar' },
                                 grid: { color: cColors.grid },
-                                ticks: { color: cColors.text }
+                                ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v }
                             },
                             y1: {
                                 type: 'linear',
@@ -1454,7 +1460,7 @@
                                 beginAtZero: true,
                                 title: { display: true, text: 'Araç Çağrıları' },
                                 grid: { drawOnChartArea: false },
-                                ticks: { color: cColors.text }
+                                ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v }
                             }
                         }
                     }
@@ -1485,8 +1491,8 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text } },
-                            y: { stacked: true, beginAtZero: true, ticks: { precision: 0, color: cColors.text }, grid: { color: cColors.grid } }
+                            x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
+                            y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v } }
                         }
                     }
                 });
@@ -1634,7 +1640,7 @@
                         </div>
 
                         <!-- Model Quota Area -->
-                        <div class="mq-card-section">
+                        <div class="mq-card-section" style="${isActive ? '' : 'display: none;'}">
                             <div class="mq-card-section-header">
                                 <span class="mq-card-section-title">Model Kotası <span class="mq-via">via agy /usage</span></span>
                                 ${isActive ? `<button class="mq-card-section-refresh" onclick="event.stopPropagation(); loadModelQuota(true);">Yenile</button>` : ''}
@@ -1693,7 +1699,8 @@
                 
                 data.quotas.forEach((q, i) => {
                     const pct = q.pct_remaining;
-                    const col = pct >= 60 ? 'var(--success)' : pct >= 25 ? 'var(--warning)' : 'var(--danger)';
+                    const usage = 100 - pct;
+                    const col = usage < 40 ? 'var(--success)' : (usage <= 75 ? 'var(--warning)' : 'var(--danger)');
                     const cdId = `clcd${i}`;
                     let resetHtml = '';
                     
@@ -2044,12 +2051,7 @@
         }
 
         // Footer timestamp
-        function updateFooter() {
-            const el = document.getElementById('footer-ts');
-            if (el) el.textContent = new Date().toLocaleString('tr-TR', {hour:'2-digit',minute:'2-digit',second:'2-digit'});
-        }
-        setInterval(updateFooter, 1000);
-        updateFooter();
+        // Doldurma loadData() tamamlandığında yapılır.
 
         // Initial Load
         loadData();
