@@ -516,15 +516,35 @@
         }
 
         .mq-reset {
-            font-size: 0.7rem;
+            font-size: 0.72rem;
+            font-weight: 600;
             color: var(--muted);
-            width: 60px;
+            width: 68px;
             text-align: right;
             flex-shrink: 0;
             overflow: hidden;
             text-overflow: ellipsis;
             white-space: nowrap;
         }
+        .mq-reset-ok     { color: var(--success); }
+        .mq-reset-urgent { color: var(--danger); animation: pulse-text 1s ease infinite; }
+        @keyframes pulse-text { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+        .mq-reset-banner {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 8px;
+            padding: 0.45rem 0.75rem;
+            margin-bottom: 0.6rem;
+            font-size: 0.78rem;
+            color: var(--muted);
+        }
+        .mq-reset-banner strong { font-weight: 700; }
+        .mq-reset-icon  { font-size: 1rem; }
+        .mq-reset-clock { margin-left: auto; font-size: 0.72rem; font-weight: 700; color: var(--text); background: var(--bg); padding: 0.15rem 0.4rem; border-radius: 4px; border: 1px solid var(--border); }
 
         .not-active-text {
             color: var(--muted);
@@ -1962,12 +1982,34 @@
                     `;
                 }
 
+                // Account-level reset info banner
+                if (data.account_reset_label) {
+                    const col = data.account_reset_in_secs < 3600 ? 'var(--warning)' : 'var(--success)';
+                    html += `<div class="mq-reset-banner">
+                        <span class="mq-reset-icon">⏱</span>
+                        <span>Kota penceresi sıfırlanıyor: <strong style="color:${col}">${data.account_reset_label}</strong> kaldı</span>
+                        <span class="mq-reset-clock">@ ${data.account_reset_at}</span>
+                    </div>`;
+                }
+
                 (data.models || []).forEach(m => {
                     const pct = m.pct_shown ?? m.pct_remaining ?? 100;
                     const col = pct >= 60 ? 'var(--success)' : pct >= 25 ? 'var(--warning)' : 'var(--danger)';
-                    const resetTxt = m.refreshes_in ? m.refreshes_in : (m.status === 'available' ? '✓' : '—');
                     const name = shortenModelName(m.display_name);
-                    
+
+                    // Reset time: use model-specific refreshes_in if exhausted,
+                    // else show account-level reset time
+                    let resetHtml;
+                    if (m.refreshes_in) {
+                        resetHtml = `<span class="mq-reset mq-reset-urgent">${m.refreshes_in}</span>`;
+                    } else if (m.reset_label || data.account_reset_label) {
+                        const rl = m.reset_label || data.account_reset_label;
+                        const ra = m.resets_at  || data.account_reset_at;
+                        resetHtml = `<span class="mq-reset mq-reset-ok" title="Sıfırlanma: ${ra}">${rl}</span>`;
+                    } else {
+                        resetHtml = `<span class="mq-reset">✓</span>`;
+                    }
+
                     html += `
                         <div class="mq-row">
                             <span class="mq-model-name" title="${m.display_name}">${name}</span>
@@ -1975,11 +2017,11 @@
                                 <div class="mq-bar-fill" style="width: ${pct}%; background: ${col};"></div>
                             </div>
                             <span class="mq-pct" style="color: ${col};">${pct}%</span>
-                            <span class="mq-reset">${resetTxt}</span>
+                            ${resetHtml}
                         </div>
                     `;
                 });
-                
+
                 if (data.warning) {
                     html += `<div class="mq-err" style="margin-top:.5rem;">⚠ ${data.warning}</div>`;
                 }

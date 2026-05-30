@@ -922,6 +922,20 @@ def agy_model_quota_cached(*, force: bool = False) -> dict:
             pass
 
     data = agy_model_quota_tmux()
+
+    # Enrich with reset times from retrieveUserQuota (fast API, always available)
+    reset_info = _fetch_quota_reset_times()
+    if reset_info:
+        data["account_reset_at"]      = reset_info["reset_at"]
+        data["account_reset_in_secs"] = reset_info["reset_in_secs"]
+        data["account_reset_label"]   = reset_info["label"]
+        # Per-model: try to match or apply global reset to all models
+        for m in data.get("models", []):
+            if not m.get("resets_at") and not m.get("refreshes_in"):
+                m["resets_at"]         = reset_info["reset_at"]
+                m["resets_in_seconds"] = reset_info["reset_in_secs"]
+                m["reset_label"]       = reset_info["label"]
+
     if data.get("models"):
         try:
             data["_ts"] = _time.time()
@@ -930,3 +944,37 @@ def agy_model_quota_cached(*, force: bool = False) -> dict:
             pass
     data["_from_cache"] = False
     return data
+
+
+def _fetch_quota_reset_times() -> dict | None:
+    """Get reset time from retrieveUserQuota (fast, no tmux needed)."""
+    import urllib.request
+    try:
+        import keyring
+        v = keyring.get_password("gemini", "antigravity")
+        token = json.loads(v)["token"]["access_token"]
+        req = urllib.request.Request(
+            "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
+            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
+            data=b"", method="POST")
+        with urllib.request.urlopen(req, timeout=8) as r:
+            d = json.loads(r.read())
+        buckets = d.get("buckets", [])
+        if not buckets:
+            return None
+        # All buckets share the same reset window — use the first
+        rt = buckets[0].get("resetTime")
+        if not rt:
+            return None
+        rdt = datetime.datetime.fromisoformat(rt)
+        now = datetime.datetime.now(datetime.timezone.utc)
+        secs = max(0, int((rdt - now).total_seconds()))
+        h, m = secs // 3600, (secs % 3600) // 60
+        label = f"{h}sa {m}dk" if h else f"{m}dk"
+        return {
+            "reset_at":      rdt.astimezone().strftime("%H:%M"),
+            "reset_in_secs": secs,
+            "label":         label,
+        }
+    except Exception:
+        return None
