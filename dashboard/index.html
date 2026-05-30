@@ -193,45 +193,42 @@
             width: 100%;
         }
 
-        /* ── Quota Panel ── */
+        /* ── agy Account Quota cards ── */
         .quota-section { margin-bottom: 2rem; }
         .section-title { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem; }
-        .quota-grid { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+        .quota-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
         .qcard {
-            flex: 1 1 220px; min-width: 200px;
             background: var(--card-bg); border: 1px solid var(--border-color);
-            border-radius: .75rem; padding: 1.25rem 1.25rem 1rem;
-            display: flex; flex-direction: column; align-items: center; gap: .6rem;
+            border-radius: .75rem; padding: 1rem 1.1rem;
+            display: flex; flex-direction: column; gap: .7rem;
+            transition: transform .15s ease, box-shadow .15s ease;
         }
+        .qcard:hover { transform: translateY(-2px); box-shadow: 0 4px 16px #0006; }
         .qcard-ok       { border-color: #166534; }
         .qcard-exhausted{ border-color: #7f1d1d; }
-        /* gauge */
-        .qgauge { position: relative; width: 110px; height: 110px; }
-        .qgauge svg { transform: rotate(-90deg); }
-        .qgauge-track  { fill: none; stroke: #1e3a5f; stroke-width: 10; }
-        .qgauge-fill   { fill: none; stroke-width: 10; stroke-linecap: round;
-                         transition: stroke-dashoffset .8s ease; }
-        .qgauge-ok     { stroke: #4ade80; }
-        .qgauge-warn   { stroke: #fb923c; }
-        .qgauge-bad    { stroke: #f87171; }
-        .qgauge-center { position: absolute; inset: 0; display: flex; flex-direction: column;
-                         align-items: center; justify-content: center; }
-        .qpct   { font-size: 1.3rem; font-weight: 700; line-height: 1; }
-        .qplbl  { font-size: .6rem; color: var(--text-muted); letter-spacing: .04em; }
-        /* text bits */
-        .qbadge { font-size: .65rem; font-weight: 700; letter-spacing: .05em;
-                  padding: .2rem .6rem; border-radius: 99px; }
+        .qcard-active   { border-color: #38bdf8 !important; box-shadow: 0 0 0 1px #38bdf826; }
+        /* header row */
+        .qcard-header { display: flex; justify-content: space-between; align-items: flex-start; }
+        .qcard-identity { display: flex; flex-direction: column; gap: .2rem; }
+        .qcard-handle { font-size: 1rem; font-weight: 700; color: var(--text-main); }
+        .qcard-domain { font-size: .72rem; color: var(--text-muted); }
+        .qcard-badges { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
+        .qbadge { font-size: .62rem; font-weight: 700; letter-spacing: .05em; padding: .2rem .55rem; border-radius: 99px; }
         .qgood  { background: #14532d; color: #4ade80; }
         .qbad   { background: #7f1d1d; color: #fca5a5; }
-        .qemail { font-size: .88rem; text-align: center; }
-        .qemail b { color: var(--text-main); }
-        .qstats { display: flex; gap: 1rem; margin-top: .2rem; }
-        .qstat  { display: flex; flex-direction: column; align-items: center; }
-        .qstat-val { font-size: 1rem; font-weight: 600; color: var(--text-main); }
-        .qstat-lbl { font-size: .65rem; color: var(--text-muted); }
-        .qreset { font-size: .78rem; color: var(--text-muted); text-align: center; }
-        .qcd    { color: #fb923c; font-weight: 600; }
-        .qat    { font-size: .7rem; color: #475569; text-align: center; }
+        .qcard-active-badge { font-size: .6rem; background: #0c2233; color: #38bdf8; border-radius: 99px; padding: .15rem .45rem; font-weight: 700; }
+        /* reset bar */
+        .qcard-bar-label { font-size: .68rem; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: .3rem; }
+        .qcard-countdown { font-size: 1.15rem; font-weight: 700; }
+        .qcard-bar { position: relative; height: 10px; background: #0f172a; border-radius: 5px; overflow: hidden; }
+        .qcard-bar-elapsed   { position: absolute; left: 0; top: 0; height: 100%; background: #1e3a5f; transition: width .6s ease; }
+        .qcard-bar-remaining { position: absolute; top: 0; height: 100%; transition: width .6s ease, left .6s ease; }
+        .qcard-bar-available { position: absolute; inset: 0; background: #14532d; }
+        /* footer stats */
+        .qcard-stats { display: flex; gap: 1.25rem; padding-top: .5rem; border-top: 1px solid #1e293b; }
+        .qstat { display: flex; flex-direction: column; }
+        .qstat-val { font-size: .95rem; font-weight: 600; color: var(--text-main); }
+        .qstat-lbl { font-size: .62rem; color: var(--text-muted); }
 
         /* ── Claude Quota panel ── */
         .cq-section { margin-bottom: 2rem; }
@@ -296,17 +293,6 @@
         .ls-bar-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
         .ls-bar-count { font-size: .68rem; color: var(--text-main); font-weight: 600; width: 28px; text-align: right; flex-shrink: 0; }
 
-        /* ── Reset timeline bar chart ── */
-        .reset-timeline { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; margin-top: 1.25rem; }
-        .reset-timeline h4 { font-size: .8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 1rem; }
-        .rt-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .6rem; }
-        .rt-row:last-child { margin-bottom: 0; }
-        .rt-label { font-size: .78rem; color: #94a3b8; width: 100px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .rt-bar-wrap { flex: 1; position: relative; height: 20px; background: #0f172a; border-radius: 4px; overflow: hidden; }
-        .rt-elapsed { position: absolute; left: 0; top: 0; height: 100%; background: #1e3a5f; border-radius: 4px 0 0 4px; transition: width .6s ease; }
-        .rt-remaining { position: absolute; top: 0; height: 100%; border-radius: 0 4px 4px 0; transition: width .6s ease, left .6s ease; }
-        .rt-available { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #14532d; border-radius: 4px; }
-        .rt-bar-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: .67rem; font-weight: 600; color: #fff; text-shadow: 0 1px 2px #0008; pointer-events: none; }
         .rt-reset { font-size: .72rem; color: var(--text-muted); width: 80px; text-align: right; flex-shrink: 0; white-space: nowrap; }
         .rt-reset b { color: var(--text-main); }
 
@@ -401,10 +387,6 @@
             </div>
             <div id="refreshAllStatus" style="display:none;font-size:.8rem;color:#94a3b8;margin-bottom:.75rem"></div>
             <div id="quotaGrid" class="quota-grid"></div>
-            <div class="reset-timeline" id="resetTimeline" style="display:none">
-                <h4>Sıfırlanmaya Kalan Süre</h4>
-                <div id="resetTimelineRows"></div>
-            </div>
         </section>
 
         <div id="chartsGrid" class="charts-grid">
@@ -664,10 +646,6 @@
 
         // ── Quota Panel ──────────────────────────────────────────────────
         const quotaGrid = document.getElementById('quotaGrid');
-        const countdowns = {};   // cdId → {el, targetEpoch, windowSecs}
-        let _gaugeEls = {};      // cdId → svgCircle el for live gauge update
-
-        const R = 45, CIRC = 2 * Math.PI * R;
 
         function fmtSec(sec) {
             if (sec <= 0) return '0s';
@@ -677,138 +655,105 @@
             return `${s}s`;
         }
 
-        function gaugeOffset(frac) {
-            // frac 0→full track (all remaining), 1→empty track (all elapsed)
-            return CIRC * (1 - Math.max(0, Math.min(1, frac)));
-        }
-
-        const rtCountdowns = {};  // timeline live: id → {elapsedBar, remBar, resetLabel, targetEpoch, windowSecs}
+        // live update: card bars + countdowns
+        const qcCountdowns = {};  // id → {cdEl, elBar, remBar, targetEpoch, windowSecs}
 
         setInterval(() => {
             const now = Date.now() / 1000;
-            for (const [id, ct] of Object.entries(countdowns)) {
-                const rem = Math.max(0, Math.round(ct.targetEpoch - now));
-                if (ct.el) ct.el.textContent = rem > 0 ? fmtSec(rem) : 'Now';
-                // live gauge arc
-                const fill = _gaugeEls[id];
-                if (fill && ct.windowSecs > 0) {
-                    const frac = rem / ct.windowSecs;
-                    fill.style.strokeDashoffset = gaugeOffset(frac);
-                    fill.className.baseVal = fill.className.baseVal.replace(/qgauge-(ok|warn|bad)/,
-                        frac > 0.4 ? 'qgauge-ok' : frac > 0.15 ? 'qgauge-warn' : 'qgauge-bad');
-                }
-            }
-            // reset timeline bars
-            for (const [id, ct] of Object.entries(rtCountdowns)) {
+            for (const [id, ct] of Object.entries(qcCountdowns)) {
                 const rem = Math.max(0, ct.targetEpoch - now);
                 const win = ct.windowSecs || 1;
                 const elPct  = Math.min(100, Math.round((win - rem) / win * 100));
                 const remPct = 100 - elPct;
                 const remColor = remPct > 40 ? '#fb923c' : remPct > 15 ? '#f97316' : '#ef4444';
-                if (ct.elapsedBar) ct.elapsedBar.style.width = elPct + '%';
-                if (ct.remBar)     { ct.remBar.style.left = elPct + '%'; ct.remBar.style.width = remPct + '%'; ct.remBar.style.background = remColor; }
-                if (ct.resetLabel) ct.resetLabel.innerHTML = rem > 0 ? `<b>${fmtReset(Math.round(rem))}</b>` : '<b style="color:#4ade80">✓ Sıfırlandı</b>';
+                if (ct.elBar) ct.elBar.style.width = elPct + '%';
+                if (ct.remBar) { ct.remBar.style.left = elPct + '%'; ct.remBar.style.width = remPct + '%'; ct.remBar.style.background = remColor; }
+                if (ct.cdEl)  ct.cdEl.textContent = rem > 0 ? fmtReset(Math.round(rem)) : '✓ Sıfırlandı';
             }
         }, 1000);
 
-        function makeSvgGauge(frac, colorClass) {
-            const offset = gaugeOffset(frac);
-            return `<svg width="110" height="110" viewBox="0 0 110 110">
-              <circle class="qgauge-track" cx="55" cy="55" r="${R}"
-                      stroke-dasharray="${CIRC}" stroke-dashoffset="0"/>
-              <circle class="qgauge-fill ${colorClass}" cx="55" cy="55" r="${R}"
-                      stroke-dasharray="${CIRC}" stroke-dashoffset="${offset}"
-                      style="transition:stroke-dashoffset .8s ease"/>
-            </svg>`;
-        }
-
         function loadQuota() {
-            // Fetch quota + active account in parallel
             Promise.all([
                 fetch('/api/quota').then(r => r.json()),
                 fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null}))
             ]).then(([data, activeData]) => {
                 const activeEmail = activeData.email || null;
                 quotaGrid.innerHTML = '';
-                for (const k of Object.keys(countdowns)) delete countdowns[k];
-                _gaugeEls = {};
+                for (const k of Object.keys(qcCountdowns)) delete qcCountdowns[k];
 
                 if (!data.accounts || data.accounts.length === 0) {
-                    quotaGrid.innerHTML = '<p style="color:#888">No account data.</p>'; return;
+                    quotaGrid.innerHTML = '<p style="color:#888">Hesap verisi yok.</p>'; return;
                 }
                 const win = data.quota_window_seconds || 14400;
                 const nowEpoch = Date.now() / 1000;
 
-                // Sort: active first
+                // active account first
                 const sorted = [...data.accounts].sort((a,b) =>
-                    a.email === activeEmail ? -1 : b.email === activeEmail ? 1 : 0
-                );
+                    a.email === activeEmail ? -1 : b.email === activeEmail ? 1 : 0);
 
                 sorted.forEach((acct, i) => {
                     const exhausted = acct.status === 'exhausted';
-                    const isActive = acct.email === activeEmail;
+                    const isActive  = acct.email === activeEmail;
+                    const handle    = acct.email.split('@')[0];
+                    const domain    = '@' + (acct.email.split('@')[1] || '');
+                    const qid       = `qc${i}`;
+
+                    // Bar geometry
+                    let elPct = 0, remPct = 0, remColor = '#4ade80', barHtml;
+                    if (exhausted && acct.resets_in_seconds > 0) {
+                        const total = acct.resets_in_seconds + (acct.elapsed_seconds || 0);
+                        elPct   = Math.round((acct.elapsed_seconds || 0) / total * 100);
+                        remPct  = 100 - elPct;
+                        remColor = remPct > 40 ? '#fb923c' : remPct > 15 ? '#f97316' : '#ef4444';
+                        barHtml = `
+                            <div class="qcard-bar-label">
+                                <span>Pencere ilerlemesi</span>
+                                <span id="${qid}-cd" style="color:${remColor};font-weight:700">${fmtReset(acct.resets_in_seconds)}</span>
+                            </div>
+                            <div class="qcard-bar">
+                                <div class="qcard-bar-elapsed" id="${qid}-el" style="width:${elPct}%"></div>
+                                <div class="qcard-bar-remaining" id="${qid}-rem" style="left:${elPct}%;width:${remPct}%;background:${remColor}"></div>
+                            </div>
+                            <div style="display:flex;justify-content:space-between;font-size:.67rem;color:#475569;margin-top:.25rem">
+                                <span>${elPct}% geçti</span>
+                                <span>Sıfırlanma: ${acct.resets_at || '—'}</span>
+                            </div>`;
+                        setTimeout(() => {
+                            qcCountdowns[qid] = {
+                                cdEl: document.getElementById(`${qid}-cd`),
+                                elBar: document.getElementById(`${qid}-el`),
+                                remBar: document.getElementById(`${qid}-rem`),
+                                targetEpoch: nowEpoch + acct.resets_in_seconds,
+                                windowSecs: total,
+                            };
+                        }, 0);
+                    } else {
+                        const lastHit = acct.last_exhausted_at
+                            ? `Son ihlal: ${acct.last_exhausted_at}` : 'İhlal kaydı yok';
+                        barHtml = `
+                            <div class="qcard-bar-label"><span>Kota durumu</span><span style="color:#4ade80;font-weight:700">✓ Müsait</span></div>
+                            <div class="qcard-bar"><div class="qcard-bar-available"></div></div>
+                            <div style="font-size:.67rem;color:#475569;margin-top:.25rem">${lastHit}</div>`;
+                    }
+
                     const card = document.createElement('div');
                     card.className = 'qcard ' + (exhausted ? 'qcard-exhausted' : 'qcard-ok') + (isActive ? ' qcard-active' : '');
-
-                    const handle = acct.email.split('@')[0];
-                    const domain = '@' + (acct.email.split('@')[1] || '');
-
-                    // Gauge: remaining fraction (1 = full = all time left, 0 = nothing left)
-                    let frac, colorClass, pctLabel, pctSublabel;
-                    if (exhausted && acct.resets_in_seconds > 0) {
-                        frac = acct.resets_in_seconds / win;
-                        colorClass = frac > 0.4 ? 'qgauge-ok' : frac > 0.15 ? 'qgauge-warn' : 'qgauge-bad';
-                        pctLabel = Math.round(frac * 100) + '%';
-                        pctSublabel = 'remaining';
-                    } else if (exhausted) {
-                        frac = 0; colorClass = 'qgauge-ok';
-                        pctLabel = '~100%'; pctSublabel = 'restored';
-                    } else {
-                        frac = 1; colorClass = 'qgauge-ok';
-                        pctLabel = '✓'; pctSublabel = 'available';
-                    }
-
-                    const gaugeSvg = makeSvgGauge(frac, colorClass);
-                    const cdId = `cd${i}`;
-                    const badge = exhausted
-                        ? '<span class="qbadge qbad">EXHAUSTED</span>'
-                        : '<span class="qbadge qgood">AVAILABLE</span>';
-                    const activeBadge = isActive
-                        ? ' <span class="qcard-active-badge">● AKTİF</span>'
-                        : '';
-
-                    let cdHtml = '', atHtml = '';
-                    if (exhausted && acct.resets_in_seconds > 0) {
-                        const targetEpoch = nowEpoch + acct.resets_in_seconds;
-                        cdHtml = `<div class="qreset">Resets in <span id="${cdId}" class="qcd">${fmtSec(acct.resets_in_seconds)}</span></div>`;
-                        atHtml = `<div class="qat">at ${acct.resets_at}</div>`;
-                        setTimeout(() => {
-                            const el = document.getElementById(cdId);
-                            const fill = card.querySelector('.qgauge-fill');
-                            if (el) countdowns[cdId] = { el, targetEpoch, windowSecs: win };
-                            if (fill) _gaugeEls[cdId] = fill;
-                        }, 0);
-                    } else if (acct.last_exhausted_at) {
-                        cdHtml = `<div class="qreset">Last hit: ${acct.last_exhausted_at}</div>`;
-                    } else {
-                        cdHtml = `<div class="qreset">Never exhausted</div>`;
-                    }
-
                     card.innerHTML = `
-                        <div style="display:flex;justify-content:space-between;align-items:center;width:100%">${badge}${activeBadge}</div>
-                        <div class="qgauge">
-                            ${gaugeSvg}
-                            <div class="qgauge-center">
-                                <span class="qpct" style="color:${exhausted && frac<0.15?'#f87171':exhausted&&frac<0.4?'#fb923c':'#4ade80'}">${pctLabel}</span>
-                                <span class="qplbl">${pctSublabel}</span>
+                        <div class="qcard-header">
+                            <div class="qcard-identity">
+                                <span class="qcard-handle">${handle}</span>
+                                <span class="qcard-domain">${domain}</span>
+                            </div>
+                            <div class="qcard-badges">
+                                ${exhausted ? '<span class="qbadge qbad">TÜKENDI</span>' : '<span class="qbadge qgood">MÜSAİT</span>'}
+                                ${isActive ? '<span class="qcard-active-badge">● AKTİF</span>' : ''}
                             </div>
                         </div>
-                        <div class="qemail"><b>${handle}</b>${domain}</div>
-                        <div class="qstats">
+                        ${barHtml}
+                        <div class="qcard-stats">
                             <div class="qstat"><span class="qstat-val">${acct.session_count}</span><span class="qstat-lbl">Oturum</span></div>
                             <div class="qstat"><span class="qstat-val">${acct.exhaustion_count}</span><span class="qstat-lbl">Kota İhlali</span></div>
                         </div>
-                        ${cdHtml}${atHtml}
                     `;
                     quotaGrid.appendChild(card);
                 });
@@ -819,61 +764,6 @@
                     w.textContent = '⚠ ' + data.warning;
                     quotaGrid.appendChild(w);
                 }
-
-                // ── Reset Timeline ──────────────────────────────────────
-                for (const k of Object.keys(rtCountdowns)) delete rtCountdowns[k];
-                const timelineEl = document.getElementById('resetTimeline');
-                const timelineRows = document.getElementById('resetTimelineRows');
-                const exhaustedAccounts = sorted.filter(a => a.status === 'exhausted' && a.resets_in_seconds > 0);
-
-                timelineEl.style.display = 'block';
-                {
-                    timelineRows.innerHTML = '';
-                    const nowEp = Date.now() / 1000;
-
-                    // Also add available accounts for context
-                    sorted.forEach((acct, i) => {
-                        const row = document.createElement('div');
-                        row.className = 'rt-row';
-
-                        const isActive = acct.email === activeEmail;
-                        const handle = acct.email.split('@')[0];
-                        const labelHtml = `<span class="rt-label" title="${acct.email}">${isActive ? '● ' : ''}${handle}</span>`;
-
-                        let barHtml, resetHtml;
-                        const rtId = `rt${i}`;
-
-                        if (acct.status === 'exhausted' && acct.resets_in_seconds > 0) {
-                            const totalSecs = acct.resets_in_seconds + acct.elapsed_seconds;
-                            const elPct  = Math.round(acct.elapsed_seconds / totalSecs * 100);
-                            const remPct = 100 - elPct;
-                            const remColor = remPct > 40 ? '#fb923c' : remPct > 15 ? '#f97316' : '#ef4444';
-                            barHtml = `<div class="rt-bar-wrap">
-                                <div class="rt-elapsed" id="${rtId}-el" style="width:${elPct}%"></div>
-                                <div class="rt-remaining" id="${rtId}-rem" style="left:${elPct}%;width:${remPct}%;background:${remColor}"></div>
-                                <div class="rt-bar-label">${elPct}% geçti</div>
-                            </div>`;
-                            resetHtml = `<span class="rt-reset" id="${rtId}-lbl"><b>${fmtReset(acct.resets_in_seconds)}</b></span>`;
-                            // register for live update
-                            setTimeout(() => {
-                                rtCountdowns[rtId] = {
-                                    elapsedBar:  document.getElementById(`${rtId}-el`),
-                                    remBar:      document.getElementById(`${rtId}-rem`),
-                                    resetLabel:  document.getElementById(`${rtId}-lbl`),
-                                    targetEpoch: nowEp + acct.resets_in_seconds,
-                                    windowSecs:  totalSecs,
-                                };
-                            }, 0);
-                        } else {
-                            barHtml = `<div class="rt-bar-wrap"><div class="rt-available"></div><div class="rt-bar-label" style="color:#4ade80">Müsait</div></div>`;
-                            resetHtml = `<span class="rt-reset" style="color:#4ade80">✓</span>`;
-                        }
-
-                        row.innerHTML = labelHtml + barHtml + resetHtml;
-                        timelineRows.appendChild(row);
-                    });
-                }
-
             }).catch(() => {
                 quotaGrid.innerHTML = '<p style="color:#f44">Kota verisi yüklenemedi.</p>';
             });
