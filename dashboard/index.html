@@ -1982,13 +1982,12 @@
                     `;
                 }
 
-                // Account-level reset info banner
-                if (data.account_reset_label) {
-                    const col = data.account_reset_in_secs < 3600 ? 'var(--warning)' : 'var(--success)';
+                // Banner: only when any model is exhausted (has refreshes_in)
+                const anyExhausted = (data.models || []).some(m => m.refreshes_in);
+                if (anyExhausted) {
                     html += `<div class="mq-reset-banner">
-                        <span class="mq-reset-icon">⏱</span>
-                        <span>Kota penceresi sıfırlanıyor: <strong style="color:${col}">${data.account_reset_label}</strong> kaldı</span>
-                        <span class="mq-reset-clock">@ ${data.account_reset_at}</span>
+                        <span class="mq-reset-icon">⚠</span>
+                        <span>Bazı modeller <strong style="color:var(--danger)">kota limitine ulaştı</strong> — sıfırlanma süreleri aşağıda</span>
                     </div>`;
                 }
 
@@ -1997,17 +1996,14 @@
                     const col = pct >= 60 ? 'var(--success)' : pct >= 25 ? 'var(--warning)' : 'var(--danger)';
                     const name = shortenModelName(m.display_name);
 
-                    // Reset time: use model-specific refreshes_in if exhausted,
-                    // else show account-level reset time
+                    // Reset time: ONLY show when model is actually exhausted.
+                    // Google AI Pro models have short windows (38m–4.5h), NOT 24h.
+                    // When available, show nothing — we don't have the true next-reset time.
                     let resetHtml;
                     if (m.refreshes_in) {
-                        resetHtml = `<span class="mq-reset mq-reset-urgent">${m.refreshes_in}</span>`;
-                    } else if (m.reset_label || data.account_reset_label) {
-                        const rl = m.reset_label || data.account_reset_label;
-                        const ra = m.resets_at  || data.account_reset_at;
-                        resetHtml = `<span class="mq-reset mq-reset-ok" title="Sıfırlanma: ${ra}">${rl}</span>`;
+                        resetHtml = `<span class="mq-reset mq-reset-urgent" title="Sıfırlanıyor">⏱ ${m.refreshes_in}</span>`;
                     } else {
-                        resetHtml = `<span class="mq-reset">✓</span>`;
+                        resetHtml = `<span class="mq-reset mq-reset-ok">✓</span>`;
                     }
 
                     html += `

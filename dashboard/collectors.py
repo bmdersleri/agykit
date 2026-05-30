@@ -923,18 +923,11 @@ def agy_model_quota_cached(*, force: bool = False) -> dict:
 
     data = agy_model_quota_tmux()
 
-    # Enrich with reset times from retrieveUserQuota (fast API, always available)
-    reset_info = _fetch_quota_reset_times()
-    if reset_info:
-        data["account_reset_at"]      = reset_info["reset_at"]
-        data["account_reset_in_secs"] = reset_info["reset_in_secs"]
-        data["account_reset_label"]   = reset_info["label"]
-        # Per-model: try to match or apply global reset to all models
-        for m in data.get("models", []):
-            if not m.get("resets_at") and not m.get("refreshes_in"):
-                m["resets_at"]         = reset_info["reset_at"]
-                m["resets_in_seconds"] = reset_info["reset_in_secs"]
-                m["reset_label"]       = reset_info["label"]
+    # NOTE: retrieveUserQuota returns standard-tier (gemini-2.5-*) reset times.
+    # Google AI Pro models (Gemini 3.5 Flash etc.) use different windows (38m–4.5h).
+    # Do NOT propagate standard-tier reset times to Google AI Pro model rows —
+    # it would be misleading. Only show reset when a model is actually exhausted
+    # (refreshes_in is set from the agy TUI capture).
 
     if data.get("models"):
         try:
