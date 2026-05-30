@@ -27,6 +27,8 @@ VERIFY_CMD="${AGYKIT_VERIFY:-}"
 SYSTEM_FILE="${AGYKIT_SYSTEM:-}"
 AGY_FLAGS="${AGYKIT_FLAGS:---dangerously-skip-permissions}"
 TIMEOUT="${AGYKIT_TIMEOUT:-15m}"
+# agy binary — overridable for testing with a stub.
+AGY_BIN="${AGY_BIN:-agy}"
 # AGYKIT_TERSE: caveman-style terse output for explanation prompts (run/ask).
 # Saves OUTPUT tokens → quota lasts longer. NOT applied to code tasks
 # (do-escalate) where verbosity may carry signal.
@@ -78,24 +80,63 @@ except Exception:
 PY
 }
 
-# ── Stash helpers (tagged, conflict-safe) ────────────────────────────────────
-_stash_push() {
-    if git rev-parse --git-dir >/dev/null 2>&1 && [ -n "$(git status --porcelain 2>/dev/null)" ]; then
-        local tag="agykit-$$-$(date +%s%N)"
-        git stash push --include-untracked -m "$tag" >/dev/null 2>&1 && echo "$tag" || echo ""
-    else echo ""; fi
+# ── Git safety: snapshot / normalize / rollback ──────────────────────────────
+# do-escalate runs agy with the user's working tree fully visible (so agy and
+# the verify command both see uncommitted WIP, e.g. failing tests). To stay
+# safe we snapshot the pre-run state non-destructively, neutralize any stray
+# git writes agy makes, and on failure restore the exact pre-run tree.
+
+_in_git() { git rev-parse --git-dir >/dev/null 2>&1; }
+
+# Capture tracked WIP + untracked files into a commit object WITHOUT touching
+# the working tree or the user's index. Echoes the snapshot commit sha ("" if
+# not a git repo). Uses a throwaway index so staged/unstaged state is preserved.
+_snapshot() {
+    _in_git || { echo ""; return 0; }
+    local base; base=$(git rev-parse -q --verify HEAD 2>/dev/null || echo "")
+    local tmpidx; tmpidx=$(mktemp -u "${TMPDIR:-/tmp}/agykit-idx.XXXXXX")
+    if [ -n "$base" ]; then
+        GIT_INDEX_FILE="$tmpidx" git read-tree "$base" 2>/dev/null || true
+    fi
+    GIT_INDEX_FILE="$tmpidx" git add -A 2>/dev/null || true
+    local tree; tree=$(GIT_INDEX_FILE="$tmpidx" git write-tree 2>/dev/null || echo "")
+    rm -f "$tmpidx"
+    [ -z "$tree" ] && { echo ""; return 0; }
+    if [ -n "$base" ]; then
+        git commit-tree "$tree" -p "$base" -m "agykit-snapshot" 2>/dev/null || echo ""
+    else
+        git commit-tree "$tree" -m "agykit-snapshot" 2>/dev/null || echo ""
+    fi
 }
-_stash_restore() {
-    [ -z "$1" ] && return 0
-    local ref; ref=$(git stash list --format="%gd %s" | grep -F "$1" | head -1 | awk '{print $1}')
-    [ -z "$ref" ] && return 0
-    if git stash pop "$ref" 2>/dev/null; then echo "==> workspace restored ($1)"
-    else echo "==> ⚠ STASH CONFLICT — work safe in: git stash list ($1)"; return 1; fi
+
+# If agy moved HEAD (committed or reset), bring HEAD back to $1 (BASE) while
+# leaving every change in the working tree. Turns "agy committed" into plain
+# uncommitted edits — agykit owns version control, not agy.
+_normalize_head() {
+    local base="$1"
+    { _in_git && [ -n "$base" ]; } || return 0
+    if [ "$(git rev-parse HEAD 2>/dev/null)" != "$base" ]; then
+        git reset --mixed "$base" >/dev/null 2>&1 || true
+    fi
 }
-_stash_drop() {
-    [ -z "$1" ] && return 0
-    local ref; ref=$(git stash list --format="%gd %s" | grep -F "$1" | head -1 | awk '{print $1}')
-    [ -n "$ref" ] && git stash drop "$ref" >/dev/null 2>&1 || true
+
+# Restore the working tree to snapshot $2 taken at BASE $1: drop agy's tracked
+# and untracked changes, then re-materialize the user's pre-run WIP exactly.
+_rollback_to() {
+    local base="$1" snap="$2"
+    { _in_git && [ -n "$base" ]; } || return 0
+    git reset -q --hard "$base" 2>/dev/null || true
+    git clean -fdq 2>/dev/null || true
+    if [ -n "$snap" ]; then
+        git checkout "$snap" -- . 2>/dev/null || true   # restore WIP (tracked + previously-untracked)
+        git reset -q "$base" 2>/dev/null || true         # unstage; keep working-tree content
+    fi
+}
+
+# Injected into the agy task prompt: defense-in-depth so agy doesn't fight
+# agykit over git state.
+_git_lock_directive() {
+    printf '%s\n\n' 'RULE: Edit files only. Do NOT run git commit, git reset, git rebase, git push, or git stash — agykit manages version control. Make changes directly in the working tree and stop.'
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -152,7 +193,7 @@ PY
 
 cmd_account_add() {
     echo "════ agy launching — /logout, login with NEW account, then ctrl+d ════"
-    agy </dev/tty || true
+    "$AGY_BIN" </dev/tty || true
     cmd_account_save
     cmd_account_list
 }
@@ -195,7 +236,7 @@ PY
     # Auto-refresh: agy renews the access_token from refresh_token on its first call.
     if [ "$need_refresh" = "EXPIRED" ]; then
         echo "==> token expired — refreshing via agy..."
-        agy -p "ok" --dangerously-skip-permissions >/dev/null 2>&1 || true
+        "$AGY_BIN" -p "ok" --dangerously-skip-permissions >/dev/null 2>&1 || true
     fi
 }
 
@@ -207,14 +248,17 @@ cmd_run() {
     for a in "${accts[@]}"; do
         cmd_account_switch "$a" >/dev/null 2>&1 || continue
         echo "==> Trying account: $a"
-        agy -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
+        "$AGY_BIN" -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
         grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; continue; }
         echo "==> Success on: $a"; return 0
     done
     echo "==> ALL ACCOUNTS EXHAUSTED"; return 1
 }
 
-# Escalating do: model ladder on verify failure + quota rotation + stash safety.
+# Escalating do: model ladder on verify failure + quota rotation + git safety.
+# The working tree (incl. uncommitted WIP) stays visible to agy and to verify.
+# A non-destructive snapshot lets us roll back ONLY agy's changes on failure,
+# and _normalize_head neutralizes any commit/reset agy makes on its own.
 cmd_do_escalate() {
     local prompt="$1"
     [ -z "$VERIFY_CMD" ] && { echo "AGYKIT_VERIFY not set — escalate needs a verify command"; exit 1; }
@@ -222,22 +266,36 @@ cmd_do_escalate() {
     mapfile -t accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
     [ ${#accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
     restore_model() { cmd_model "$orig" >/dev/null 2>&1 || true; }
+
+    local base=""; _in_git && base=$(git rev-parse -q --verify HEAD 2>/dev/null || echo "")
+    _in_git || echo "==> ⚠ not a git repo — rollback safety disabled"
+
     for model in "${LADDER[@]}"; do
         echo "════ MODEL: $model ════"
         cmd_model "$model" >/dev/null
-        local tag; tag=$(_stash_push); local applied=0
+        local snap=""; _in_git && snap=$(_snapshot)
+        local applied=0
         for a in "${accts[@]}"; do
             cmd_account_switch "$a" >/dev/null 2>&1 || continue
             echo "==> $model @ $a"
-            agy -p "$(_system_prefix)TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-            grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; git checkout -- . 2>/dev/null || true; continue; }
+            "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
+            grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; _rollback_to "$base" "$snap"; continue; }
             applied=1; break
         done
-        [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _stash_restore "$tag"; restore_model; exit 1; }
+        [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _rollback_to "$base" "$snap"; restore_model; exit 1; }
+
+        # Undo any stray git writes agy made — agykit owns version control.
+        _normalize_head "$base"
+
         if eval "$VERIFY_CMD"; then
-            _stash_drop "$tag"; restore_model; echo "==> SUCCESS with $model"; return 0
+            restore_model
+            if _in_git && [ -n "$snap" ]; then
+                echo "==> agy changes (review before committing):"
+                git --no-pager diff --stat "$snap" 2>/dev/null || true
+            fi
+            echo "==> SUCCESS with $model"; return 0
         else
-            echo "==> verify FAILED on $model — escalating"; _stash_restore "$tag" || true
+            echo "==> verify FAILED on $model — escalating"; _rollback_to "$base" "$snap"
         fi
     done
     echo "==> FAILED — all models exhausted"; restore_model; return 1
@@ -262,6 +320,8 @@ EOF
 }
 
 # ── Dispatch ─────────────────────────────────────────────────────────────────
+# Guard: when sourced (e.g. by tests) do not run the dispatcher.
+if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
 case "${1:-}" in
     whoami)        cmd_whoami ;;
     models)        cmd_models ;;
@@ -276,3 +336,4 @@ case "${1:-}" in
     ""|-h|--help|help) usage ;;
     *)             echo "Unknown command: $1"; usage; exit 1 ;;
 esac
+fi
