@@ -773,3 +773,126 @@ def agy_model_quota() -> dict:
             warnings.append(f"{email}: {e}")
 
     return {"accounts": accounts, "warning": ("; ".join(warnings) if warnings else None)}
+
+
+def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
+    """Capture model quota from agy /usage screen via tmux pane capture.
+
+    Launches agy in a detached tmux session, waits for READY, sends /usage,
+    captures the rendered screen, parses per-model quota rows.
+
+    Returns:
+        {"models": [{"display_name", "pct_shown", "status", "refreshes_in",
+                     "bar_blocks"}], "account": str, "plan": str,
+         "warning": str|None, "captured_at": str}
+    """
+    import subprocess, time
+
+    def run(*cmd):
+        return subprocess.run(list(cmd), capture_output=True, text=True)
+
+    # Kill any existing session
+    run("tmux", "kill-session", "-t", session)
+    time.sleep(0.3)
+
+    # Start agy in detached tmux
+    r = run("tmux", "new-session", "-d", "-s", session, "-x", "220", "-y", "60", "agy")
+    if r.returncode != 0:
+        return {"models": [], "warning": f"tmux failed: {r.stderr[:60]}",
+                "account": None, "plan": None, "captured_at": None}
+
+    # Wait for READY (up to 40s) — handle trust dialog if it appears
+    deadline = time.time() + 40
+    ready = False
+    while time.time() < deadline:
+        cap = run("tmux", "capture-pane", "-t", session, "-p")
+        pane = cap.stdout
+        # Auto-confirm "Do you trust this folder?" dialog
+        if "trust" in pane.lower() and ("Yes" in pane or "enter" in pane.lower()):
+            run("tmux", "send-keys", "-t", session, "", "Enter")
+            time.sleep(1)
+            continue
+        if "● READY" in pane or ("READY" in pane and "INITIALIZING" not in pane):
+            ready = True
+            break
+        time.sleep(1)
+
+    if not ready:
+        run("tmux", "kill-session", "-t", session)
+        return {"models": [], "warning": "agy did not reach READY state",
+                "account": None, "plan": None, "captured_at": None}
+
+    time.sleep(1)
+
+    # Extract account/plan from statusline
+    statusline = run("tmux", "capture-pane", "-t", session, "-p").stdout
+    account, plan = None, None
+    m = re.search(r'([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})', statusline)
+    if m: account = m.group(1)
+    m = re.search(r'Google AI Pro|standard-tier|Pro Plus|Free', statusline)
+    if m: plan = m.group(0)
+
+    # Send /usage command
+    run("tmux", "send-keys", "-t", session, "/usage", "Enter")
+
+    # Wait for quota screen
+    deadline2 = time.time() + 20
+    while time.time() < deadline2:
+        cap = run("tmux", "capture-pane", "-t", session, "-p", "-S", "-", "-E", "-")
+        if any(k in cap.stdout for k in ["Model Quota", "Gemini 3.5", "Refreshes in", "Quota available"]):
+            break
+        time.sleep(1)
+
+    time.sleep(2)  # let full screen render
+
+    # Capture full pane
+    cap = run("tmux", "capture-pane", "-t", session, "-p", "-S", "-", "-E", "-")
+    raw = cap.stdout
+
+    # Cleanup
+    run("tmux", "kill-session", "-t", session)
+
+    # Parse model rows — scan every line, collect next pct + status after each model name
+    MODEL_RE = re.compile(r'^(Gemini|Claude|GPT|Llama|Mistral|Qwen|Deepseek|Grok)')
+    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+    models = []
+    for i, line in enumerate(lines):
+        if not MODEL_RE.match(line):
+            continue
+        model_name = line
+        pct = None
+        bar_blocks = 0
+        status = "available"
+        refreshes_in = None
+        # Scan up to 3 lines ahead (bar line + status line)
+        for l in lines[i + 1 : i + 4]:
+            if MODEL_RE.match(l):
+                break  # hit next model — stop
+            m2 = re.search(r'(\d+)%', l)
+            if m2:
+                pct = int(m2.group(1))
+                bar_blocks = l.count('█')
+            if 'Quota available' in l or 'quota available' in l.lower():
+                status = "available"
+            m3 = re.search(r'Refreshes? in (.+)', l)
+            if m3:
+                refreshes_in = m3.group(1).strip()
+                status = "limited"
+        models.append({
+            "display_name":  model_name,
+            "pct_shown":     pct,
+            "pct_remaining": pct,
+            "status":        status,
+            "refreshes_in":  refreshes_in,
+            "bar_blocks":    bar_blocks,
+        })
+
+    captured_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    warning = None if models else "No model quota data found in screen output"
+    return {
+        "models":      models,
+        "account":     account,
+        "plan":        plan,
+        "captured_at": captured_at,
+        "warning":     warning,
+    }

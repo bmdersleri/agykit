@@ -67,7 +67,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/active-account":
             self.serve_json(collectors.agy_active_account())
         elif path == "/api/agy-model-quota":
-            self.serve_json(collectors.agy_model_quota())
+            self.serve_json(collectors.agy_model_quota_tmux())
         elif path == "/events":
             self.serve_events()
         else:

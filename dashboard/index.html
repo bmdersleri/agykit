@@ -407,7 +407,7 @@
             <div class="mq-section">
                 <div class="mq-header">
                     <span class="mq-title">Model Bazlı Kota
-                        <span style="font-size:.62rem;color:#475569;font-weight:400;text-transform:none;margin-left:.5rem" title="Hesap GCP projesi üzerinden bağlandığı için standard-tier (unlimited) quota gösterilmektedir. Google AI Pro model limitleri için fetchAvailableModels gerektirir (aicode scope).">ⓘ standard-tier</span>
+                        <span style="font-size:.62rem;color:#475569;font-weight:400;text-transform:none;margin-left:.5rem">via agy /usage</span>
                     </span>
                     <button class="cq-refresh-btn" onclick="loadModelQuota()">↻ Yenile</button>
                 </div>
@@ -1009,48 +1009,36 @@
             });
         }
 
-        // ── agy Model Quota panel ───────────────────────────────────────
+        // ── agy Model Quota panel (tmux capture) ────────────────────────
         const modelQuotaBody = document.getElementById('modelQuotaBody');
 
         function loadModelQuota() {
-            modelQuotaBody.innerHTML = '<p class="cq-unavail">Hesap kotaları çekiliyor…</p>';
+            modelQuotaBody.innerHTML = '<p class="cq-unavail">agy başlatılıyor, kota ekranı yakalanıyor (~30s)…</p>';
             fetch('/api/agy-model-quota').then(r => r.json()).then(data => {
-                if (!data.accounts || data.accounts.length === 0) {
-                    modelQuotaBody.innerHTML = `<p class="mq-err">${data.warning || 'Veri yok.'}</p>`;
-                    return;
+                if (data.warning && !data.models?.length) {
+                    modelQuotaBody.innerHTML = `<p class="mq-err">⚠ ${data.warning}</p>`; return;
                 }
-                let html = '';
-                data.accounts.forEach(acct => {
-                    html += `<div class="mq-acct">
-                        <div class="mq-acct-label">${acct.email}</div>`;
-                    if (acct.error) {
-                        html += `<p class="mq-err">✗ ${acct.error}</p></div>`;
-                        return;
-                    }
-                    if (!acct.models.length) {
-                        html += `<p style="color:#475569;font-size:.75rem">Model verisi yok</p></div>`;
-                        return;
-                    }
-                    if (acct.tier_note) {
-                        html += `<p style="color:#475569;font-size:.7rem;margin-bottom:.35rem">⚠ ${acct.tier_note} — Google AI Pro limitleri için <code>fetchAvailableModels</code> gerekli (aicode scope eksik)</p>`;
-                    }
-                    acct.models.forEach(m => {
-                        const pct = m.pct_remaining;
-                        const col = pct >= 60 ? '#4ade80' : pct >= 25 ? '#fb923c' : '#f87171';
-                        const resetTxt = m.resets_in_seconds > 0 ? fmtReset(m.resets_in_seconds) : '✓';
-                        html += `<div class="mq-row">
-                            <span class="mq-name" title="${m.model_id}">${m.display_name}</span>
-                            <div class="mq-bar-wrap">
-                                <div class="mq-bar"><div class="mq-bar-fill" style="width:${pct}%;background:${col}"></div></div>
-                                <span class="mq-pct" style="color:${col}">${pct}%</span>
-                            </div>
-                            <span class="mq-reset">${resetTxt}</span>
-                        </div>`;
-                    });
-                    html += '</div>';
+                let meta = '';
+                if (data.account) meta += `<span style="color:#38bdf8">${data.account}</span>`;
+                if (data.plan)    meta += `<span style="color:#94a3b8;margin-left:.5rem">${data.plan}</span>`;
+                if (data.captured_at) meta += `<span style="color:#334155;font-size:.68rem;margin-left:.75rem">@ ${data.captured_at}</span>`;
+                let html = meta ? `<div style="margin-bottom:.6rem;font-size:.75rem">${meta}</div>` : '';
+
+                (data.models || []).forEach(m => {
+                    const pct = m.pct_shown ?? m.pct_remaining ?? 100;
+                    const col = pct >= 60 ? '#4ade80' : pct >= 25 ? '#fb923c' : '#f87171';
+                    const resetTxt = m.refreshes_in ? m.refreshes_in : (m.status === 'available' ? '✓' : '—');
+                    html += `<div class="mq-row">
+                        <span class="mq-name">${m.display_name}</span>
+                        <div class="mq-bar-wrap">
+                            <div class="mq-bar"><div class="mq-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+                            <span class="mq-pct" style="color:${col}">${pct}%</span>
+                        </div>
+                        <span class="mq-reset">${resetTxt}</span>
+                    </div>`;
                 });
-                if (data.warning) html += `<p class="mq-err">⚠ ${data.warning}</p>`;
-                modelQuotaBody.innerHTML = html;
+                if (data.warning) html += `<p class="mq-err" style="margin-top:.5rem">⚠ ${data.warning}</p>`;
+                modelQuotaBody.innerHTML = html || '<p class="cq-unavail">Model verisi yok.</p>';
             }).catch(e => {
                 modelQuotaBody.innerHTML = `<p class="mq-err">Yüklenemedi: ${e}</p>`;
             });
