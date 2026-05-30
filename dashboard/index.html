@@ -296,6 +296,20 @@
         .ls-bar-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
         .ls-bar-count { font-size: .68rem; color: var(--text-main); font-weight: 600; width: 28px; text-align: right; flex-shrink: 0; }
 
+        /* ── Reset timeline bar chart ── */
+        .reset-timeline { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; margin-top: 1.25rem; }
+        .reset-timeline h4 { font-size: .8rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 1rem; }
+        .rt-row { display: flex; align-items: center; gap: .75rem; margin-bottom: .6rem; }
+        .rt-row:last-child { margin-bottom: 0; }
+        .rt-label { font-size: .78rem; color: #94a3b8; width: 100px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .rt-bar-wrap { flex: 1; position: relative; height: 20px; background: #0f172a; border-radius: 4px; overflow: hidden; }
+        .rt-elapsed { position: absolute; left: 0; top: 0; height: 100%; background: #1e3a5f; border-radius: 4px 0 0 4px; transition: width .6s ease; }
+        .rt-remaining { position: absolute; top: 0; height: 100%; border-radius: 0 4px 4px 0; transition: width .6s ease, left .6s ease; }
+        .rt-available { position: absolute; left: 0; top: 0; width: 100%; height: 100%; background: #14532d; border-radius: 4px; }
+        .rt-bar-label { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; font-size: .67rem; font-weight: 600; color: #fff; text-shadow: 0 1px 2px #0008; pointer-events: none; }
+        .rt-reset { font-size: .72rem; color: var(--text-muted); width: 80px; text-align: right; flex-shrink: 0; white-space: nowrap; }
+        .rt-reset b { color: var(--text-main); }
+
         /* active account highlight on quota cards */
         .qcard-active { border-color: #38bdf8 !important; box-shadow: 0 0 0 1px #38bdf826; }
         .qcard-active-badge { font-size: .6rem; background: #0c2233; color: #38bdf8; border-radius: 99px; padding: .1rem .45rem; font-weight: 700; letter-spacing: .04em; }
@@ -387,6 +401,10 @@
             </div>
             <div id="refreshAllStatus" style="display:none;font-size:.8rem;color:#94a3b8;margin-bottom:.75rem"></div>
             <div id="quotaGrid" class="quota-grid"></div>
+            <div class="reset-timeline" id="resetTimeline" style="display:none">
+                <h4>Sıfırlanmaya Kalan Süre</h4>
+                <div id="resetTimelineRows"></div>
+            </div>
         </section>
 
         <div id="chartsGrid" class="charts-grid">
@@ -664,6 +682,8 @@
             return CIRC * (1 - Math.max(0, Math.min(1, frac)));
         }
 
+        const rtCountdowns = {};  // timeline live: id → {elapsedBar, remBar, resetLabel, targetEpoch, windowSecs}
+
         setInterval(() => {
             const now = Date.now() / 1000;
             for (const [id, ct] of Object.entries(countdowns)) {
@@ -677,6 +697,17 @@
                     fill.className.baseVal = fill.className.baseVal.replace(/qgauge-(ok|warn|bad)/,
                         frac > 0.4 ? 'qgauge-ok' : frac > 0.15 ? 'qgauge-warn' : 'qgauge-bad');
                 }
+            }
+            // reset timeline bars
+            for (const [id, ct] of Object.entries(rtCountdowns)) {
+                const rem = Math.max(0, ct.targetEpoch - now);
+                const win = ct.windowSecs || 1;
+                const elPct  = Math.min(100, Math.round((win - rem) / win * 100));
+                const remPct = 100 - elPct;
+                const remColor = remPct > 40 ? '#fb923c' : remPct > 15 ? '#f97316' : '#ef4444';
+                if (ct.elapsedBar) ct.elapsedBar.style.width = elPct + '%';
+                if (ct.remBar)     { ct.remBar.style.left = elPct + '%'; ct.remBar.style.width = remPct + '%'; ct.remBar.style.background = remColor; }
+                if (ct.resetLabel) ct.resetLabel.innerHTML = rem > 0 ? `<b>${fmtReset(Math.round(rem))}</b>` : '<b style="color:#4ade80">✓ Sıfırlandı</b>';
             }
         }, 1000);
 
@@ -788,6 +819,63 @@
                     w.textContent = '⚠ ' + data.warning;
                     quotaGrid.appendChild(w);
                 }
+
+                // ── Reset Timeline ──────────────────────────────────────
+                for (const k of Object.keys(rtCountdowns)) delete rtCountdowns[k];
+                const timelineEl = document.getElementById('resetTimeline');
+                const timelineRows = document.getElementById('resetTimelineRows');
+                const exhaustedAccounts = sorted.filter(a => a.status === 'exhausted' && a.resets_in_seconds > 0);
+
+                if (exhaustedAccounts.length === 0) {
+                    timelineEl.style.display = 'none';
+                } else {
+                    timelineEl.style.display = 'block';
+                    timelineRows.innerHTML = '';
+                    const nowEp = Date.now() / 1000;
+
+                    // Also add available accounts for context
+                    sorted.forEach((acct, i) => {
+                        const row = document.createElement('div');
+                        row.className = 'rt-row';
+
+                        const isActive = acct.email === activeEmail;
+                        const handle = acct.email.split('@')[0];
+                        const labelHtml = `<span class="rt-label" title="${acct.email}">${isActive ? '● ' : ''}${handle}</span>`;
+
+                        let barHtml, resetHtml;
+                        const rtId = `rt${i}`;
+
+                        if (acct.status === 'exhausted' && acct.resets_in_seconds > 0) {
+                            const totalSecs = acct.resets_in_seconds + acct.elapsed_seconds;
+                            const elPct  = Math.round(acct.elapsed_seconds / totalSecs * 100);
+                            const remPct = 100 - elPct;
+                            const remColor = remPct > 40 ? '#fb923c' : remPct > 15 ? '#f97316' : '#ef4444';
+                            barHtml = `<div class="rt-bar-wrap">
+                                <div class="rt-elapsed" id="${rtId}-el" style="width:${elPct}%"></div>
+                                <div class="rt-remaining" id="${rtId}-rem" style="left:${elPct}%;width:${remPct}%;background:${remColor}"></div>
+                                <div class="rt-bar-label">${elPct}% geçti</div>
+                            </div>`;
+                            resetHtml = `<span class="rt-reset" id="${rtId}-lbl"><b>${fmtReset(acct.resets_in_seconds)}</b></span>`;
+                            // register for live update
+                            setTimeout(() => {
+                                rtCountdowns[rtId] = {
+                                    elapsedBar:  document.getElementById(`${rtId}-el`),
+                                    remBar:      document.getElementById(`${rtId}-rem`),
+                                    resetLabel:  document.getElementById(`${rtId}-lbl`),
+                                    targetEpoch: nowEp + acct.resets_in_seconds,
+                                    windowSecs:  totalSecs,
+                                };
+                            }, 0);
+                        } else {
+                            barHtml = `<div class="rt-bar-wrap"><div class="rt-available"></div><div class="rt-bar-label" style="color:#4ade80">Müsait</div></div>`;
+                            resetHtml = `<span class="rt-reset" style="color:#4ade80">✓</span>`;
+                        }
+
+                        row.innerHTML = labelHtml + barHtml + resetHtml;
+                        timelineRows.appendChild(row);
+                    });
+                }
+
             }).catch(() => {
                 quotaGrid.innerHTML = '<p style="color:#f44">Kota verisi yüklenemedi.</p>';
             });
