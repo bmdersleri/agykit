@@ -1,5 +1,6 @@
         let mainChartInstance = null;
         let mixChartInstance = null;
+        let currentChartSource = null;
 
         const sourceSelect = document.getElementById('sourceSelect');
         const rangeSelect = document.getElementById('rangeSelect');
@@ -130,183 +131,187 @@
             }
         }
 
+        function buildMixDatasets(entries) {
+            const datasets = [];
+            let colorIdx = 0;
+            for (const [model, vals] of Object.entries(entries || {})) {
+                datasets.push({
+                    label: model,
+                    data: vals,
+                    backgroundColor: bgColors[colorIdx % bgColors.length],
+                    borderColor: colors[colorIdx % colors.length],
+                    borderWidth: 1,
+                    stack: 'stack0'
+                });
+                colorIdx++;
+            }
+            return datasets;
+        }
+
+        function createClaudeCharts(ctxMain, ctxMix, data, cColors) {
+            const noAnim = { animation: { duration: 0 } };
+            mainChartInstance = new Chart(ctxMain, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [{
+                        label: 'Toplam Token',
+                        data: data.tokens_total,
+                        borderColor: 'rgba(56, 189, 248, 1)',
+                        backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                        fill: true,
+                        tension: 0.3,
+                        borderWidth: 2
+                    }]
+                },
+                options: {
+                    ...noAnim,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        x: { grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
+                        y: { beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v } }
+                    }
+                }
+            });
+            mixChartInstance = new Chart(ctxMix, {
+                type: 'bar',
+                data: { labels: data.labels, datasets: buildMixDatasets(data.tokens_by_model) },
+                options: {
+                    ...noAnim,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                title: (items) => items[0]?.label || '',
+                                label: (item) => {
+                                    const name = item.dataset.label
+                                        .replace(/^@cf\//,'').replace(/^claude-/,'')
+                                        .replace(/^MiniMaxAI\//,'').slice(0, 28);
+                                    const val = item.raw >= 1000 ? Math.round(item.raw/1000)+'k' : item.raw;
+                                    return ` ${name}: ${val}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
+                        y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v } }
+                    }
+                }
+            });
+        }
+
+        function createAgyCharts(ctxMain, ctxMix, data, cColors) {
+            const noAnim = { animation: { duration: 0 } };
+            mainChartInstance = new Chart(ctxMain, {
+                type: 'line',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            label: 'Oturumlar',
+                            data: data.sessions,
+                            borderColor: 'rgba(16, 185, 129, 1)',
+                            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2,
+                            yAxisID: 'y'
+                        },
+                        {
+                            label: 'Araç Çağrıları',
+                            data: data.tool_calls,
+                            borderColor: 'rgba(139, 92, 246, 1)',
+                            backgroundColor: 'transparent',
+                            tension: 0.3,
+                            borderWidth: 2,
+                            borderDash: [4, 4],
+                            yAxisID: 'y1'
+                        }
+                    ]
+                },
+                options: {
+                    ...noAnim,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
+                        y: {
+                            type: 'linear', display: true, position: 'left', beginAtZero: true,
+                            title: { display: true, text: 'Oturumlar' },
+                            grid: { color: cColors.grid },
+                            ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v }
+                        },
+                        y1: {
+                            type: 'linear', display: true, position: 'right', beginAtZero: true,
+                            title: { display: true, text: 'Araç Çağrıları' },
+                            grid: { drawOnChartArea: false },
+                            ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v }
+                        }
+                    }
+                }
+            });
+            mixChartInstance = new Chart(ctxMix, {
+                type: 'bar',
+                data: { labels: data.labels, datasets: buildMixDatasets(data.model_mix) },
+                options: {
+                    ...noAnim,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    scales: {
+                        x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
+                        y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v } }
+                    }
+                }
+            });
+        }
+
         function renderCharts(source, data) {
-            const ctxMain = document.getElementById('mainChart').getContext('2d');
-            const ctxMix = document.getElementById('mixChart').getContext('2d');
-
-            if (mainChartInstance) mainChartInstance.destroy();
-            if (mixChartInstance) mixChartInstance.destroy();
-
             const cColors = getChartColors();
 
             if (source === 'claude') {
                 document.getElementById('mainChartTitle').textContent = 'Günlük Token Kullanımı';
                 document.getElementById('mixChartTitle').textContent = 'Model Dağılımı';
 
-                // Main line chart (total tokens)
-                mainChartInstance = new Chart(ctxMain, {
-                    type: 'line',
-                    data: {
-                        labels: data.labels,
-                        datasets: [{
-                            label: 'Toplam Token',
-                            data: data.tokens_total,
-                            borderColor: 'rgba(56, 189, 248, 1)',
-                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
-                            fill: true,
-                            tension: 0.3,
-                            borderWidth: 2
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false }
-                        },
-                        scales: {
-                            x: { grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
-                            y: { beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v } }
-                        }
-                    }
-                });
-
-                // Stacked bar chart (tokens by model)
-                const mixDatasets = [];
-                let colorIdx = 0;
-                for (const [model, tokensList] of Object.entries(data.tokens_by_model || {})) {
-                    mixDatasets.push({
-                        label: model,
-                        data: tokensList,
-                        backgroundColor: bgColors[colorIdx % bgColors.length],
-                        borderColor: colors[colorIdx % colors.length],
-                        borderWidth: 1,
-                        stack: 'stack0'
-                    });
-                    colorIdx++;
+                if (currentChartSource === 'claude' && mainChartInstance && mixChartInstance) {
+                    mainChartInstance.data.labels = data.labels;
+                    mainChartInstance.data.datasets[0].data = data.tokens_total;
+                    mainChartInstance.update('none');
+                    mixChartInstance.data.labels = data.labels;
+                    mixChartInstance.data.datasets = buildMixDatasets(data.tokens_by_model);
+                    mixChartInstance.update('none');
+                } else {
+                    if (mainChartInstance) mainChartInstance.destroy();
+                    if (mixChartInstance) mixChartInstance.destroy();
+                    const ctxMain = document.getElementById('mainChart').getContext('2d');
+                    const ctxMix = document.getElementById('mixChart').getContext('2d');
+                    createClaudeCharts(ctxMain, ctxMix, data, cColors);
+                    currentChartSource = 'claude';
                 }
-
-                mixChartInstance = new Chart(ctxMix, {
-                    type: 'bar',
-                    data: {
-                        labels: data.labels,
-                        datasets: mixDatasets
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        plugins: {
-                            legend: { display: false },
-                            tooltip: {
-                                callbacks: {
-                                    title: (items) => items[0]?.label || '',
-                                    label: (item) => {
-                                        const name = item.dataset.label
-                                            .replace(/^@cf\//,'').replace(/^claude-/,'')
-                                            .replace(/^MiniMaxAI\//,'').slice(0, 28);
-                                        const val = item.raw >= 1000 ? Math.round(item.raw/1000)+'k' : item.raw;
-                                        return ` ${name}: ${val}`;
-                                    }
-                                }
-                            }
-                        },
-                        scales: {
-                            x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
-                            y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v } }
-                        }
-                    }
-                });
-
             } else {
-                // source === 'agy'
                 document.getElementById('mainChartTitle').textContent = 'Günlük Aktivite (Oturumlar & Araçlar)';
                 document.getElementById('mixChartTitle').textContent = 'Model Dağılımı';
 
-                // Main line chart (sessions and tool calls)
-                mainChartInstance = new Chart(ctxMain, {
-                    type: 'line',
-                    data: {
-                        labels: data.labels,
-                        datasets: [
-                            {
-                                label: 'Oturumlar',
-                                data: data.sessions,
-                                borderColor: 'rgba(16, 185, 129, 1)',
-                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                                fill: true,
-                                tension: 0.3,
-                                borderWidth: 2,
-                                yAxisID: 'y'
-                            },
-                            {
-                                label: 'Araç Çağrıları',
-                                data: data.tool_calls,
-                                borderColor: 'rgba(139, 92, 246, 1)',
-                                backgroundColor: 'transparent',
-                                tension: 0.3,
-                                borderWidth: 2,
-                                borderDash: [4, 4],
-                                yAxisID: 'y1'
-                            }
-                        ]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            x: { grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
-                            y: {
-                                type: 'linear',
-                                display: true,
-                                position: 'left',
-                                beginAtZero: true,
-                                title: { display: true, text: 'Oturumlar' },
-                                grid: { color: cColors.grid },
-                                ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v }
-                            },
-                            y1: {
-                                type: 'linear',
-                                display: true,
-                                position: 'right',
-                                beginAtZero: true,
-                                title: { display: true, text: 'Araç Çağrıları' },
-                                grid: { drawOnChartArea: false },
-                                ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v }
-                            }
-                        }
-                    }
-                });
-
-                // Stacked bar chart (model mix)
-                const mixDatasets = [];
-                let colorIdx = 0;
-                for (const [model, countsList] of Object.entries(data.model_mix || {})) {
-                    mixDatasets.push({
-                        label: model,
-                        data: countsList,
-                        backgroundColor: bgColors[colorIdx % bgColors.length],
-                        borderColor: colors[colorIdx % colors.length],
-                        borderWidth: 1,
-                        stack: 'stack0'
-                    });
-                    colorIdx++;
+                if (currentChartSource === 'agy' && mainChartInstance && mixChartInstance) {
+                    mainChartInstance.data.labels = data.labels;
+                    mainChartInstance.data.datasets[0].data = data.sessions;
+                    mainChartInstance.data.datasets[1].data = data.tool_calls;
+                    mainChartInstance.update('none');
+                    mixChartInstance.data.labels = data.labels;
+                    mixChartInstance.data.datasets = buildMixDatasets(data.model_mix);
+                    mixChartInstance.update('none');
+                } else {
+                    if (mainChartInstance) mainChartInstance.destroy();
+                    if (mixChartInstance) mixChartInstance.destroy();
+                    const ctxMain = document.getElementById('mainChart').getContext('2d');
+                    const ctxMix = document.getElementById('mixChart').getContext('2d');
+                    createAgyCharts(ctxMain, ctxMix, data, cColors);
+                    currentChartSource = 'agy';
                 }
-
-                mixChartInstance = new Chart(ctxMix, {
-                    type: 'bar',
-                    data: {
-                        labels: data.labels,
-                        datasets: mixDatasets
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: false,
-                        scales: {
-                            x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 6, maxRotation: 0 } },
-                            y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? (v/1e3).toFixed(0)+'k' : v } }
-                        }
-                    }
-                });
             }
         }
 
@@ -471,6 +476,19 @@
                             </div>
                         </div>
 
+                        <!-- agy Canlı Durum (yalnızca aktif kart) -->
+                        ${isActive ? `
+                        <div class="mq-card-section">
+                            <div class="mq-card-section-header">
+                                <span class="mq-card-section-title">Canlı Durum</span>
+                                <span id="slAge" style="font-size: 0.72rem; color: var(--muted); font-weight: 500;"></span>
+                            </div>
+                            <div class="mq-card-section-body" id="statuslineBody">
+                                <div class="loading-text">Yükleniyor…</div>
+                            </div>
+                        </div>
+                        ` : ''}
+
                         <div class="qcard-footer">
                             <span>${acct.session_count} oturum</span>
                             <span>${acct.exhaustion_count} kota ihlali</span>
@@ -481,6 +499,7 @@
 
                 if (activeEmail) {
                     loadModelQuota();
+                    loadStatusline();
                 }
 
                 if (data.warning) {
@@ -562,20 +581,20 @@
             });
         }
 
-        // ── agy Canlı Durum Panel ──
-        const statuslineBody = document.getElementById('statuslineBody');
-        const slAge = document.getElementById('slAge');
-
+        // ── agy Canlı Durum (aktif hesap kartına enjekte edilir) ──
         function loadStatusline() {
+            const statuslineBody = document.getElementById('statuslineBody');
+            const slAge = document.getElementById('slAge');
+            if (!statuslineBody) return;
             fetch('/api/statusline').then(r => r.json()).then(d => {
                 if (!d.available) {
                     statuslineBody.innerHTML = `<div class="sl-unavail">${d.warning}</div>`;
-                    slAge.textContent = '';
+                    if (slAge) slAge.textContent = '';
                     return;
                 }
                 const age = d.age_seconds;
                 const stale = age > 300;
-                slAge.textContent = `(${age < 60 ? age+'sn' : Math.round(age/60)+'dk'} önce)`;
+                if (slAge) slAge.textContent = `(${age < 60 ? age+'sn' : Math.round(age/60)+'dk'} önce)`;
                 
                 const ctxPct = Math.round(d.context_pct || 0);
                 const ctxColor = ctxPct >= 90 ? 'var(--danger)' : ctxPct >= 60 ? 'var(--warning)' : 'var(--success)';
@@ -666,7 +685,7 @@
             const days = Math.floor(sec / 86400);
             const hours = Math.floor((sec % 86400) / 3600);
             const mins = Math.floor((sec % 3600) / 60);
-            if (days > 0)  return `${days}g ${hours}sa`;
+            if (days > 0)  return `${days}g ${hours}sa ${mins}dk`;
             if (hours > 0) return `${hours}sa ${mins}dk`;
             return `${mins}dk`;
         }
