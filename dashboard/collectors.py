@@ -378,8 +378,15 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
                     }
                 )
 
-    # Enrich each account with Google profile picture (parallel refresh_token→userinfo)
+    # Only show accounts that have a saved snapshot — removed accounts drop out.
     accounts_dir_path = os.path.expanduser("~/.gemini/accounts")
+    snapshot_emails = {
+        os.path.basename(f).replace(".json", "")
+        for f in glob.glob(os.path.join(accounts_dir_path, "*.json"))
+    }
+    accounts = [a for a in accounts if a["email"] in snapshot_emails]
+
+    # Enrich each account with Google profile picture (parallel refresh_token→userinfo)
     for acct in accounts:
         acct["picture"] = None
         acct_file = os.path.join(accounts_dir_path, acct["email"] + ".json")
