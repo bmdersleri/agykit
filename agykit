@@ -392,10 +392,15 @@ cmd_quota() {
 }
 
 cmd_doctor() {
-    local ok=0 warn=0 fail=0
-    _ok()   { echo "  ✓ $*"; }
-    _warn() { echo "  ⚠ $*"; warn=$((warn+1)); }
-    _fail() { echo "  ✗ $*"; fail=$((fail+1)); }
+    local fix_mode=0
+    [ "${1:-}" = "--fix" ] && fix_mode=1
+
+    local warn=0 fail=0
+    local -a _fix_cmds=()
+    _ok()      { echo "  ✓ $*"; }
+    _warn()    { echo "  ⚠ $*"; warn=$((warn+1)); }
+    _fail()    { echo "  ✗ $*"; fail=$((fail+1)); }
+    _fixable() { echo "  ⚠ $*"; warn=$((warn+1)); _fix_cmds+=("${@: -1}"); }
 
     # ── Dependencies ────────────────────────────────────────────────────────
     echo "Dependencies"
@@ -442,9 +447,27 @@ PY
         local acct_count; acct_count=$(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
         [ "$acct_count" -gt 0 ] \
             && _ok "$acct_count account snapshot(s) in $ACCOUNTS_DIR" \
-            || _warn "no account snapshots — run: agykit account-save"
+            || _fixable "no account snapshots" "agykit account-save" "agykit account-save"
     else
-        _warn "accounts dir missing ($ACCOUNTS_DIR) — run: agykit account-save"
+        _fixable "accounts dir missing — no snapshots yet" "agykit account-save" "agykit account-save"
+    fi
+
+    # Statusline hook check
+    if [ -f "$AGY_SETTINGS" ]; then
+        local sl_cmd
+        sl_cmd=$(python3 -c "
+import json
+d = json.load(open('$AGY_SETTINGS'))
+sl = d.get('statusLine', d.get('statusline', {}))
+print(sl.get('command',''))
+" 2>/dev/null || echo "")
+        if echo "$sl_cmd" | grep -qi "statusline"; then
+            _ok "statusline hook: $(basename "$sl_cmd")"
+        else
+            _warn "statusline hook not configured in settings.json"
+            echo "    → add to $AGY_SETTINGS:"
+            echo '      "statusLine": {"type":"command","command":"/PATH/to/statusline.sh"}'
+        fi
     fi
     echo
 
@@ -482,7 +505,7 @@ print(int((time.time() - d.get('_ts', 0)) / 60))
 " 2>/dev/null || echo "?")
         _ok "quota-cache.json (${age_min}min old)"
     else
-        _warn "quota-cache.json missing — run: agykit quota  to populate"
+        _fixable "quota-cache.json missing" "agykit quota" "agykit quota"
     fi
     echo
 
@@ -515,15 +538,18 @@ print(int((time.time() - d.get('_ts', 0)) / 60))
             _warn "AGYKIT_SYSTEM not set — no system context injected into prompts"
         fi
 
-        # Check --add-dir targets exist
-        local adddir_ok=1
+        # Check --add-dir targets exist + $PWD anti-pattern
+        local adddir_ok=1 prev_t="" full_pwd; full_pwd=$(pwd)
         for token in $AGY_FLAGS; do
-            if [[ "$token" != "--add-dir" && "$prev_token" == "--add-dir" ]]; then
-                local expanded; expanded=$(eval echo "$token")
-                [ -d "$expanded" ] \
-                    || { _fail "--add-dir target missing: $expanded  (fix AGYKIT_FLAGS)"; adddir_ok=0; }
+            if [ "$prev_t" = "--add-dir" ]; then
+                local expanded; expanded=$(eval echo "$token" 2>/dev/null || echo "$token")
+                if [ ! -d "$expanded" ]; then
+                    _fail "--add-dir target missing: $expanded  (fix AGYKIT_FLAGS)"; adddir_ok=0
+                elif [ "$expanded" = "$full_pwd" ] && [ -d "$full_pwd/src" ]; then
+                    _warn "--add-dir \$PWD loads entire project — use --add-dir \$PWD/src to reduce tokens"
+                fi
             fi
-            prev_token="$token"
+            prev_t="$token"
         done
         [ "$adddir_ok" -eq 1 ] && [ -n "$(echo "$AGY_FLAGS" | grep -o '\-\-add-dir' || true)" ] \
             && _ok "AGYKIT_FLAGS: --add-dir target(s) exist"
@@ -532,12 +558,27 @@ print(int((time.time() - d.get('_ts', 0)) / 60))
     fi
     echo
 
-    # ── Summary ──────────────────────────────────────────────────────────────
+    # ── Summary + --fix ──────────────────────────────────────────────────────
     if [ "$fail" -gt 0 ]; then
         echo "  $fail critical issue(s) — fix above before using agykit"
+        [ "$fix_mode" -eq 0 ] && echo "  Tip: run 'agykit doctor --fix' to auto-fix warnings"
         return 1
     elif [ "$warn" -gt 0 ]; then
         echo "  $warn warning(s) — agykit functional, some features may be limited"
+        if [ "$fix_mode" -eq 1 ] && [ "${#_fix_cmds[@]}" -gt 0 ]; then
+            echo
+            echo "Applying fixes:"
+            for fcmd in "${_fix_cmds[@]}"; do
+                printf "  → %s ... " "$fcmd"
+                if eval "$fcmd" >/dev/null 2>&1; then
+                    echo "✓"
+                else
+                    echo "✗ (run manually)"
+                fi
+            done
+        else
+            [ "${#_fix_cmds[@]}" -gt 0 ] && echo "  Tip: run 'agykit doctor --fix' to auto-fix ${#_fix_cmds[@]} warning(s)"
+        fi
     else
         echo "  All checks passed."
     fi
