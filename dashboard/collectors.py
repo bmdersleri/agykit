@@ -2,6 +2,7 @@ import os
 import json
 import glob
 import datetime
+import re
 
 def _apply_range(labels: list[str], range_key: str) -> list[str]:
     if not labels:
@@ -221,3 +222,101 @@ def agy_series(range_key: str = "all", *, brain_dir: str | None = None) -> dict:
         "warning": warning,
         "skipped": skipped
     }
+
+_LOG_DIR_DEFAULT = "~/.gemini/antigravity-cli/log"
+_LOG_FILE_RE = re.compile(r'cli-(\d{8})_(\d{6})\.log$')
+_LINE_RE = re.compile(r'^[IWEF](\d{2})(\d{2}) (\d{2}:\d{2}:\d{2})\.\d+')
+_RESET_RE = re.compile(r'Resets in (?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?')
+_EMAIL_RE = re.compile(r'email=([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})')
+
+
+def agy_quota_status(*, log_dir: str | None = None) -> dict:
+    """Return per-account quota status parsed from agy CLI logs.
+
+    Returns:
+        {"accounts": [{"email", "status", "last_exhausted_at", "resets_at",
+                       "resets_in_seconds"}], "warning": str|None}
+    status: "available" | "exhausted"
+    resets_in_seconds: seconds until reset (0 if already reset / available)
+    """
+    base = os.path.expanduser(log_dir or _LOG_DIR_DEFAULT)
+    if not os.path.isdir(base):
+        return {"accounts": [], "warning": f"Log dir not found: {base}"}
+
+    logs = sorted(glob.glob(os.path.join(base, "cli-*.log")))
+    if not logs:
+        return {"accounts": [], "warning": "No agy CLI logs found"}
+
+    # email → latest 429 event: {logged_at, reset_abs}
+    best: dict[str, dict] = {}
+
+    for path in logs:
+        m = _LOG_FILE_RE.search(os.path.basename(path))
+        if not m:
+            continue
+        year = int(m.group(1)[:4])
+
+        email = None
+        try:
+            for line in open(path, errors="replace"):
+                em = _EMAIL_RE.search(line)
+                if em:
+                    email = em.group(1)
+
+                lm = _LINE_RE.match(line)
+                if not lm or not email:
+                    continue
+                month, day = int(lm.group(1)), int(lm.group(2))
+                h, mi, s = map(int, lm.group(3).split(":"))
+                try:
+                    log_ts = datetime.datetime(year, month, day, h, mi, s)
+                except ValueError:
+                    continue
+
+                rm = _RESET_RE.search(line)
+                if rm:
+                    hours = int(rm.group(1) or 0)
+                    mins  = int(rm.group(2) or 0)
+                    secs  = int(rm.group(3) or 0)
+                    delta = datetime.timedelta(hours=hours, minutes=mins, seconds=secs)
+                    reset_abs = log_ts + delta
+                    prev = best.get(email)
+                    if prev is None or log_ts > prev["logged_at"]:
+                        best[email] = {"logged_at": log_ts, "reset_abs": reset_abs}
+        except Exception:
+            continue
+
+    now = datetime.datetime.now()
+    accounts = []
+    for email, v in sorted(best.items()):
+        remaining = (v["reset_abs"] - now).total_seconds()
+        if remaining > 0:
+            status = "exhausted"
+            resets_in = int(remaining)
+        else:
+            status = "available"
+            resets_in = 0
+        accounts.append({
+            "email": email,
+            "status": status,
+            "last_exhausted_at": v["logged_at"].strftime("%Y-%m-%d %H:%M"),
+            "resets_at": v["reset_abs"].strftime("%Y-%m-%d %H:%M"),
+            "resets_in_seconds": resets_in,
+        })
+
+    # accounts present in ~/.gemini/accounts/ but never seen exhausted → available
+    accounts_dir = os.path.expanduser("~/.gemini/accounts")
+    known_emails = {a["email"] for a in accounts}
+    if os.path.isdir(accounts_dir):
+        for f in glob.glob(os.path.join(accounts_dir, "*.json")):
+            email = os.path.basename(f).replace(".json", "")
+            if email not in known_emails:
+                accounts.append({
+                    "email": email,
+                    "status": "available",
+                    "last_exhausted_at": None,
+                    "resets_at": None,
+                    "resets_in_seconds": 0,
+                })
+
+    return {"accounts": accounts, "warning": None}

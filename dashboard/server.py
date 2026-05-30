@@ -45,6 +45,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.serve_index()
         elif path == "/api/data":
             self.serve_api(parsed.query)
+        elif path == "/api/quota":
+            self.serve_quota()
         elif path == "/events":
             self.serve_events()
         else:
@@ -139,6 +141,20 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         except Exception:
             return
+
+    def serve_quota(self):
+        log_dir = os.environ.get("AGYKIT_DASH_LOG_DIR")
+        try:
+            data = collectors.agy_quota_status(log_dir=log_dir)
+        except Exception as e:
+            self.send_json_error(f"Quota collector error: {e}", 500)
+            return
+        body = json.dumps(data).encode("utf-8")
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
 
     def send_json_error(self, message, status_code):
         body = json.dumps({"error": message}).encode("utf-8")
