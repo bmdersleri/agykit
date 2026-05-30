@@ -302,6 +302,80 @@ cmd_do_escalate() {
     echo "==> FAILED — all models exhausted"; restore_model; return 1
 }
 
+cmd_init() {
+    echo "═══ agykit init — project setup ═══"
+    if [ -f ".agykit.conf" ]; then
+        echo ".agykit.conf already exists in $(pwd). Delete it first to reinitialize."; exit 1
+    fi
+    local project_name; project_name=$(basename "$PWD")
+    echo "Project: $project_name  ($(pwd))"; echo
+
+    # Auto-detect defaults
+    local verify_default="" src_default="\$PWD"
+    [ -d "src" ] && src_default="\$PWD/src"
+    if   [ -f "pyproject.toml" ] || [ -f "setup.py" ] || [ -f "requirements.txt" ]; then
+        verify_default="python3 -m pytest -q"
+    elif [ -f "package.json" ]; then
+        verify_default="npm test"
+    elif [ -f "Cargo.toml" ]; then
+        verify_default="cargo test"; src_default="\$PWD/src"
+    elif [ -f "go.mod" ]; then
+        verify_default="go test ./..."; src_default="\$PWD"
+    elif [ -f "justfile" ] || [ -f "Justfile" ]; then
+        verify_default="just test"
+    fi
+
+    printf "Verify command [%s]: " "$verify_default"; read -r v_in
+    local verify="${v_in:-$verify_default}"
+    printf "Source dir for --add-dir [%s]: " "$src_default"; read -r s_in
+    local src_dir="${s_in:-$src_default}"
+    printf "Terse level 0/lite/full/ultra [ultra]: "; read -r t_in
+    local terse="${t_in:-ultra}"
+
+    # Write .agykit.conf
+    cat > .agykit.conf <<CONF
+# agykit config — $project_name
+AGYKIT_VERIFY="${verify}"
+AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
+AGYKIT_FLAGS="--add-dir ${src_dir} --dangerously-skip-permissions"
+AGYKIT_TIMEOUT="15m"
+AGYKIT_TERSE="${terse}"
+CONF
+    echo "  ✓ .agykit.conf"
+
+    # Add to .gitignore if git repo
+    if git rev-parse --git-dir >/dev/null 2>&1; then
+        if ! grep -qF ".agykit.conf" .gitignore 2>/dev/null; then
+            echo ".agykit.conf" >> .gitignore
+            echo "  ✓ .gitignore — added .agykit.conf"
+        fi
+    fi
+
+    # CLAUDE_AGY_SYSTEM.md scaffold
+    if [ ! -f "CLAUDE_AGY_SYSTEM.md" ]; then
+        cat > CLAUDE_AGY_SYSTEM.md <<SYS
+# $project_name — Project Context
+
+<describe what this project does in 2-3 sentences>
+
+## Hard constraints
+- <language/framework version>
+- <dependency constraints>
+
+## Delegation rules (when invoked via agykit do-escalate)
+- Follow the given plan exactly. No scope creep.
+- Never delete or weaken tests.
+- Never run git commands. Leave changes in working tree.
+- Only edit: <list the files agy is allowed to touch>
+SYS
+        echo "  ✓ CLAUDE_AGY_SYSTEM.md (edit to describe your project)"
+    else
+        echo "  ✓ CLAUDE_AGY_SYSTEM.md already exists"
+    fi
+
+    echo; echo "Done. Edit CLAUDE_AGY_SYSTEM.md, then run: agykit doctor"
+}
+
 cmd_dash() {
     # Resolve symlink (agykit is usually symlinked into PATH) to find the repo.
     local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
@@ -487,6 +561,8 @@ agykit — portable Antigravity (agy) CLI manager
   agykit quota --json             Machine-readable JSON quota output
   agykit quota --status           One-line summary for scripts/statusline
   agykit doctor                  Check installation and system file dependencies
+  agykit doctor --fix            Auto-fix resolvable issues
+  agykit init                    Interactive project setup (.agykit.conf + system context)
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
@@ -507,7 +583,8 @@ case "${1:-}" in
     do-escalate)   cmd_do_escalate "${2:-}" ;;
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
-    doctor)        cmd_doctor ;;
+    doctor)        cmd_doctor "${2:-}" ;;
+    init)          cmd_init ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;
     ""|-h|--help|help) usage ;;
     *)             echo "Unknown command: $1"; usage; exit 1 ;;
