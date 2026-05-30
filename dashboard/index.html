@@ -1347,6 +1347,21 @@
                     options: {
                         responsive: true,
                         maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false },
+                            tooltip: {
+                                callbacks: {
+                                    title: (items) => items[0]?.label || '',
+                                    label: (item) => {
+                                        const name = item.dataset.label
+                                            .replace(/^@cf\//,'').replace(/^claude-/,'')
+                                            .replace(/^MiniMaxAI\//,'').slice(0, 28);
+                                        const val = item.raw >= 1000 ? Math.round(item.raw/1000)+'k' : item.raw;
+                                        return ` ${name}: ${val}`;
+                                    }
+                                }
+                            }
+                        },
                         scales: {
                             x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text } },
                             y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text } }
@@ -1778,6 +1793,24 @@
 
         // ── Son agy Oturumu Panel ──
         const lastSessionBody = document.getElementById('lastSessionBody');
+
+        function fmtSec(sec) {
+            if (!sec || sec <= 0) return '0s';
+            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+            if (h > 0) return `${h}h ${m}m`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+        }
+
+        function fmtReset(sec) {
+            if (!sec || sec <= 0) return '—';
+            const days = Math.floor(sec / 86400);
+            const hours = Math.floor((sec % 86400) / 3600);
+            const mins = Math.floor((sec % 3600) / 60);
+            if (days > 0)  return `${days}g ${hours}sa`;
+            if (hours > 0) return `${hours}sa ${mins}dk`;
+            return `${mins}dk`;
+        }
 
         function fmtDur(sec) {
             if (!sec) return '—';
