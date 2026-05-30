@@ -196,18 +196,42 @@
         /* ── Quota Panel ── */
         .quota-section { margin-bottom: 2rem; }
         .section-title { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem; }
-        .quota-grid { display: flex; flex-wrap: wrap; gap: 1rem; }
-        .qcard { flex: 1 1 200px; min-width: 180px; background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .5rem; padding: 1rem 1.25rem; display: flex; flex-direction: column; gap: .35rem; }
-        .qcard-ok  { border-color: #166534; }
-        .qcard-exhausted { border-color: #7f1d1d; }
-        .qbadge { font-size: .7rem; font-weight: 700; letter-spacing: .05em; padding: .15rem .5rem; border-radius: 99px; display: inline-block; width: fit-content; }
-        .qgood { background: #14532d; color: #4ade80; }
-        .qbad  { background: #7f1d1d; color: #fca5a5; }
-        .qemail { font-size: .9rem; }
+        .quota-grid { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+        .qcard {
+            flex: 1 1 220px; min-width: 200px;
+            background: var(--card-bg); border: 1px solid var(--border-color);
+            border-radius: .75rem; padding: 1.25rem 1.25rem 1rem;
+            display: flex; flex-direction: column; align-items: center; gap: .6rem;
+        }
+        .qcard-ok       { border-color: #166534; }
+        .qcard-exhausted{ border-color: #7f1d1d; }
+        /* gauge */
+        .qgauge { position: relative; width: 110px; height: 110px; }
+        .qgauge svg { transform: rotate(-90deg); }
+        .qgauge-track  { fill: none; stroke: #1e3a5f; stroke-width: 10; }
+        .qgauge-fill   { fill: none; stroke-width: 10; stroke-linecap: round;
+                         transition: stroke-dashoffset .8s ease; }
+        .qgauge-ok     { stroke: #4ade80; }
+        .qgauge-warn   { stroke: #fb923c; }
+        .qgauge-bad    { stroke: #f87171; }
+        .qgauge-center { position: absolute; inset: 0; display: flex; flex-direction: column;
+                         align-items: center; justify-content: center; }
+        .qpct   { font-size: 1.3rem; font-weight: 700; line-height: 1; }
+        .qplbl  { font-size: .6rem; color: var(--text-muted); letter-spacing: .04em; }
+        /* text bits */
+        .qbadge { font-size: .65rem; font-weight: 700; letter-spacing: .05em;
+                  padding: .2rem .6rem; border-radius: 99px; }
+        .qgood  { background: #14532d; color: #4ade80; }
+        .qbad   { background: #7f1d1d; color: #fca5a5; }
+        .qemail { font-size: .88rem; text-align: center; }
         .qemail b { color: var(--text-main); }
-        .qreset { font-size: .8rem; color: var(--text-muted); }
-        .qcd { color: #fb923c; font-weight: 600; }
-        .qat { font-size: .75rem; color: #475569; }
+        .qstats { display: flex; gap: 1rem; margin-top: .2rem; }
+        .qstat  { display: flex; flex-direction: column; align-items: center; }
+        .qstat-val { font-size: 1rem; font-weight: 600; color: var(--text-main); }
+        .qstat-lbl { font-size: .65rem; color: var(--text-muted); }
+        .qreset { font-size: .78rem; color: var(--text-muted); text-align: center; }
+        .qcd    { color: #fb923c; font-weight: 600; }
+        .qat    { font-size: .7rem; color: #475569; text-align: center; }
     </style>
 </head>
 <body>
@@ -515,88 +539,146 @@
         sourceSelect.addEventListener('change', loadData);
         rangeSelect.addEventListener('change', loadData);
 
-        // SSE connection
-        function connectSSE() {
-            const eventSource = new EventSource('/events');
-
-            eventSource.onmessage = function(event) {
-                if (event.data === 'refresh') {
-                    // Flash live dot
-                    liveDot.classList.remove('flash');
-                    void liveDot.offsetWidth; // trigger reflow
-                    liveDot.classList.add('flash');
-
-                    loadData();
-                }
-            };
-
-            eventSource.onerror = function() {
-                // If it loses connection, retry after 5s
-                eventSource.close();
-                setTimeout(connectSSE, 5000);
-            };
-        }
-
         // ── Quota Panel ──────────────────────────────────────────────────
         const quotaGrid = document.getElementById('quotaGrid');
-        const countdowns = {};
+        const countdowns = {};   // cdId → {el, targetEpoch, windowSecs}
+        let _gaugeEls = {};      // cdId → svgCircle el for live gauge update
 
-        function fmtSeconds(sec) {
-            if (sec <= 0) return 'Available now';
-            const h = Math.floor(sec / 3600);
-            const m = Math.floor((sec % 3600) / 60);
-            const s = sec % 60;
+        const R = 45, CIRC = 2 * Math.PI * R;
+
+        function fmtSec(sec) {
+            if (sec <= 0) return '0s';
+            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
             if (h > 0) return `${h}h ${m}m`;
             if (m > 0) return `${m}m ${s}s`;
             return `${s}s`;
+        }
+
+        function gaugeOffset(frac) {
+            // frac 0→full track (all remaining), 1→empty track (all elapsed)
+            return CIRC * (1 - Math.max(0, Math.min(1, frac)));
         }
 
         setInterval(() => {
             const now = Date.now() / 1000;
             for (const [id, ct] of Object.entries(countdowns)) {
                 const rem = Math.max(0, Math.round(ct.targetEpoch - now));
-                ct.el.textContent = fmtSeconds(rem);
+                if (ct.el) ct.el.textContent = rem > 0 ? fmtSec(rem) : 'Now';
+                // live gauge arc
+                const fill = _gaugeEls[id];
+                if (fill && ct.windowSecs > 0) {
+                    const frac = rem / ct.windowSecs;
+                    fill.style.strokeDashoffset = gaugeOffset(frac);
+                    fill.className.baseVal = fill.className.baseVal.replace(/qgauge-(ok|warn|bad)/,
+                        frac > 0.4 ? 'qgauge-ok' : frac > 0.15 ? 'qgauge-warn' : 'qgauge-bad');
+                }
             }
         }, 1000);
+
+        function makeSvgGauge(frac, colorClass) {
+            const offset = gaugeOffset(frac);
+            return `<svg width="110" height="110" viewBox="0 0 110 110">
+              <circle class="qgauge-track" cx="55" cy="55" r="${R}"
+                      stroke-dasharray="${CIRC}" stroke-dashoffset="0"/>
+              <circle class="qgauge-fill ${colorClass}" cx="55" cy="55" r="${R}"
+                      stroke-dasharray="${CIRC}" stroke-dashoffset="${offset}"
+                      style="transition:stroke-dashoffset .8s ease"/>
+            </svg>`;
+        }
 
         function loadQuota() {
             fetch('/api/quota').then(r => r.json()).then(data => {
                 quotaGrid.innerHTML = '';
                 for (const k of Object.keys(countdowns)) delete countdowns[k];
+                _gaugeEls = {};
+
                 if (!data.accounts || data.accounts.length === 0) {
                     quotaGrid.innerHTML = '<p style="color:#888">No account data.</p>'; return;
                 }
+                const win = data.quota_window_seconds || 14400;
                 const nowEpoch = Date.now() / 1000;
+
                 data.accounts.forEach((acct, i) => {
                     const exhausted = acct.status === 'exhausted';
                     const card = document.createElement('div');
                     card.className = 'qcard ' + (exhausted ? 'qcard-exhausted' : 'qcard-ok');
+
                     const handle = acct.email.split('@')[0];
                     const domain = '@' + (acct.email.split('@')[1] || '');
-                    let resetHtml = '';
+
+                    // Gauge: remaining fraction (1 = full = all time left, 0 = nothing left)
+                    let frac, colorClass, pctLabel, pctSublabel;
                     if (exhausted && acct.resets_in_seconds > 0) {
-                        const cdId = `cd${i}`;
-                        const targetEpoch = nowEpoch + acct.resets_in_seconds;
-                        resetHtml = `<div class="qreset">Resets in <span id="${cdId}" class="qcd">${fmtSeconds(acct.resets_in_seconds)}</span></div><div class="qat">at ${acct.resets_at}</div>`;
-                        setTimeout(() => { const el=document.getElementById(cdId); if(el) countdowns[cdId]={el,targetEpoch}; }, 0);
-                    } else if (acct.last_exhausted_at) {
-                        resetHtml = `<div class="qreset">Last hit: ${acct.last_exhausted_at}</div>`;
+                        frac = acct.resets_in_seconds / win;
+                        colorClass = frac > 0.4 ? 'qgauge-ok' : frac > 0.15 ? 'qgauge-warn' : 'qgauge-bad';
+                        pctLabel = Math.round(frac * 100) + '%';
+                        pctSublabel = 'remaining';
+                    } else if (exhausted) {
+                        frac = 0; colorClass = 'qgauge-ok';
+                        pctLabel = '~100%'; pctSublabel = 'restored';
                     } else {
-                        resetHtml = `<div class="qreset">Never exhausted</div>`;
+                        frac = 1; colorClass = 'qgauge-ok';
+                        pctLabel = '✓'; pctSublabel = 'available';
                     }
-                    const badge = exhausted ? '<span class="qbadge qbad">EXHAUSTED</span>' : '<span class="qbadge qgood">AVAILABLE</span>';
-                    card.innerHTML = `${badge}<div class="qemail"><b>${handle}</b>${domain}</div>${resetHtml}`;
+
+                    const gaugeSvg = makeSvgGauge(frac, colorClass);
+                    const cdId = `cd${i}`;
+                    const badge = exhausted
+                        ? '<span class="qbadge qbad">EXHAUSTED</span>'
+                        : '<span class="qbadge qgood">AVAILABLE</span>';
+
+                    let cdHtml = '', atHtml = '';
+                    if (exhausted && acct.resets_in_seconds > 0) {
+                        const targetEpoch = nowEpoch + acct.resets_in_seconds;
+                        cdHtml = `<div class="qreset">Resets in <span id="${cdId}" class="qcd">${fmtSec(acct.resets_in_seconds)}</span></div>`;
+                        atHtml = `<div class="qat">at ${acct.resets_at}</div>`;
+                        setTimeout(() => {
+                            const el = document.getElementById(cdId);
+                            const fill = card.querySelector('.qgauge-fill');
+                            if (el) countdowns[cdId] = { el, targetEpoch, windowSecs: win };
+                            if (fill) _gaugeEls[cdId] = fill;
+                        }, 0);
+                    } else if (acct.last_exhausted_at) {
+                        cdHtml = `<div class="qreset">Last hit: ${acct.last_exhausted_at}</div>`;
+                    } else {
+                        cdHtml = `<div class="qreset">Never exhausted</div>`;
+                    }
+
+                    card.innerHTML = `
+                        ${badge}
+                        <div class="qgauge">
+                            ${gaugeSvg}
+                            <div class="qgauge-center">
+                                <span class="qpct" style="color:${exhausted && frac<0.15?'#f87171':exhausted&&frac<0.4?'#fb923c':'#4ade80'}">${pctLabel}</span>
+                                <span class="qplbl">${pctSublabel}</span>
+                            </div>
+                        </div>
+                        <div class="qemail"><b>${handle}</b>${domain}</div>
+                        <div class="qstats">
+                            <div class="qstat"><span class="qstat-val">${acct.session_count}</span><span class="qstat-lbl">sessions</span></div>
+                            <div class="qstat"><span class="qstat-val">${acct.exhaustion_count}</span><span class="qstat-lbl">429s</span></div>
+                        </div>
+                        ${cdHtml}${atHtml}
+                    `;
                     quotaGrid.appendChild(card);
                 });
-                if (data.warning) { const w=document.createElement('p'); w.style.color='#f90'; w.textContent=data.warning; quotaGrid.appendChild(w); }
-            }).catch(() => { quotaGrid.innerHTML = '<p style="color:#f44">Failed to load quota.</p>'; });
+
+                if (data.warning) {
+                    const w = document.createElement('p');
+                    w.style.cssText = 'color:#f90;font-size:.8rem;margin-top:.5rem';
+                    w.textContent = '⚠ ' + data.warning;
+                    quotaGrid.appendChild(w);
+                }
+            }).catch(() => {
+                quotaGrid.innerHTML = '<p style="color:#f44">Failed to load quota.</p>';
+            });
         }
 
         // Initial Load
         loadData();
         loadQuota();
 
-        // Override SSE to also refresh quota
+        // SSE — refresh both charts and quota
         function connectSSE() {
             const es = new EventSource('/events');
             es.onmessage = function(ev) {

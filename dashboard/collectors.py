@@ -228,27 +228,38 @@ _LOG_FILE_RE = re.compile(r'cli-(\d{8})_(\d{6})\.log$')
 _LINE_RE = re.compile(r'^[IWEF](\d{2})(\d{2}) (\d{2}:\d{2}:\d{2})\.\d+')
 _RESET_RE = re.compile(r'Resets in (?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?')
 _EMAIL_RE = re.compile(r'email=([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})')
+# Quota window: estimated from the maximum "Resets in" duration observed historically (~4h).
+# Used only to render the gauge arc; not a hard API-provided value.
+_QUOTA_WINDOW_SECONDS = 4 * 3600
 
 
 def agy_quota_status(*, log_dir: str | None = None) -> dict:
     """Return per-account quota status parsed from agy CLI logs.
 
     Returns:
-        {"accounts": [{"email", "status", "last_exhausted_at", "resets_at",
-                       "resets_in_seconds"}], "warning": str|None}
-    status: "available" | "exhausted"
-    resets_in_seconds: seconds until reset (0 if already reset / available)
+        {"accounts": [...], "quota_window_seconds": int, "warning": str|None}
+    Each account:
+        email, status ("available"|"exhausted"),
+        last_exhausted_at (str|None), resets_at (str|None),
+        resets_in_seconds (int),   # seconds until reset; 0 when available
+        elapsed_seconds (int),     # seconds since last exhaustion start; 0 when available
+        session_count (int),       # total log-file sessions attributed to this account
+        exhaustion_count (int),    # total 429 hits attributed to this account
     """
     base = os.path.expanduser(log_dir or _LOG_DIR_DEFAULT)
     if not os.path.isdir(base):
-        return {"accounts": [], "warning": f"Log dir not found: {base}"}
+        return {"accounts": [], "quota_window_seconds": _QUOTA_WINDOW_SECONDS,
+                "warning": f"Log dir not found: {base}"}
 
     logs = sorted(glob.glob(os.path.join(base, "cli-*.log")))
     if not logs:
-        return {"accounts": [], "warning": "No agy CLI logs found"}
+        return {"accounts": [], "quota_window_seconds": _QUOTA_WINDOW_SECONDS,
+                "warning": "No agy CLI logs found"}
 
-    # email → latest 429 event: {logged_at, reset_abs}
-    best: dict[str, dict] = {}
+    best: dict[str, dict] = {}        # email → latest 429 {logged_at, reset_abs, reset_dur_s}
+    sessions: dict[str, int] = {}     # email → session count
+    exhaustions: dict[str, int] = {}  # email → 429 hit count
+    max_reset_dur = _QUOTA_WINDOW_SECONDS
 
     for path in logs:
         m = _LOG_FILE_RE.search(os.path.basename(path))
@@ -257,11 +268,15 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
         year = int(m.group(1)[:4])
 
         email = None
+        session_counted = False
         try:
             for line in open(path, errors="replace"):
                 em = _EMAIL_RE.search(line)
                 if em:
                     email = em.group(1)
+                    if not session_counted:
+                        sessions[email] = sessions.get(email, 0) + 1
+                        session_counted = True
 
                 lm = _LINE_RE.match(line)
                 if not lm or not email:
@@ -274,37 +289,52 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
                     continue
 
                 rm = _RESET_RE.search(line)
-                if rm:
+                if rm and "RESOURCE_EXHAUSTED" in line:
+                    exhaustions[email] = exhaustions.get(email, 0) + 1
                     hours = int(rm.group(1) or 0)
                     mins  = int(rm.group(2) or 0)
                     secs  = int(rm.group(3) or 0)
-                    delta = datetime.timedelta(hours=hours, minutes=mins, seconds=secs)
+                    dur_s = hours * 3600 + mins * 60 + secs
+                    if dur_s > max_reset_dur:
+                        max_reset_dur = dur_s
+                    delta = datetime.timedelta(seconds=dur_s)
                     reset_abs = log_ts + delta
                     prev = best.get(email)
                     if prev is None or log_ts > prev["logged_at"]:
-                        best[email] = {"logged_at": log_ts, "reset_abs": reset_abs}
+                        best[email] = {
+                            "logged_at": log_ts,
+                            "reset_abs": reset_abs,
+                            "reset_dur_s": dur_s,
+                        }
         except Exception:
             continue
 
     now = datetime.datetime.now()
+    quota_window = max(max_reset_dur, _QUOTA_WINDOW_SECONDS)
     accounts = []
+
     for email, v in sorted(best.items()):
         remaining = (v["reset_abs"] - now).total_seconds()
         if remaining > 0:
             status = "exhausted"
             resets_in = int(remaining)
+            elapsed = max(0, int(quota_window - remaining))
         else:
             status = "available"
             resets_in = 0
+            elapsed = 0
         accounts.append({
             "email": email,
             "status": status,
             "last_exhausted_at": v["logged_at"].strftime("%Y-%m-%d %H:%M"),
             "resets_at": v["reset_abs"].strftime("%Y-%m-%d %H:%M"),
             "resets_in_seconds": resets_in,
+            "elapsed_seconds": elapsed,
+            "session_count": sessions.get(email, 0),
+            "exhaustion_count": exhaustions.get(email, 0),
         })
 
-    # accounts present in ~/.gemini/accounts/ but never seen exhausted → available
+    # Accounts in ~/.gemini/accounts/ never seen exhausted → available, stats only
     accounts_dir = os.path.expanduser("~/.gemini/accounts")
     known_emails = {a["email"] for a in accounts}
     if os.path.isdir(accounts_dir):
@@ -317,6 +347,9 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
                     "last_exhausted_at": None,
                     "resets_at": None,
                     "resets_in_seconds": 0,
+                    "elapsed_seconds": 0,
+                    "session_count": sessions.get(email, 0),
+                    "exhaustion_count": exhaustions.get(email, 0),
                 })
 
-    return {"accounts": accounts, "warning": None}
+    return {"accounts": accounts, "quota_window_seconds": quota_window, "warning": None}
