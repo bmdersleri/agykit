@@ -40,7 +40,7 @@ AGY_BIN="${AGY_BIN:-agy}"
 #   ultra — abbreviate prose (DB/auth/cfg/fn), arrows for causality (X→Y),
 #           one word when one word enough. Code/API/error strings never abbreviated.
 # Backward compat: "1" = full.
-TERSE="${AGYKIT_TERSE:-0}"
+TERSE="${AGYKIT_TERSE:-ultra}"
 [ "$TERSE" = "1" ] && TERSE="full"
 
 _terse_directive() {

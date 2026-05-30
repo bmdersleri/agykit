@@ -118,7 +118,7 @@ Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 - `AGYKIT_SYSTEM` — path to system-context file injected into prompts
 - `AGYKIT_FLAGS` — extra agy flags (default: `--dangerously-skip-permissions`)
 - `AGYKIT_TIMEOUT` — agy print timeout (default: `15m`)
-- `AGYKIT_TERSE` — terse output for `run`: `0`/`lite`/`full`/`ultra` (saves output tokens; default `0`)
+- `AGYKIT_TERSE` — terse output for `run`: `0`/`lite`/`full`/`ultra` (saves output tokens; default `ultra`)
 
 See `agykit.conf.example` for a full annotated template.
 
