@@ -218,6 +218,22 @@ print(f"==> Saved: {email} -> {p}")
 PY
 }
 
+cmd_account_remove() {
+    [ -z "${1:-}" ] && { echo "Usage: agykit account-remove <email>"; exit 1; }
+    local email="$1"
+    local snap="$ACCOUNTS_DIR/${email}.json"
+    [ ! -f "$snap" ] && { echo "No snapshot found for: $email"; exit 1; }
+    local active; active=$(_active_email)
+    if [ "$active" = "$email" ]; then
+        echo "Cannot remove active account. Switch to another account first:"
+        echo "  agykit switch <other-email>"
+        exit 1
+    fi
+    rm "$snap"
+    echo "Removed: $email"
+    cmd_account_list
+}
+
 cmd_account_add() {
     echo "════ agy launching — /logout, login with NEW account, then ctrl+d ════"
     "$AGY_BIN" </dev/tty || true
@@ -638,6 +654,7 @@ agykit — portable Antigravity (agy) CLI manager
   agykit account-list            List saved account snapshots
   agykit account-save            Snapshot current keyring login
   agykit account-add             Guided: launch agy → login → snapshot
+  agykit account-remove <email>  Remove a saved account snapshot
   agykit switch <email>          Switch to a saved account
   agykit run "prompt"            Quota-aware run (rotate accounts)
   agykit do-escalate "prompt"    Model ladder on verify fail (needs AGYKIT_VERIFY)
@@ -663,7 +680,8 @@ case "${1:-}" in
     model)         cmd_model "${2:-}" ;;
     account-list)  cmd_account_list ;;
     account-save)  cmd_account_save ;;
-    account-add)   cmd_account_add ;;
+    account-add)    cmd_account_add ;;
+    account-remove) cmd_account_remove "${2:-}" ;;
     switch)        cmd_account_switch "${2:-}" ;;
     run)           cmd_run "${2:-}" ;;
     do-escalate)   cmd_do_escalate "${2:-}" ;;
