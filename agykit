@@ -18,7 +18,8 @@ AGY_SETTINGS="$GEMINI_DIR/antigravity-cli/settings.json"
 ACCOUNTS_DIR="$GEMINI_DIR/accounts"
 KEYRING_SVC="gemini"
 KEYRING_USER="antigravity"
-QUOTA_RE='quota|RESOURCE_EXHAUSTED|rate.?limit|429|exceeded your current|too many request'
+# Match HTTP 429 status (word boundary) but NOT timestamps like 18:40:55.429005
+QUOTA_RE='quota reached|RESOURCE_EXHAUSTED|rate.?limit|code 429|HTTP.*429|error.*429|exceeded your current|too many request'
 LADDER=("Gemini 3.5 Flash (Medium)" "Gemini 3.1 Pro (High)" "Claude Opus 4.6 (Thinking)")
 
 # ── Load per-project config ──────────────────────────────────────────────────
