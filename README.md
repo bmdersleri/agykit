@@ -10,12 +10,13 @@ caveman-style terse output for token savings.
 git clone https://github.com/bmdersleri/agykit.git
 cd agykit && ./install.sh
 ```
-`install.sh` checks deps (agy, python3, git, jq, python-keyring) and symlinks to `~/.local/bin`.
+`install.sh` checks deps (agy, python3, git, jq, python-keyring), symlinks to `~/.local/bin`, then checks for an active agy OAuth token. If found, auto-saves an account snapshot. If not, prints numbered next steps.
+
 - Custom prefix: `AGYKIT_PREFIX=/usr/local/bin ./install.sh`
 - Uninstall: `./uninstall.sh` (keeps account snapshots + project config)
 - Manual: `ln -sf "$PWD/agykit" ~/.local/bin/agykit`
 
-Check: `agykit --version`
+After install, run `agykit doctor` to verify everything is set up correctly.
 
 ## Commands
 ```
@@ -32,6 +33,9 @@ agykit dash [--port N]         Open the usage dashboard (localhost:8787)
 agykit quota [--refresh]       Show per-model quota table (5min cache)
 agykit quota --json            Machine-readable JSON (pipe to scripts)
 agykit quota --status          One-line summary for statusline/scripts
+agykit init                    Interactive project setup in current directory
+agykit doctor                  Check installation and system file dependencies
+agykit doctor --fix            Auto-fix resolvable issues (quota cache, account snapshot)
 ```
 
 ## Dashboard (`agykit dash`)
@@ -58,74 +62,47 @@ The quota cache (`~/.gemini/antigravity-cli/quota-cache.json`) is also read by t
 
 ## Project Setup (new project)
 
-**Step 1 — Create `.agykit.conf` in your project root:**
+Run in your project directory:
 
 ```bash
-cp "$(dirname $(which agykit))/../agykit.conf.example" .agykit.conf
-# or:
-curl -sL https://raw.githubusercontent.com/bmdersleri/agykit/main/agykit.conf.example > .agykit.conf
+cd /your/project
+agykit init
 ```
 
-**Step 2 — Edit `.agykit.conf` for your project:**
+`agykit init` auto-detects your project type (Python/Node/Rust/Go/Justfile), prompts for verify command, source directory, and terse level, then creates:
+- `.agykit.conf` — project config (added to `.gitignore` automatically)
+- `CLAUDE_AGY_SYSTEM.md` — system context template (edit to describe your project)
+
+Then verify setup:
+
+```bash
+agykit doctor        # check all dependencies and data sources
+agykit doctor --fix  # auto-fix any resolvable warnings
+agykit run "hello"   # smoke test
+```
+
+### Manual config reference
+
+<details>
+<summary>`.agykit.conf` key settings</summary>
 
 ```bash
 # Verify command: runs after every code task (required for do-escalate)
 AGYKIT_VERIFY="pytest -q"          # Python
-# AGYKIT_VERIFY="npm test"         # Node
-# AGYKIT_VERIFY="cargo test"       # Rust
-# AGYKIT_VERIFY="just test"        # Justfile
+# AGYKIT_VERIFY="npm test"         # Node / AGYKIT_VERIFY="cargo test"  # Rust
 
-# System context file: injected into every agy prompt (optional but recommended)
+# System context file injected into every agy prompt
 AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
 
-# IMPORTANT: point to your source directory, NOT $PWD
-# $PWD loads everything including logs, lock files, build artifacts → wastes tokens
+# IMPORTANT: point to source directory, NOT $PWD
+# $PWD loads logs/lock files/build artifacts → wastes tokens
 AGYKIT_FLAGS="--add-dir $PWD/src --dangerously-skip-permissions"
-# Single-dir projects: --add-dir $PWD/mypackage
-# Monorepos:          --add-dir $PWD/src --add-dir $PWD/lib
+# Single-dir: --add-dir $PWD/mypackage   Monorepo: --add-dir $PWD/src --add-dir $PWD/lib
 
 AGYKIT_TIMEOUT="15m"
 AGYKIT_TERSE="ultra"   # token savings: lite | full | ultra
 ```
-
-**Step 3 — Create `CLAUDE_AGY_SYSTEM.md` (optional but recommended):**
-
-This file is injected as a system prompt prefix into every `agykit run`/`do-escalate` call.
-Include: what the project does, hard constraints, file layout, delegation rules for agy.
-
-```bash
-cat > CLAUDE_AGY_SYSTEM.md << 'EOF'
-# Project Context
-
-<what the project does, 2-3 sentences>
-
-## Hard constraints
-- <language/framework version>
-- <zero-X-dependency, stdlib-only, etc.>
-
-## Delegation rules (when invoked via agykit do-escalate)
-- Follow the given plan exactly. No scope creep.
-- Never delete or weaken tests.
-- Never run git commands. Leave changes in working tree.
-- Only edit: <list the files agy is allowed to touch>
-EOF
-```
-
-**Step 4 — Add `.agykit.conf` to `.gitignore`:**
-
-```bash
-echo ".agykit.conf" >> .gitignore
-```
-
-Config contains local paths (`$PWD`) and is user-specific — do not commit it.
-
-**Step 5 — Test:**
-
-```bash
-cd /your/project
-agykit whoami          # verify active account
-agykit run "hello"     # smoke test
-```
+</details>
 
 ---
 
