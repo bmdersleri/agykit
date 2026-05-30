@@ -670,3 +670,103 @@ def agy_active_account() -> dict:
         return {"email": email, "warning": None}
     except Exception as e:
         return {"email": None, "warning": str(e)[:80]}
+
+
+# Model ID → human display name (from agy UI)
+_MODEL_DISPLAY = {
+    "gemini-2.5-flash":      "Gemini 2.5 Flash",
+    "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
+    "gemini-2.5-pro":        "Gemini 2.5 Pro",
+    "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
+    "gemini-3.5-flash":      "Gemini 3.5 Flash",
+    "gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
+    "gemini-3.5-pro":        "Gemini 3.5 Pro",
+    "gemini-3.1-pro":        "Gemini 3.1 Pro",
+    "gemini-3.1-flash":      "Gemini 3.1 Flash",
+}
+_QUOTA_URL  = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
+_TOKEN_URL  = "https://oauth2.googleapis.com/token"
+_CLIENT_ID  = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+_CLIENT_SEC = "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"  # from agy binary
+
+
+def _refresh_access_token(refresh_token: str) -> str:
+    import urllib.request, urllib.parse
+    body = urllib.parse.urlencode({
+        "client_id":     _CLIENT_ID,
+        "client_secret": _CLIENT_SEC,
+        "refresh_token": refresh_token,
+        "grant_type":    "refresh_token",
+    }).encode()
+    req = urllib.request.Request(_TOKEN_URL,
+        headers={"Content-Type": "application/x-www-form-urlencoded"},
+        data=body, method="POST")
+    with urllib.request.urlopen(req, timeout=10) as r:
+        return json.loads(r.read())["access_token"]
+
+
+def agy_model_quota() -> dict:
+    """Fetch per-model quota for all saved agy accounts.
+
+    Calls /v1internal:retrieveUserQuota for each account using its refresh
+    token (no agykit switch needed, runs in parallel).
+
+    Returns:
+        {"accounts": [{"email", "models": [{"model_id", "display_name",
+          "remaining_fraction", "used_pct", "resets_at", "resets_in_seconds",
+          "token_type"}]}], "warning": str|None}
+    """
+    import urllib.request
+    accounts_dir = os.path.expanduser("~/.gemini/accounts")
+    if not os.path.isdir(accounts_dir):
+        return {"accounts": [], "warning": "No accounts dir found"}
+
+    acct_files = sorted(glob.glob(os.path.join(accounts_dir, "*.json")))
+    if not acct_files:
+        return {"accounts": [], "warning": "No saved accounts found"}
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    accounts = []
+    warnings = []
+
+    for f in acct_files:
+        email = os.path.basename(f).replace(".json", "")
+        try:
+            rt = json.load(open(f))["token"]["refresh_token"]
+            at = _refresh_access_token(rt)
+            req = urllib.request.Request(_QUOTA_URL,
+                headers={"Authorization": f"Bearer {at}",
+                         "Content-Type": "application/json"},
+                data=b"", method="POST")
+            with urllib.request.urlopen(req, timeout=10) as r:
+                d = json.loads(r.read())
+            models = []
+            for b in d.get("buckets", []):
+                mid   = b.get("modelId", "")
+                frac  = float(b.get("remainingFraction", 1))
+                rtime = b.get("resetTime")
+                resets_in = 0
+                resets_at_str = None
+                if rtime:
+                    try:
+                        rdt = datetime.datetime.fromisoformat(rtime)
+                        resets_at_str = rdt.astimezone().strftime("%Y-%m-%d %H:%M")
+                        resets_in = max(0, int((rdt - now).total_seconds()))
+                    except Exception:
+                        pass
+                models.append({
+                    "model_id":          mid,
+                    "display_name":      _MODEL_DISPLAY.get(mid, mid),
+                    "remaining_fraction": round(frac, 4),
+                    "used_pct":           round((1 - frac) * 100, 1),
+                    "pct_remaining":      round(frac * 100, 1),
+                    "resets_at":          resets_at_str,
+                    "resets_in_seconds":  resets_in,
+                    "token_type":         b.get("tokenType", ""),
+                })
+            accounts.append({"email": email, "models": models, "error": None})
+        except Exception as e:
+            accounts.append({"email": email, "models": [], "error": str(e)[:80]})
+            warnings.append(f"{email}: {e}")
+
+    return {"accounts": accounts, "warning": ("; ".join(warnings) if warnings else None)}

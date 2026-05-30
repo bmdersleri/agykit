@@ -194,6 +194,22 @@
         }
 
         /* ── agy Account Quota cards ── */
+        /* ── agy model quota panel ── */
+        .mq-section { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.1rem 1.25rem; margin-top: 1.25rem; }
+        .mq-header  { display: flex; justify-content: space-between; align-items: center; margin-bottom: .85rem; }
+        .mq-title   { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
+        .mq-acct    { margin-bottom: .85rem; }
+        .mq-acct-label { font-size: .75rem; font-weight: 600; color: #38bdf8; margin-bottom: .4rem; }
+        .mq-row     { display: flex; align-items: center; gap: .6rem; padding: .25rem 0; border-bottom: 1px solid #1e293b; }
+        .mq-row:last-child { border-bottom: none; }
+        .mq-name    { font-size: .77rem; color: var(--text-muted); flex: 0 0 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .mq-bar-wrap{ flex: 1; display: flex; align-items: center; gap: .45rem; }
+        .mq-bar     { flex: 1; height: 7px; background: #0f172a; border-radius: 4px; overflow: hidden; }
+        .mq-bar-fill{ height: 100%; border-radius: 4px; transition: width .5s ease; }
+        .mq-pct     { font-size: .73rem; font-weight: 600; width: 42px; text-align: right; }
+        .mq-reset   { font-size: .68rem; color: #475569; width: 75px; text-align: right; flex-shrink: 0; }
+        .mq-err     { font-size: .75rem; color: #f87171; }
+
         .quota-section { margin-bottom: 2rem; }
         .section-title { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem; }
         .quota-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
@@ -387,6 +403,14 @@
             </div>
             <div id="refreshAllStatus" style="display:none;font-size:.8rem;color:#94a3b8;margin-bottom:.75rem"></div>
             <div id="quotaGrid" class="quota-grid"></div>
+            <!-- Model quota breakdown -->
+            <div class="mq-section">
+                <div class="mq-header">
+                    <span class="mq-title">Model Bazlı Kota</span>
+                    <button class="cq-refresh-btn" onclick="loadModelQuota()">↻ Yenile</button>
+                </div>
+                <div id="modelQuotaBody"><p class="cq-unavail">Yükleniyor…</p></div>
+            </div>
         </section>
 
         <div id="chartsGrid" class="charts-grid">
@@ -983,10 +1007,55 @@
             });
         }
 
+        // ── agy Model Quota panel ───────────────────────────────────────
+        const modelQuotaBody = document.getElementById('modelQuotaBody');
+
+        function loadModelQuota() {
+            modelQuotaBody.innerHTML = '<p class="cq-unavail">Hesap kotaları çekiliyor…</p>';
+            fetch('/api/agy-model-quota').then(r => r.json()).then(data => {
+                if (!data.accounts || data.accounts.length === 0) {
+                    modelQuotaBody.innerHTML = `<p class="mq-err">${data.warning || 'Veri yok.'}</p>`;
+                    return;
+                }
+                let html = '';
+                data.accounts.forEach(acct => {
+                    html += `<div class="mq-acct">
+                        <div class="mq-acct-label">${acct.email}</div>`;
+                    if (acct.error) {
+                        html += `<p class="mq-err">✗ ${acct.error}</p></div>`;
+                        return;
+                    }
+                    if (!acct.models.length) {
+                        html += `<p style="color:#475569;font-size:.75rem">Model verisi yok</p></div>`;
+                        return;
+                    }
+                    acct.models.forEach(m => {
+                        const pct = m.pct_remaining;
+                        const col = pct >= 60 ? '#4ade80' : pct >= 25 ? '#fb923c' : '#f87171';
+                        const resetTxt = m.resets_in_seconds > 0 ? fmtReset(m.resets_in_seconds) : '✓';
+                        html += `<div class="mq-row">
+                            <span class="mq-name" title="${m.model_id}">${m.display_name}</span>
+                            <div class="mq-bar-wrap">
+                                <div class="mq-bar"><div class="mq-bar-fill" style="width:${pct}%;background:${col}"></div></div>
+                                <span class="mq-pct" style="color:${col}">${pct}%</span>
+                            </div>
+                            <span class="mq-reset">${resetTxt}</span>
+                        </div>`;
+                    });
+                    html += '</div>';
+                });
+                if (data.warning) html += `<p class="mq-err">⚠ ${data.warning}</p>`;
+                modelQuotaBody.innerHTML = html;
+            }).catch(e => {
+                modelQuotaBody.innerHTML = `<p class="mq-err">Yüklenemedi: ${e}</p>`;
+            });
+        }
+
         // Initial Load
         loadData();
         loadClaudeQuota();
         loadQuota();
+        loadModelQuota();
         loadStatusline();
         loadLastSession();
 
@@ -996,7 +1065,7 @@
             es.onmessage = function(ev) {
                 if (ev.data === 'refresh') {
                     liveDot.classList.remove('flash'); void liveDot.offsetWidth; liveDot.classList.add('flash');
-                    loadData(); loadClaudeQuota(); loadQuota(); loadStatusline(); loadLastSession();
+                    loadData(); loadClaudeQuota(); loadQuota(); loadModelQuota(); loadStatusline(); loadLastSession();
                 }
             };
             es.onerror = function() { es.close(); setTimeout(connectSSE, 5000); };

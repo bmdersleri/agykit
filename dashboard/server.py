@@ -66,6 +66,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.serve_json(collectors.agy_refresh_all_accounts())
         elif path == "/api/active-account":
             self.serve_json(collectors.agy_active_account())
+        elif path == "/api/agy-model-quota":
+            self.serve_json(collectors.agy_model_quota())
         elif path == "/events":
             self.serve_events()
         else:
