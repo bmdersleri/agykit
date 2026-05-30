@@ -764,7 +764,10 @@ def agy_model_quota() -> dict:
                     "resets_in_seconds":  resets_in,
                     "token_type":         b.get("tokenType", ""),
                 })
-            accounts.append({"email": email, "models": models, "error": None})
+            # Detect unlimited tier (all 100% = standard/GCP project tier)
+            all_full = all(m["remaining_fraction"] >= 1.0 for m in models)
+            tier_note = "standard-tier (unlimited)" if all_full and models else None
+            accounts.append({"email": email, "models": models, "error": None, "tier_note": tier_note})
         except Exception as e:
             accounts.append({"email": email, "models": [], "error": str(e)[:80]})
             warnings.append(f"{email}: {e}")

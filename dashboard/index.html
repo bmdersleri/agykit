@@ -406,7 +406,9 @@
             <!-- Model quota breakdown -->
             <div class="mq-section">
                 <div class="mq-header">
-                    <span class="mq-title">Model Bazlı Kota</span>
+                    <span class="mq-title">Model Bazlı Kota
+                        <span style="font-size:.62rem;color:#475569;font-weight:400;text-transform:none;margin-left:.5rem" title="Hesap GCP projesi üzerinden bağlandığı için standard-tier (unlimited) quota gösterilmektedir. Google AI Pro model limitleri için fetchAvailableModels gerektirir (aicode scope).">ⓘ standard-tier</span>
+                    </span>
                     <button class="cq-refresh-btn" onclick="loadModelQuota()">↻ Yenile</button>
                 </div>
                 <div id="modelQuotaBody"><p class="cq-unavail">Yükleniyor…</p></div>
@@ -1028,6 +1030,9 @@
                     if (!acct.models.length) {
                         html += `<p style="color:#475569;font-size:.75rem">Model verisi yok</p></div>`;
                         return;
+                    }
+                    if (acct.tier_note) {
+                        html += `<p style="color:#475569;font-size:.7rem;margin-bottom:.35rem">⚠ ${acct.tier_note} — Google AI Pro limitleri için <code>fetchAvailableModels</code> gerekli (aicode scope eksik)</p>`;
                     }
                     acct.models.forEach(m => {
                         const pct = m.pct_remaining;
