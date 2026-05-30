@@ -12,6 +12,7 @@
 set -euo pipefail
 
 AGYKIT_VERSION="1.0.0"
+_EMAIL_CACHE=""
 
 GEMINI_DIR="$HOME/.gemini"
 AGY_SETTINGS="$GEMINI_DIR/antigravity-cli/settings.json"
@@ -64,9 +65,10 @@ _terse_prefix() {
     [ -n "$d" ] && printf '%s\n\n' "$d"
 }
 
-# ── Email from keyring access_token via Google userinfo ──────────────────────
+# ── Email from keyring access_token via Google userinfo (cached per session) ──
 _active_email() {
-    python3 - <<'PY'
+    if [ -n "$_EMAIL_CACHE" ]; then echo "$_EMAIL_CACHE"; return; fi
+    _EMAIL_CACHE=$(python3 - <<'PY' 2>/dev/null
 import keyring, json, urllib.request
 v = keyring.get_password('gemini', 'antigravity')
 if not v: print(""); raise SystemExit
@@ -79,6 +81,8 @@ try:
 except Exception:
     print("(unknown)")
 PY
+)
+    echo "$_EMAIL_CACHE"
 }
 
 # ── Git safety: snapshot / normalize / rollback ──────────────────────────────
@@ -138,6 +142,28 @@ _rollback_to() {
 # agykit over git state.
 _git_lock_directive() {
     printf '%s\n\n' 'RULE: Edit files only. Do NOT run git commit, git reset, git rebase, git push, or git stash — agykit manages version control. Make changes directly in the working tree and stop.'
+}
+
+# ── Account quota sorting ────────────────────────────────────────────────────
+# Sort emails: available accounts first, exhausted last (reads agy log files).
+# Falls back to original order on any error. O(n log n) over log files, ~50ms.
+_accounts_sorted_by_quota() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    python3 - "$repo" "$@" <<'PY'
+import sys, os
+repo = sys.argv[1]; emails = sys.argv[2:]
+if not emails: sys.exit(0)
+if repo not in sys.path: sys.path.insert(0, repo)
+try:
+    from dashboard import collectors
+    status = {a['email']: a.get('status', 'available')
+              for a in collectors.agy_quota_status().get('accounts', [])}
+    emails.sort(key=lambda e: 0 if status.get(e, 'available') == 'available' else 1)
+except Exception:
+    pass
+print('\n'.join(emails))
+PY
 }
 
 # ── Commands ─────────────────────────────────────────────────────────────────
@@ -242,10 +268,12 @@ PY
 }
 
 # Run agy with quota-aware account rotation. Returns 0 on first success.
+# Accounts sorted by quota status: available first, exhausted last.
 cmd_run() {
     local prompt="$1"
-    mapfile -t accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
-    [ ${#accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
+    mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
+    [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
+    mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
     for a in "${accts[@]}"; do
         cmd_account_switch "$a" >/dev/null 2>&1 || continue
         echo "==> Trying account: $a"
@@ -264,12 +292,15 @@ cmd_do_escalate() {
     local prompt="$1"
     [ -z "$VERIFY_CMD" ] && { echo "AGYKIT_VERIFY not set — escalate needs a verify command"; exit 1; }
     local orig; orig=$(python3 -c "import json;print(json.load(open('$AGY_SETTINGS')).get('model',''))")
-    mapfile -t accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
-    [ ${#accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
+    mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
+    [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
+    mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
     restore_model() { cmd_model "$orig" >/dev/null 2>&1 || true; }
 
     local base=""; _in_git && base=$(git rev-parse -q --verify HEAD 2>/dev/null || echo "")
     _in_git || echo "==> ⚠ not a git repo — rollback safety disabled"
+
+    local verify_ctx=""   # error context from previous model's verify failure
 
     for model in "${LADDER[@]}"; do
         echo "════ MODEL: $model ════"
@@ -279,7 +310,7 @@ cmd_do_escalate() {
         for a in "${accts[@]}"; do
             cmd_account_switch "$a" >/dev/null 2>&1 || continue
             echo "==> $model @ $a"
-            "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
+            "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)${verify_ctx}TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
             grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; _rollback_to "$base" "$snap"; continue; }
             applied=1; break
         done
@@ -288,7 +319,7 @@ cmd_do_escalate() {
         # Undo any stray git writes agy made — agykit owns version control.
         _normalize_head "$base"
 
-        if eval "$VERIFY_CMD"; then
+        if eval "$VERIFY_CMD" >/tmp/agykit-verify.log 2>&1; then
             restore_model
             if _in_git && [ -n "$snap" ]; then
                 echo "==> agy changes (review before committing):"
@@ -296,6 +327,12 @@ cmd_do_escalate() {
             fi
             echo "==> SUCCESS with $model"; return 0
         else
+            local vout; vout=$(tail -30 /tmp/agykit-verify.log 2>/dev/null || echo "")
+            [ -n "$vout" ] && verify_ctx="Previous attempt with model '$model' failed verification. Error:
+${vout}
+
+Fix the above issues, then complete the original task:
+"
             echo "==> verify FAILED on $model — escalating"; _rollback_to "$base" "$snap"
         fi
     done
@@ -374,6 +411,13 @@ SYS
     fi
 
     echo; echo "Done. Edit CLAUDE_AGY_SYSTEM.md, then run: agykit doctor"
+}
+
+cmd_status() {
+    local model; model=$(python3 -c "import json; print(json.load(open('$AGY_SETTINGS')).get('model','?'))" 2>/dev/null || echo "?")
+    local email; email=$(_active_email)
+    local quota; quota=$(cmd_quota --status 2>/dev/null || echo "quota unknown")
+    echo "${email} | ${model} | ${quota}"
 }
 
 cmd_dash() {
@@ -604,6 +648,7 @@ agykit — portable Antigravity (agy) CLI manager
   agykit doctor                  Check installation and system file dependencies
   agykit doctor --fix            Auto-fix resolvable issues
   agykit init                    Interactive project setup (.agykit.conf + system context)
+  agykit status                  One-line: active account | model | quota summary
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
@@ -624,6 +669,7 @@ case "${1:-}" in
     do-escalate)   cmd_do_escalate "${2:-}" ;;
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
+    status)        cmd_status ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;
