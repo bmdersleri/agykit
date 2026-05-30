@@ -1,0 +1,14 @@
+{
+  "version": 3,
+  "lastComputedDate": "2026-05-29",
+  "dailyActivity": [
+    {"date": "2026-05-27", "messageCount": 100, "sessionCount": 3, "toolCallCount": 40},
+    {"date": "2026-05-28", "messageCount": 50,  "sessionCount": 2, "toolCallCount": 20},
+    {"date": "2026-05-29", "messageCount": 200, "sessionCount": 5, "toolCallCount": 80}
+  ],
+  "dailyModelTokens": [
+    {"date": "2026-05-27", "tokensByModel": {"claude-opus-4-8": 1000, "claude-haiku-4-5-20251001": 500}},
+    {"date": "2026-05-28", "tokensByModel": {"claude-opus-4-8": 800}},
+    {"date": "2026-05-29", "tokensByModel": {"claude-opus-4-8": 2000, "claude-haiku-4-5-20251001": 300}}
+  ]
+}

@@ -1,0 +1,895 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>agykit Quota & Usage Dashboard</title>
+    <!-- Include Inter font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js from CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --bg-color: #0f172a;
+            --card-bg: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --border-color: #334155;
+            --accent-color: #38bdf8;
+            --warning-bg: #7f1d1d;
+            --warning-text: #fca5a5;
+            --success-color: #4ade80;
+        }
+
+        * {
+            box-sizing: border-box;
+            margin: 0;
+            padding: 0;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            min-height: 100vh;
+            padding: 2rem;
+            line-height: 1.5;
+        }
+
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 2rem;
+            border-bottom: 1px solid var(--border-color);
+            padding-bottom: 1.5rem;
+        }
+
+        h1 {
+            font-size: 1.75rem;
+            font-weight: 700;
+            background: linear-gradient(to right, #38bdf8, #818cf8);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .controls {
+            display: flex;
+            align-items: center;
+            gap: 1rem;
+        }
+
+        select {
+            background-color: var(--card-bg);
+            color: var(--text-main);
+            border: 1px solid var(--border-color);
+            padding: 0.5rem 2rem 0.5rem 1rem;
+            border-radius: 0.375rem;
+            font-size: 0.875rem;
+            font-weight: 500;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.2s;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.75rem center;
+            background-size: 1rem;
+        }
+
+        select:focus {
+            border-color: var(--accent-color);
+        }
+
+        .status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.875rem;
+            color: var(--text-muted);
+            background-color: var(--card-bg);
+            padding: 0.5rem 1rem;
+            border-radius: 0.375rem;
+            border: 1px solid var(--border-color);
+        }
+
+        .live-dot {
+            width: 8px;
+            height: 8px;
+            background-color: var(--success-color);
+            border-radius: 50%;
+            display: inline-block;
+            box-shadow: 0 0 8px var(--success-color);
+        }
+
+        .live-dot.flash {
+            animation: pulse 0.5s ease-out;
+        }
+
+        @keyframes pulse {
+            0% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
+            }
+            70% {
+                transform: scale(1.5);
+                box-shadow: 0 0 0 10px rgba(74, 222, 128, 0);
+            }
+            100% {
+                transform: scale(1);
+                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
+            }
+        }
+
+        .warning-banner {
+            background-color: var(--warning-bg);
+            color: var(--warning-text);
+            border: 1px solid rgba(252, 165, 165, 0.2);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            margin-bottom: 2rem;
+            font-size: 0.875rem;
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .warning-banner svg {
+            flex-shrink: 0;
+            width: 1.25rem;
+            height: 1.25rem;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 4rem 2rem;
+            background-color: var(--card-bg);
+            border: 1px dashed var(--border-color);
+            border-radius: 0.75rem;
+            color: var(--text-muted);
+            margin-top: 2rem;
+        }
+
+        .charts-grid {
+            display: grid;
+            grid-template-columns: 1fr;
+            gap: 2rem;
+        }
+
+        @media (min-width: 1024px) {
+            .charts-grid {
+                grid-template-columns: 1fr 1fr;
+            }
+        }
+
+        .chart-card {
+            background-color: var(--card-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+        }
+
+        .chart-card h2 {
+            font-size: 1.125rem;
+            font-weight: 600;
+            margin-bottom: 1rem;
+            color: var(--text-main);
+        }
+
+        .chart-container {
+            position: relative;
+            height: 350px;
+            width: 100%;
+        }
+
+        /* ── Quota Panel ── */
+        .quota-section { margin-bottom: 2rem; }
+        .section-title { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem; }
+        .quota-grid { display: flex; flex-wrap: wrap; gap: 1.25rem; }
+        .qcard {
+            flex: 1 1 220px; min-width: 200px;
+            background: var(--card-bg); border: 1px solid var(--border-color);
+            border-radius: .75rem; padding: 1.25rem 1.25rem 1rem;
+            display: flex; flex-direction: column; align-items: center; gap: .6rem;
+        }
+        .qcard-ok       { border-color: #166534; }
+        .qcard-exhausted{ border-color: #7f1d1d; }
+        /* gauge */
+        .qgauge { position: relative; width: 110px; height: 110px; }
+        .qgauge svg { transform: rotate(-90deg); }
+        .qgauge-track  { fill: none; stroke: #1e3a5f; stroke-width: 10; }
+        .qgauge-fill   { fill: none; stroke-width: 10; stroke-linecap: round;
+                         transition: stroke-dashoffset .8s ease; }
+        .qgauge-ok     { stroke: #4ade80; }
+        .qgauge-warn   { stroke: #fb923c; }
+        .qgauge-bad    { stroke: #f87171; }
+        .qgauge-center { position: absolute; inset: 0; display: flex; flex-direction: column;
+                         align-items: center; justify-content: center; }
+        .qpct   { font-size: 1.3rem; font-weight: 700; line-height: 1; }
+        .qplbl  { font-size: .6rem; color: var(--text-muted); letter-spacing: .04em; }
+        /* text bits */
+        .qbadge { font-size: .65rem; font-weight: 700; letter-spacing: .05em;
+                  padding: .2rem .6rem; border-radius: 99px; }
+        .qgood  { background: #14532d; color: #4ade80; }
+        .qbad   { background: #7f1d1d; color: #fca5a5; }
+        .qemail { font-size: .88rem; text-align: center; }
+        .qemail b { color: var(--text-main); }
+        .qstats { display: flex; gap: 1rem; margin-top: .2rem; }
+        .qstat  { display: flex; flex-direction: column; align-items: center; }
+        .qstat-val { font-size: 1rem; font-weight: 600; color: var(--text-main); }
+        .qstat-lbl { font-size: .65rem; color: var(--text-muted); }
+        .qreset { font-size: .78rem; color: var(--text-muted); text-align: center; }
+        .qcd    { color: #fb923c; font-weight: 600; }
+        .qat    { font-size: .7rem; color: #475569; text-align: center; }
+
+        /* ── Claude Quota panel ── */
+        .cq-section { margin-bottom: 2rem; }
+        .cq-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; }
+        .cq-card h3 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        .cq-refresh-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: .8rem; padding: .2rem .5rem; border-radius: .25rem; }
+        .cq-refresh-btn:hover { color: var(--text-main); background: #1e293b; }
+        .cq-row { display: flex; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid #1e293b; font-size: .83rem; }
+        .cq-row:last-child { border-bottom: none; }
+        .cq-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+        .cq-name { flex: 0 0 170px; color: var(--text-muted); }
+        .cq-bar-wrap { flex: 1; display: flex; align-items: center; gap: .5rem; }
+        .cq-bar { flex: 1; height: 6px; background: #1e3a5f; border-radius: 3px; overflow: hidden; }
+        .cq-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+        .cq-util { font-size: .78rem; font-weight: 600; width: 46px; text-align: right; }
+        .cq-pct { font-size: .78rem; color: var(--text-muted); width: 50px; text-align: right; }
+        .cq-reset { font-size: .75rem; color: var(--text-muted); width: 90px; text-align: right; }
+        .cq-reset b { color: var(--text-main); font-weight: 500; }
+        .cq-unavail { color: #475569; font-size: .82rem; }
+        .cq-dot-red    { background: #ef4444; }
+        .cq-dot-yellow { background: #eab308; }
+        .cq-dot-green  { background: #22c55e; }
+        .cq-bar-red    { background: #ef4444; }
+        .cq-bar-yellow { background: #eab308; }
+        .cq-bar-green  { background: #22c55e; }
+
+        /* ── Statusline + Last Session panels ── */
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 2rem; }
+        @media (max-width: 700px) { .info-grid { grid-template-columns: 1fr; } }
+        .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; }
+        .info-card h3 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .85rem; }
+        .sl-row { display: flex; justify-content: space-between; align-items: center; padding: .3rem 0; border-bottom: 1px solid #1e293b; font-size: .82rem; }
+        .sl-row:last-child { border-bottom: none; }
+        .sl-key { color: var(--text-muted); }
+        .sl-val { color: var(--text-main); font-weight: 500; }
+        .sl-val.active { color: #4ade80; }
+        .sl-val.warn   { color: #fb923c; }
+        .sl-val.stale  { color: #64748b; font-style: italic; }
+        .sl-unavail { color: #475569; font-size: .82rem; }
+        .ctx-bar { width: 100%; height: 6px; background: #1e3a5f; border-radius: 3px; margin-top: 2px; overflow: hidden; }
+        .ctx-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <header>
+            <h1>
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                agykit dashboard
+            </h1>
+            <div class="controls">
+                <div class="status">
+                    <span class="live-dot" id="liveDot"></span>
+                    <span>Live Sync</span>
+                </div>
+                <select id="sourceSelect">
+                    <option value="claude">Claude Code</option>
+                    <option value="agy">agy (Antigravity)</option>
+                </select>
+                <select id="rangeSelect">
+                    <option value="7d">Last 7 Days</option>
+                    <option value="30d">Last 30 Days</option>
+                    <option value="all" selected>All Time</option>
+                </select>
+            </div>
+        </header>
+
+        <div id="warningBanner" class="warning-banner" style="display: none;">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+            </svg>
+            <span id="warningText"></span>
+        </div>
+
+        <div id="noDataContainer" class="no-data" style="display: none;">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 1rem; opacity: 0.5;">
+                <circle cx="12" cy="12" r="10"></circle>
+                <line x1="12" y1="8" x2="12" y2="12"></line>
+                <line x1="12" y1="16" x2="12.01" y2="16"></line>
+            </svg>
+            <p>No statistics found. Run some commands to populate logs!</p>
+        </div>
+
+        <!-- Claude Quota -->
+        <section class="cq-section">
+            <div class="cq-card">
+                <h3>Claude Code Kotası
+                    <button class="cq-refresh-btn" onclick="loadClaudeQuota()">↻ Yenile</button>
+                </h3>
+                <div id="claudeQuotaBody"><p class="cq-unavail">Yükleniyor…</p></div>
+            </div>
+        </section>
+
+        <!-- Statusline + Last Session -->
+        <div class="info-grid">
+            <div class="info-card" id="statuslineCard">
+                <h3>agy Canlı Durum <span id="slAge" style="font-size:.7rem;color:#475569;font-weight:400;text-transform:none"></span></h3>
+                <div id="statuslineBody"><p class="sl-unavail">Henüz snapshot yok — agy çalıştırınca burada görünür.</p></div>
+            </div>
+            <div class="info-card" id="lastSessionCard">
+                <h3>Son agy Oturumu</h3>
+                <div id="lastSessionBody"><p class="sl-unavail">Yükleniyor…</p></div>
+            </div>
+        </div>
+
+        <!-- Account Quota Status -->
+        <section class="quota-section">
+            <h2 class="section-title">agy Hesap Kotası</h2>
+            <div id="quotaGrid" class="quota-grid"></div>
+        </section>
+
+        <div id="chartsGrid" class="charts-grid">
+            <div class="chart-card">
+                <h2 id="mainChartTitle">Daily Usage</h2>
+                <div class="chart-container">
+                    <canvas id="mainChart"></canvas>
+                </div>
+            </div>
+            <div class="chart-card">
+                <h2 id="mixChartTitle">Model Breakdown</h2>
+                <div class="chart-container">
+                    <canvas id="mixChart"></canvas>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let mainChartInstance = null;
+        let mixChartInstance = null;
+
+        const sourceSelect = document.getElementById('sourceSelect');
+        const rangeSelect = document.getElementById('rangeSelect');
+        const warningBanner = document.getElementById('warningBanner');
+        const warningText = document.getElementById('warningText');
+        const noDataContainer = document.getElementById('noDataContainer');
+        const chartsGrid = document.getElementById('chartsGrid');
+        const liveDot = document.getElementById('liveDot');
+
+        const colors = [
+            'rgba(56, 189, 248, 1)',   // light blue
+            'rgba(244, 63, 94, 1)',    // rose
+            'rgba(16, 185, 129, 1)',   // emerald
+            'rgba(245, 158, 11, 1)',   // amber
+            'rgba(139, 92, 246, 1)',   // violet
+            'rgba(236, 72, 153, 1)',   // pink
+            'rgba(20, 184, 166, 1)',   // teal
+            'rgba(239, 68, 68, 1)',    // red
+        ];
+        const bgColors = [
+            'rgba(56, 189, 248, 0.2)',
+            'rgba(244, 63, 94, 0.2)',
+            'rgba(16, 185, 129, 0.2)',
+            'rgba(245, 158, 11, 0.2)',
+            'rgba(139, 92, 246, 0.2)',
+            'rgba(236, 72, 153, 0.2)',
+            'rgba(20, 184, 166, 0.2)',
+            'rgba(239, 68, 68, 0.2)',
+        ];
+
+        // Global Chart.js defaults
+        Chart.defaults.color = '#94a3b8';
+        Chart.defaults.borderColor = '#334155';
+
+        function showWarning(msg) {
+            if (msg) {
+                warningText.textContent = msg;
+                warningBanner.style.display = 'flex';
+            } else {
+                warningBanner.style.display = 'none';
+            }
+        }
+
+        async function loadData() {
+            const source = sourceSelect.value;
+            const range = rangeSelect.value;
+
+            try {
+                const response = await fetch(`/api/data?source=${source}&range=${range}`);
+                if (!response.ok) {
+                    const err = await response.json();
+                    throw new Error(err.error || 'Server error');
+                }
+                const data = await response.json();
+
+                showWarning(data.warning);
+
+                if (!data.labels || data.labels.length === 0) {
+                    noDataContainer.style.display = 'block';
+                    chartsGrid.style.display = 'none';
+                    return;
+                }
+
+                noDataContainer.style.display = 'none';
+                chartsGrid.style.display = 'grid';
+
+                renderCharts(source, data);
+            } catch (err) {
+                showWarning(`Failed to load data: ${err.message}`);
+                noDataContainer.style.display = 'block';
+                chartsGrid.style.display = 'none';
+            }
+        }
+
+        function renderCharts(source, data) {
+            const ctxMain = document.getElementById('mainChart').getContext('2d');
+            const ctxMix = document.getElementById('mixChart').getContext('2d');
+
+            if (mainChartInstance) mainChartInstance.destroy();
+            if (mixChartInstance) mixChartInstance.destroy();
+
+            if (source === 'claude') {
+                document.getElementById('mainChartTitle').textContent = 'Daily Token Usage';
+                document.getElementById('mixChartTitle').textContent = 'Daily Tokens by Model';
+
+                // Main line chart (total tokens)
+                mainChartInstance = new Chart(ctxMain, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [{
+                            label: 'Total Tokens',
+                            data: data.tokens_total,
+                            borderColor: 'rgba(56, 189, 248, 1)',
+                            backgroundColor: 'rgba(56, 189, 248, 0.1)',
+                            fill: true,
+                            tension: 0.3,
+                            borderWidth: 2
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        plugins: {
+                            legend: { display: false }
+                        },
+                        scales: {
+                            y: { beginAtZero: true }
+                        }
+                    }
+                });
+
+                // Stacked bar chart (tokens by model)
+                const mixDatasets = [];
+                let colorIdx = 0;
+                for (const [model, tokensList] of Object.entries(data.tokens_by_model)) {
+                    mixDatasets.push({
+                        label: model,
+                        data: tokensList,
+                        backgroundColor: bgColors[colorIdx % bgColors.length],
+                        borderColor: colors[colorIdx % colors.length],
+                        borderWidth: 1,
+                        stack: 'stack0'
+                    });
+                    colorIdx++;
+                }
+
+                mixChartInstance = new Chart(ctxMix, {
+                    type: 'bar',
+                    data: {
+                        labels: data.labels,
+                        datasets: mixDatasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { stacked: true },
+                            y: { stacked: true, beginAtZero: true }
+                        }
+                    }
+                });
+
+            } else {
+                // source === 'agy'
+                document.getElementById('mainChartTitle').textContent = 'Daily Activity (Sessions & Tools)';
+                document.getElementById('mixChartTitle').textContent = 'Daily Model Interactions';
+
+                // Main line chart (sessions and tool calls)
+                mainChartInstance = new Chart(ctxMain, {
+                    type: 'line',
+                    data: {
+                        labels: data.labels,
+                        datasets: [
+                            {
+                                label: 'Sessions',
+                                data: data.sessions,
+                                borderColor: 'rgba(16, 185, 129, 1)',
+                                backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                                fill: true,
+                                tension: 0.3,
+                                borderWidth: 2,
+                                yAxisID: 'y'
+                            },
+                            {
+                                label: 'Tool Calls',
+                                data: data.tool_calls,
+                                borderColor: 'rgba(139, 92, 246, 1)',
+                                backgroundColor: 'transparent',
+                                tension: 0.3,
+                                borderWidth: 2,
+                                borderDash: [4, 4],
+                                yAxisID: 'y1'
+                            }
+                        ]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            y: {
+                                type: 'linear',
+                                display: true,
+                                position: 'left',
+                                beginAtZero: true,
+                                title: { display: true, text: 'Sessions' }
+                            },
+                            y1: {
+                                type: 'linear',
+                                display: true,
+                                position: 'right',
+                                beginAtZero: true,
+                                title: { display: true, text: 'Tool Calls' },
+                                grid: { drawOnChartArea: false } // only want the grid lines for one axis
+                            }
+                        }
+                    }
+                });
+
+                // Stacked bar chart (model mix)
+                const mixDatasets = [];
+                let colorIdx = 0;
+                for (const [model, countsList] of Object.entries(data.model_mix)) {
+                    mixDatasets.push({
+                        label: model,
+                        data: countsList,
+                        backgroundColor: bgColors[colorIdx % bgColors.length],
+                        borderColor: colors[colorIdx % colors.length],
+                        borderWidth: 1,
+                        stack: 'stack0'
+                    });
+                    colorIdx++;
+                }
+
+                mixChartInstance = new Chart(ctxMix, {
+                    type: 'bar',
+                    data: {
+                        labels: data.labels,
+                        datasets: mixDatasets
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: false,
+                        scales: {
+                            x: { stacked: true },
+                            y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+                        }
+                    }
+                });
+            }
+        }
+
+        // Event listeners
+        sourceSelect.addEventListener('change', loadData);
+        rangeSelect.addEventListener('change', loadData);
+
+        // ── Quota Panel ──────────────────────────────────────────────────
+        const quotaGrid = document.getElementById('quotaGrid');
+        const countdowns = {};   // cdId → {el, targetEpoch, windowSecs}
+        let _gaugeEls = {};      // cdId → svgCircle el for live gauge update
+
+        const R = 45, CIRC = 2 * Math.PI * R;
+
+        function fmtSec(sec) {
+            if (sec <= 0) return '0s';
+            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+            if (h > 0) return `${h}h ${m}m`;
+            if (m > 0) return `${m}m ${s}s`;
+            return `${s}s`;
+        }
+
+        function gaugeOffset(frac) {
+            // frac 0→full track (all remaining), 1→empty track (all elapsed)
+            return CIRC * (1 - Math.max(0, Math.min(1, frac)));
+        }
+
+        setInterval(() => {
+            const now = Date.now() / 1000;
+            for (const [id, ct] of Object.entries(countdowns)) {
+                const rem = Math.max(0, Math.round(ct.targetEpoch - now));
+                if (ct.el) ct.el.textContent = rem > 0 ? fmtSec(rem) : 'Now';
+                // live gauge arc
+                const fill = _gaugeEls[id];
+                if (fill && ct.windowSecs > 0) {
+                    const frac = rem / ct.windowSecs;
+                    fill.style.strokeDashoffset = gaugeOffset(frac);
+                    fill.className.baseVal = fill.className.baseVal.replace(/qgauge-(ok|warn|bad)/,
+                        frac > 0.4 ? 'qgauge-ok' : frac > 0.15 ? 'qgauge-warn' : 'qgauge-bad');
+                }
+            }
+        }, 1000);
+
+        function makeSvgGauge(frac, colorClass) {
+            const offset = gaugeOffset(frac);
+            return `<svg width="110" height="110" viewBox="0 0 110 110">
+              <circle class="qgauge-track" cx="55" cy="55" r="${R}"
+                      stroke-dasharray="${CIRC}" stroke-dashoffset="0"/>
+              <circle class="qgauge-fill ${colorClass}" cx="55" cy="55" r="${R}"
+                      stroke-dasharray="${CIRC}" stroke-dashoffset="${offset}"
+                      style="transition:stroke-dashoffset .8s ease"/>
+            </svg>`;
+        }
+
+        function loadQuota() {
+            fetch('/api/quota').then(r => r.json()).then(data => {
+                quotaGrid.innerHTML = '';
+                for (const k of Object.keys(countdowns)) delete countdowns[k];
+                _gaugeEls = {};
+
+                if (!data.accounts || data.accounts.length === 0) {
+                    quotaGrid.innerHTML = '<p style="color:#888">No account data.</p>'; return;
+                }
+                const win = data.quota_window_seconds || 14400;
+                const nowEpoch = Date.now() / 1000;
+
+                data.accounts.forEach((acct, i) => {
+                    const exhausted = acct.status === 'exhausted';
+                    const card = document.createElement('div');
+                    card.className = 'qcard ' + (exhausted ? 'qcard-exhausted' : 'qcard-ok');
+
+                    const handle = acct.email.split('@')[0];
+                    const domain = '@' + (acct.email.split('@')[1] || '');
+
+                    // Gauge: remaining fraction (1 = full = all time left, 0 = nothing left)
+                    let frac, colorClass, pctLabel, pctSublabel;
+                    if (exhausted && acct.resets_in_seconds > 0) {
+                        frac = acct.resets_in_seconds / win;
+                        colorClass = frac > 0.4 ? 'qgauge-ok' : frac > 0.15 ? 'qgauge-warn' : 'qgauge-bad';
+                        pctLabel = Math.round(frac * 100) + '%';
+                        pctSublabel = 'remaining';
+                    } else if (exhausted) {
+                        frac = 0; colorClass = 'qgauge-ok';
+                        pctLabel = '~100%'; pctSublabel = 'restored';
+                    } else {
+                        frac = 1; colorClass = 'qgauge-ok';
+                        pctLabel = '✓'; pctSublabel = 'available';
+                    }
+
+                    const gaugeSvg = makeSvgGauge(frac, colorClass);
+                    const cdId = `cd${i}`;
+                    const badge = exhausted
+                        ? '<span class="qbadge qbad">EXHAUSTED</span>'
+                        : '<span class="qbadge qgood">AVAILABLE</span>';
+
+                    let cdHtml = '', atHtml = '';
+                    if (exhausted && acct.resets_in_seconds > 0) {
+                        const targetEpoch = nowEpoch + acct.resets_in_seconds;
+                        cdHtml = `<div class="qreset">Resets in <span id="${cdId}" class="qcd">${fmtSec(acct.resets_in_seconds)}</span></div>`;
+                        atHtml = `<div class="qat">at ${acct.resets_at}</div>`;
+                        setTimeout(() => {
+                            const el = document.getElementById(cdId);
+                            const fill = card.querySelector('.qgauge-fill');
+                            if (el) countdowns[cdId] = { el, targetEpoch, windowSecs: win };
+                            if (fill) _gaugeEls[cdId] = fill;
+                        }, 0);
+                    } else if (acct.last_exhausted_at) {
+                        cdHtml = `<div class="qreset">Last hit: ${acct.last_exhausted_at}</div>`;
+                    } else {
+                        cdHtml = `<div class="qreset">Never exhausted</div>`;
+                    }
+
+                    card.innerHTML = `
+                        ${badge}
+                        <div class="qgauge">
+                            ${gaugeSvg}
+                            <div class="qgauge-center">
+                                <span class="qpct" style="color:${exhausted && frac<0.15?'#f87171':exhausted&&frac<0.4?'#fb923c':'#4ade80'}">${pctLabel}</span>
+                                <span class="qplbl">${pctSublabel}</span>
+                            </div>
+                        </div>
+                        <div class="qemail"><b>${handle}</b>${domain}</div>
+                        <div class="qstats">
+                            <div class="qstat"><span class="qstat-val">${acct.session_count}</span><span class="qstat-lbl">Oturum</span></div>
+                            <div class="qstat"><span class="qstat-val">${acct.exhaustion_count}</span><span class="qstat-lbl">Kota İhlali</span></div>
+                        </div>
+                        ${cdHtml}${atHtml}
+                    `;
+                    quotaGrid.appendChild(card);
+                });
+
+                if (data.warning) {
+                    const w = document.createElement('p');
+                    w.style.cssText = 'color:#f90;font-size:.8rem;margin-top:.5rem';
+                    w.textContent = '⚠ ' + data.warning;
+                    quotaGrid.appendChild(w);
+                }
+            }).catch(() => {
+                quotaGrid.innerHTML = '<p style="color:#f44">Failed to load quota.</p>';
+            });
+        }
+
+        // ── Claude Quota panel ──────────────────────────────────────────
+        const claudeQuotaBody = document.getElementById('claudeQuotaBody');
+        const cqCountdowns = {};
+
+        setInterval(() => {
+            const now = Date.now() / 1000;
+            for (const [id, ct] of Object.entries(cqCountdowns)) {
+                const rem = Math.max(0, Math.round(ct.targetEpoch - now));
+                if (ct.el) ct.el.textContent = rem > 0 ? fmtSec(rem) : 'şimdi';
+            }
+        }, 1000);
+
+        function cqColor(util) {
+            if (util >= 90) return 'red';
+            if (util >= 50) return 'yellow';
+            return 'green';
+        }
+
+        function loadClaudeQuota() {
+            fetch('/api/claude-quota').then(r => r.json()).then(data => {
+                for (const k of Object.keys(cqCountdowns)) delete cqCountdowns[k];
+                if (data.warning || !data.quotas || data.quotas.length === 0) {
+                    claudeQuotaBody.innerHTML = `<p class="cq-unavail">${data.warning || 'Kota verisi bulunamadı.'}</p>`;
+                    return;
+                }
+                const nowEpoch = Date.now() / 1000;
+                let html = '';
+                data.quotas.forEach((q, i) => {
+                    const col = cqColor(q.utilization);
+                    const cdId = `cqcd${i}`;
+                    let resetHtml = '';
+                    if (q.resets_in_seconds > 0) {
+                        const targetEpoch = nowEpoch + q.resets_in_seconds;
+                        resetHtml = `<span id="${cdId}" class="cq-reset"><b>${fmtSec(q.resets_in_seconds)}</b></span>`;
+                        setTimeout(() => {
+                            const el = document.getElementById(cdId);
+                            if (el) cqCountdowns[cdId] = { el: el.querySelector('b'), targetEpoch };
+                        }, 0);
+                    } else {
+                        resetHtml = `<span class="cq-reset">—</span>`;
+                    }
+                    html += `<div class="cq-row">
+                        <span class="cq-dot cq-dot-${col}"></span>
+                        <span class="cq-name">${q.label}</span>
+                        <div class="cq-bar-wrap">
+                            <span style="font-size:.72rem;color:#475569;width:40px;text-align:right">${q.utilization}/100</span>
+                            <div class="cq-bar"><div class="cq-bar-fill cq-bar-${col}" style="width:${q.utilization}%"></div></div>
+                            <span class="cq-pct" style="color:${col==='red'?'#ef4444':col==='yellow'?'#eab308':'#22c55e'}">${q.pct_remaining}%</span>
+                        </div>
+                        ${resetHtml}
+                    </div>`;
+                });
+                claudeQuotaBody.innerHTML = html;
+            }).catch(e => {
+                claudeQuotaBody.innerHTML = `<p class="cq-unavail">Yüklenemedi: ${e}</p>`;
+            });
+        }
+
+        // ── Statusline panel ────────────────────────────────────────────
+        const statuslineBody = document.getElementById('statuslineBody');
+        const slAge = document.getElementById('slAge');
+
+        function slRow(key, val, cls) {
+            return `<div class="sl-row"><span class="sl-key">${key}</span><span class="sl-val ${cls||''}">${val}</span></div>`;
+        }
+
+        function loadStatusline() {
+            fetch('/api/statusline').then(r => r.json()).then(d => {
+                if (!d.available) {
+                    statuslineBody.innerHTML = `<p class="sl-unavail">${d.warning}</p>`; return;
+                }
+                const age = d.age_seconds;
+                const stale = age > 300;
+                slAge.textContent = `(${age < 60 ? age+'s' : Math.round(age/60)+'m'} önce)`;
+                const ctxPct = Math.round(d.context_pct);
+                const ctxColor = ctxPct >= 90 ? '#f87171' : ctxPct >= 60 ? '#fb923c' : '#4ade80';
+                const inTok = d.context_input_tokens >= 1000 ? Math.round(d.context_input_tokens/1000)+'k' : d.context_input_tokens;
+                const outTok = d.context_output_tokens >= 1000 ? Math.round(d.context_output_tokens/1000)+'k' : d.context_output_tokens;
+                statuslineBody.innerHTML =
+                    slRow('Durum', d.agent_state, stale?'stale':d.agent_state==='idle'?'':'active') +
+                    `<div class="sl-row"><span class="sl-key">Bağlam Kullanımı</span><span class="sl-val">${ctxPct}%
+                        <div class="ctx-bar"><div class="ctx-bar-fill" style="width:${ctxPct}%;background:${ctxColor}"></div></div>
+                    </span></div>` +
+                    slRow('Giriş Tokenleri', inTok) +
+                    slRow('Çıkış Tokenleri', outTok) +
+                    slRow('Model', d.model || '—', stale?'stale':'') +
+                    slRow('Plan', d.plan_tier || '—') +
+                    slRow('Hesap', d.email ? d.email.split('@')[0] : '—') +
+                    slRow('VCS Dal', d.vcs_branch ? `${d.vcs_branch}${d.vcs_dirty?' *':''}` : '—') +
+                    slRow('Sandbox', d.sandbox ? 'Açık' : 'Kapalı') +
+                    slRow('Artifacts', d.artifacts) +
+                    slRow('Alt Agent', d.subagents) +
+                    slRow('Arka Plan Görev', d.bg_tasks) +
+                    `<div class="sl-row" style="font-size:.7rem;color:#334155;padding-top:.5rem">Son güncelleme: ${d.captured_at}</div>`;
+            }).catch(() => {
+                statuslineBody.innerHTML = '<p class="sl-unavail">Statusline yüklenemedi.</p>';
+            });
+        }
+
+        // ── Last Session panel ───────────────────────────────────────────
+        const lastSessionBody = document.getElementById('lastSessionBody');
+
+        function fmtDur(sec) {
+            if (!sec) return '—';
+            const m = Math.floor(sec / 60), s = sec % 60;
+            return m > 0 ? `${m}d ${s}s` : `${s}s`;
+        }
+
+        function loadLastSession() {
+            fetch('/api/last-session').then(r => r.json()).then(d => {
+                if (!d.available) {
+                    lastSessionBody.innerHTML = `<p class="sl-unavail">${d.warning}</p>`; return;
+                }
+                const started = d.started_at ? d.started_at.replace('T',' ').replace('Z','') : '—';
+                const ended   = d.ended_at   ? d.ended_at.replace('T',' ').replace('Z','') : '—';
+                const types = Object.entries(d.record_types || {})
+                    .sort((a,b) => b[1]-a[1])
+                    .map(([t,c]) => `<span style="color:#94a3b8">${t}</span> <b>${c}</b>`)
+                    .join(' · ');
+                lastSessionBody.innerHTML =
+                    slRow('Oturum ID', d.session_id.slice(0,8)+'…') +
+                    slRow('Başlangıç', started) +
+                    slRow('Bitiş', ended) +
+                    slRow('Süre', fmtDur(d.duration_seconds)) +
+                    slRow('Kayıt Sayısı', d.record_count) +
+                    slRow('Araç Çağrısı', d.tool_call_count) +
+                    slRow('Model', d.model || '—') +
+                    `<div class="sl-row" style="flex-wrap:wrap;gap:.25rem"><span class="sl-key">Türler</span><span style="font-size:.75rem;line-height:1.6">${types}</span></div>` +
+                    (d.warning ? `<div class="sl-row"><span style="color:#f90;font-size:.75rem">⚠ ${d.warning}</span></div>` : '');
+            }).catch(() => {
+                lastSessionBody.innerHTML = '<p class="sl-unavail">Son oturum yüklenemedi.</p>';
+            });
+        }
+
+        // Initial Load
+        loadData();
+        loadClaudeQuota();
+        loadQuota();
+        loadStatusline();
+        loadLastSession();
+
+        // SSE — refresh all panels
+        function connectSSE() {
+            const es = new EventSource('/events');
+            es.onmessage = function(ev) {
+                if (ev.data === 'refresh') {
+                    liveDot.classList.remove('flash'); void liveDot.offsetWidth; liveDot.classList.add('flash');
+                    loadData(); loadClaudeQuota(); loadQuota(); loadStatusline(); loadLastSession();
+                }
+            };
+            es.onerror = function() { es.close(); setTimeout(connectSSE, 5000); };
+        }
+        connectSSE();
+    </script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+{"type":"PLANNER_RESPONSE","created_at":"2026-05-29T09:00:00Z","tool_calls":[{"name":"grep"},{"name":"view"}],"model":"Gemini 3.5 Flash (High)"}
+{not valid json
