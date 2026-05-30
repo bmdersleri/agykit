@@ -896,3 +896,37 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
         "captured_at": captured_at,
         "warning":     warning,
     }
+
+
+_QUOTA_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
+_QUOTA_CACHE_TTL = 300  # 5 minutes
+
+
+def agy_model_quota_cached(*, force: bool = False) -> dict:
+    """Return model quota from cache if fresh, else run tmux capture and cache.
+
+    Cache path: ~/.gemini/antigravity-cli/quota-cache.json
+    TTL: 300s (5 minutes). Pass force=True to bypass cache.
+    """
+    import time as _time
+
+    if not force and os.path.isfile(_QUOTA_CACHE):
+        try:
+            cached = json.load(open(_QUOTA_CACHE))
+            age = _time.time() - cached.get("_ts", 0)
+            if age < _QUOTA_CACHE_TTL:
+                cached["_cache_age_seconds"] = int(age)
+                cached["_from_cache"] = True
+                return cached
+        except Exception:
+            pass
+
+    data = agy_model_quota_tmux()
+    if data.get("models"):
+        try:
+            data["_ts"] = _time.time()
+            json.dump(data, open(_QUOTA_CACHE, "w"), ensure_ascii=False, indent=2)
+        except Exception:
+            pass
+    data["_from_cache"] = False
+    return data

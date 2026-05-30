@@ -309,6 +309,13 @@ cmd_dash() {
     exec python3 "$dir/server.py" "$@"
 }
 
+cmd_quota() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local dir; dir="$(cd "$(dirname "$self")" && pwd)/dashboard"
+    [ -f "$dir/quota.py" ] || { echo "quota.py not found at $dir" >&2; exit 1; }
+    python3 "$dir/quota.py" "$@"
+}
+
 usage() {
     cat <<'EOF'
 agykit — portable Antigravity (agy) CLI manager
@@ -323,6 +330,9 @@ agykit — portable Antigravity (agy) CLI manager
   agykit run "prompt"            Quota-aware run (rotate accounts)
   agykit do-escalate "prompt"    Model ladder on verify fail (needs AGYKIT_VERIFY)
   agykit dash [--port N]          Open the usage dashboard (localhost)
+  agykit quota [--refresh]        Show model quota table (cached 5min)
+  agykit quota --json             Machine-readable JSON quota output
+  agykit quota --status           One-line summary for scripts/statusline
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
@@ -342,6 +352,7 @@ case "${1:-}" in
     run)           cmd_run "${2:-}" ;;
     do-escalate)   cmd_do_escalate "${2:-}" ;;
     dash)          cmd_dash "${@:2}" ;;
+    quota)         cmd_quota "${@:2}" ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;
     ""|-h|--help|help) usage ;;
     *)             echo "Unknown command: $1"; usage; exit 1 ;;
