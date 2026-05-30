@@ -52,6 +52,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # Suppress server request logging for cleaner test output
         pass
 
+    _WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
+    _STATIC = {
+        "/style.css": "text/css",
+        "/app.js": "application/javascript",
+    }
+
     def do_GET(self):
         from urllib.parse import urlparse
 
@@ -60,6 +66,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         if path == "/":
             self.serve_index()
+        elif path in self._STATIC:
+            self.serve_static(path[1:], self._STATIC[path])
         elif path == "/api/data":
             self.serve_api(parsed.query)
         elif path == "/api/quota":
@@ -82,9 +90,25 @@ class DashboardHandler(BaseHTTPRequestHandler):
         else:
             self.send_error(404, "Not Found")
 
+    def serve_static(self, filename, content_type):
+        file_path = os.path.join(self._WEB_DIR, filename)
+        if not os.path.isfile(file_path):
+            self.send_error(404, f"{filename} not found")
+            return
+        try:
+            with open(file_path, "rb") as f:
+                content = f.read()
+        except Exception as e:
+            self.send_error(500, f"Error reading {filename}: {e}")
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", content_type)
+        self.send_header("Content-Length", str(len(content)))
+        self.end_headers()
+        self.wfile.write(content)
+
     def serve_index(self):
-        current_dir = os.path.dirname(os.path.abspath(__file__))
-        index_path = os.path.join(current_dir, "index.html")
+        index_path = os.path.join(self._WEB_DIR, "index.html")
         if not os.path.isfile(index_path):
             self.send_error(500, "index.html not found")
             return

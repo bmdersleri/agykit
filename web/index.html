@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>agykit Quota & Usage Dashboard</title>
+    <!-- Inter Font -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Chart.js -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+        <link rel="stylesheet" href="style.css">
+</head>
+<body data-theme="dark">
+    <div class="container">
+        <!-- 1. Header -->
+        <header class="dashboard-header">
+            <div class="logo-group">
+                <svg class="header-logo" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                    <line x1="18" y1="20" x2="18" y2="10"></line>
+                    <line x1="12" y1="20" x2="12" y2="4"></line>
+                    <line x1="6" y1="20" x2="6" y2="14"></line>
+                </svg>
+                <h1 class="logo-title">agykit · Quota Dashboard</h1>
+                <span class="version-badge">v1.0.0</span>
+            </div>
+            <div class="header-actions">
+                <div class="live-indicator">
+                    <span class="live-dot" id="liveDot"></span>
+                    <span class="live-label">Live</span>
+                </div>
+                <button id="themeToggle" class="theme-toggle-btn">🌙</button>
+            </div>
+        </header>
+
+        <!-- Warning Banner -->
+        <div id="warningBanner" class="warning-banner" style="display: none;">
+            <svg viewBox="0 0 20 20" fill="currentColor">
+                <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
+            </svg>
+            <span id="warningText"></span>
+        </div>
+
+        <!-- 2. AGY Hesap Kotası -->
+        <section class="quota-section">
+            <div class="section-header">
+                <h2 class="section-title">agy Hesap Kotası</h2>
+                <div class="section-actions">
+                    <button class="btn" onclick="loadQuota()">↻ Yenile</button>
+                    <button class="btn" id="refreshAllBtn" onclick="refreshAllAccounts()">⟳ Tüm Hesapları Çalıştır</button>
+                </div>
+            </div>
+            <div id="refreshAllStatus" style="display:none; font-size:.8rem; color:var(--muted); margin-bottom:.75rem;"></div>
+            <div id="quotaGrid" class="quota-grid"></div>
+        </section>
+
+        <!-- 3. Claude Code Kotası -->
+        <section class="cq-section">
+            <div class="section-header">
+                <div class="cq-title-area" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <h2 class="section-title">Claude Code Kotası</h2>
+                    <span class="version-badge" style="font-size: 0.65rem;">Anthropic OAuth</span>
+                </div>
+                <button class="btn" onclick="loadClaudeQuota()">↻ Yenile</button>
+            </div>
+            <div class="cq-card">
+                <div id="claudeQuotaBody"><div class="cq-unavail">Yükleniyor…</div></div>
+            </div>
+        </section>
+
+        <!-- 4. Kullanım Grafikleri -->
+        <section class="charts-section">
+            <div class="charts-filter-header">
+                <h2 class="section-title">Kullanım Grafikleri</h2>
+                <div class="filter-controls">
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <label for="sourceSelect">Kaynak:</label>
+                        <select id="sourceSelect">
+                            <option value="claude">Claude</option>
+                            <option value="agy">agy</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <label for="rangeSelect">Aralık:</label>
+                        <select id="rangeSelect">
+                            <option value="7d">7g</option>
+                            <option value="30d">30g</option>
+                            <option value="all" selected>Tümü</option>
+                        </select>
+                    </div>
+                </div>
+            </div>
+
+            <div id="noDataContainer" class="no-data" style="display: none;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 1rem; opacity: 0.5;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <p>İstatistik bulunamadı. Veri toplamak için komut çalıştırın!</p>
+            </div>
+
+            <div id="chartsGrid" class="charts-grid" style="margin-top: 1rem;">
+                <div class="chart-card">
+                    <h3 class="chart-card-title" id="mainChartTitle">Günlük Token Kullanımı</h3>
+                    <div class="chart-container">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-card-title" id="mixChartTitle">Model Dağılımı</h3>
+                    <div class="chart-container">
+                        <canvas id="mixChart"></canvas>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 5. Bilgi Panelleri -->
+        <section class="info-section">
+            <div class="info-grid">
+                <!-- agy Canlı Durum -->
+                <div class="info-card" id="statuslineCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">agy Canlı Durum</h3>
+                        <span id="slAge" style="font-size: 0.72rem; color: var(--muted); font-weight: 500;"></span>
+                    </div>
+                    <div id="statuslineBody" style="display: flex; flex-direction: column; height: 100%;">
+                        <div class="sl-unavail">Henüz snapshot yok — agy çalıştırınca burada görünür.</div>
+                    </div>
+                </div>
+
+                <!-- Son agy Oturumu -->
+                <div class="info-card" id="lastSessionCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">Son agy Oturumu</h3>
+                    </div>
+                    <div id="lastSessionBody" style="display: flex; flex-direction: column; gap: 1rem; height: 100%;">
+                        <div class="ls-stats">
+                            <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Araç Çağrısı</div></div>
+                            <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Kayıt</div></div>
+                            <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Süre</div></div>
+                        </div>
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- Footer -->
+        <footer style="text-align:center;padding:1.5rem 0 0.5rem;border-top:1px solid var(--border);color:var(--muted);font-size:0.75rem;">
+            Son güncelleme: <span id="footer-ts">—</span>
+        </footer>
+    </div>
+
+        <script src="app.js"></script>
+</body>
+</html>
