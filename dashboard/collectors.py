@@ -243,8 +243,6 @@ _LOG_DIR_DEFAULT = "~/.gemini/antigravity-cli/log"
 _LOG_FILE_RE = re.compile(r"cli-(\d{8})_(\d{6})\.log$")
 _LINE_RE = re.compile(r"^[IWEF](\d{2})(\d{2}) (\d{2}:\d{2}:\d{2})\.\d+")
 _RESET_RE = re.compile(r"Resets in (?:(\d+)h)?(?:(\d+)m)?(?:(\d+)s)?")
-# Gemini 3.5 / 3.1 Pro models are exclusive to Google AI Pro plan
-_PRO_MODEL_RE = re.compile(r'model_config_manager.*label="(Gemini 3\.[15]|Claude|GPT-OSS)')
 _EMAIL_RE = re.compile(r"email=([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})")
 # Quota window: estimated from the maximum "Resets in" duration observed historically (~4h).
 # Used only to render the gauge arc; not a hard API-provided value.
@@ -283,7 +281,6 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
     best: dict[str, dict] = {}  # email → latest 429 {logged_at, reset_abs, reset_dur_s}
     sessions: dict[str, int] = {}  # email → session count
     exhaustions: dict[str, int] = {}  # email → 429 hit count
-    pro_emails: set[str] = set()  # emails seen using Pro-tier models
     max_reset_dur = _QUOTA_WINDOW_SECONDS
 
     for path in logs:
@@ -302,9 +299,6 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
                     if not session_counted:
                         sessions[email] = sessions.get(email, 0) + 1
                         session_counted = True
-
-                if email and _PRO_MODEL_RE.search(line):
-                    pro_emails.add(email)
 
                 lm = _LINE_RE.match(line)
                 if not lm or not email:
@@ -412,24 +406,10 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
             except Exception as _e:
                 acct["_avatar_err"] = str(_e)[:60]
 
-    # Persist newly discovered Pro accounts to plans cache
-    if pro_emails:
-        plans = _load_plans_cache()
-        changed = False
-        for email in pro_emails:
-            if plans.get(email) != "Google AI Pro":
-                plans[email] = "Google AI Pro"
-                changed = True
-        if changed:
-            try:
-                json.dump(plans, open(_PLANS_CACHE, "w"), ensure_ascii=False, indent=2)
-            except Exception:
-                pass
-
     plans = _load_plans_cache()
     for acct in accounts:
         plan = plans.get(acct["email"], "")
-        acct["is_pro"] = acct["email"] in pro_emails or "Google AI Pro" in plan or "Pro Plus" in plan
+        acct["is_pro"] = "Google AI Pro" in plan or "Pro Plus" in plan
 
     return {"accounts": accounts, "quota_window_seconds": quota_window, "warning": None}
 
