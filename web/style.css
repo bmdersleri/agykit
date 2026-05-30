@@ -272,6 +272,21 @@
             box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25);
         }
 
+        .qcard-free {
+            opacity: 0.55;
+            filter: saturate(0.5);
+        }
+
+        .qcard-free:hover {
+            opacity: 0.8;
+            filter: saturate(0.75);
+        }
+
+        .qcard-active.qcard-free {
+            opacity: 1;
+            filter: none;
+        }
+
         .qcard-header {
             position: relative;
             display: flex;

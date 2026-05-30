@@ -438,7 +438,7 @@
                     }
 
                     const card = document.createElement('div');
-                    card.className = `qcard ${isActive ? 'qcard-active' : ''} ${exhausted ? 'qcard-exhausted' : 'qcard-ok'}`;
+                    card.className = `qcard ${isActive ? 'qcard-active' : ''} ${exhausted ? 'qcard-exhausted' : 'qcard-ok'} ${!isPro ? 'qcard-free' : ''}`;
 
                     // Avatar: Google profile picture or gradient fallback
                     const avatarHtml = acct.picture
