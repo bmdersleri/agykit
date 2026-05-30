@@ -261,7 +261,8 @@
         /* ── Statusline + Last Session panels ── */
         .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 2rem; }
         @media (max-width: 700px) { .info-grid { grid-template-columns: 1fr; } }
-        .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; }
+        /* min-height prevents layout shift on refresh */
+        .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; min-height: 280px; }
         .info-card h3 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .85rem; }
         .sl-row { display: flex; justify-content: space-between; align-items: center; padding: .3rem 0; border-bottom: 1px solid #1e293b; font-size: .82rem; }
         .sl-row:last-child { border-bottom: none; }
@@ -273,6 +274,18 @@
         .sl-unavail { color: #475569; font-size: .82rem; }
         .ctx-bar { width: 100%; height: 6px; background: #1e3a5f; border-radius: 3px; margin-top: 2px; overflow: hidden; }
         .ctx-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+
+        /* ── Last Session card redesign ── */
+        .ls-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-bottom: 1rem; }
+        .ls-stat { background: #0f172a; border-radius: .5rem; padding: .6rem .75rem; text-align: center; }
+        .ls-stat-val { font-size: 1.25rem; font-weight: 700; color: var(--text-main); line-height: 1.2; }
+        .ls-stat-lbl { font-size: .65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-top: .15rem; }
+        .ls-model { font-size: .78rem; color: #38bdf8; background: #0c2233; border-radius: .375rem; padding: .25rem .6rem; display: inline-block; margin-bottom: .75rem; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ls-meta { font-size: .75rem; color: var(--text-muted); display: flex; flex-direction: column; gap: .2rem; }
+        .ls-meta span b { color: var(--text-main); font-weight: 500; }
+        .ls-types { margin-top: .6rem; display: flex; flex-wrap: wrap; gap: .3rem; }
+        .ls-type-chip { font-size: .65rem; background: #1e293b; border-radius: 99px; padding: .15rem .5rem; color: #94a3b8; }
+        .ls-type-chip b { color: var(--text-main); }
     </style>
 </head>
 <body>
@@ -337,7 +350,14 @@
             </div>
             <div class="info-card" id="lastSessionCard">
                 <h3>Son agy Oturumu</h3>
-                <div id="lastSessionBody"><p class="sl-unavail">Yükleniyor…</p></div>
+                <div id="lastSessionBody">
+                    <div class="ls-stats">
+                        <div class="ls-stat"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Araç Çağrısı</div></div>
+                        <div class="ls-stat"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Kayıt</div></div>
+                        <div class="ls-stat"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Süre</div></div>
+                    </div>
+                    <p class="sl-unavail" style="margin-top:.5rem">Yükleniyor…</p>
+                </div>
             </div>
         </div>
 
@@ -865,8 +885,18 @@
 
         function fmtDur(sec) {
             if (!sec) return '—';
-            const m = Math.floor(sec / 60), s = sec % 60;
-            return m > 0 ? `${m}d ${s}s` : `${s}s`;
+            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
+            if (h > 0) return `${h}sa ${m}dk`;
+            if (m > 0) return `${m}dk ${s}s`;
+            return `${s}s`;
+        }
+
+        function fmtTime(iso) {
+            if (!iso) return '—';
+            // "2026-05-30T12:34:56Z" → "12:34"
+            const m = iso.match(/T(\d{2}:\d{2})/);
+            const d = iso.match(/(\d{4}-\d{2}-\d{2})/);
+            return m ? (d ? d[1].slice(5)+' '+m[1] : m[1]) : iso;
         }
 
         function loadLastSession() {
@@ -874,22 +904,39 @@
                 if (!d.available) {
                     lastSessionBody.innerHTML = `<p class="sl-unavail">${d.warning}</p>`; return;
                 }
-                const started = d.started_at ? d.started_at.replace('T',' ').replace('Z','') : '—';
-                const ended   = d.ended_at   ? d.ended_at.replace('T',' ').replace('Z','') : '—';
-                const types = Object.entries(d.record_types || {})
+
+                const chips = Object.entries(d.record_types || {})
                     .sort((a,b) => b[1]-a[1])
-                    .map(([t,c]) => `<span style="color:#94a3b8">${t}</span> <b>${c}</b>`)
-                    .join(' · ');
-                lastSessionBody.innerHTML =
-                    slRow('Oturum ID', d.session_id.slice(0,8)+'…') +
-                    slRow('Başlangıç', started) +
-                    slRow('Bitiş', ended) +
-                    slRow('Süre', fmtDur(d.duration_seconds)) +
-                    slRow('Kayıt Sayısı', d.record_count) +
-                    slRow('Araç Çağrısı', d.tool_call_count) +
-                    slRow('Model', d.model || '—') +
-                    `<div class="sl-row" style="flex-wrap:wrap;gap:.25rem"><span class="sl-key">Türler</span><span style="font-size:.75rem;line-height:1.6">${types}</span></div>` +
-                    (d.warning ? `<div class="sl-row"><span style="color:#f90;font-size:.75rem">⚠ ${d.warning}</span></div>` : '');
+                    .map(([t,c]) => `<span class="ls-type-chip">${t} <b>${c}</b></span>`)
+                    .join('');
+
+                const modelShort = (d.model || '').replace('Gemini ','').trim() || '—';
+
+                // Build HTML — structure is stable across refreshes (same elements)
+                lastSessionBody.innerHTML = `
+                    <div class="ls-stats">
+                        <div class="ls-stat">
+                            <div class="ls-stat-val">${d.tool_call_count}</div>
+                            <div class="ls-stat-lbl">Araç Çağrısı</div>
+                        </div>
+                        <div class="ls-stat">
+                            <div class="ls-stat-val">${d.record_count}</div>
+                            <div class="ls-stat-lbl">Kayıt</div>
+                        </div>
+                        <div class="ls-stat">
+                            <div class="ls-stat-val">${fmtDur(d.duration_seconds)}</div>
+                            <div class="ls-stat-lbl">Süre</div>
+                        </div>
+                    </div>
+                    ${d.model ? `<div class="ls-model" title="${d.model}">${modelShort}</div>` : ''}
+                    <div class="ls-meta">
+                        <span>Başlangıç: <b>${fmtTime(d.started_at)}</b></span>
+                        <span>Bitiş: <b>${fmtTime(d.ended_at)}</b></span>
+                        <span>ID: <b style="font-family:monospace;font-size:.72rem">${d.session_id.slice(0,8)}…</b></span>
+                    </div>
+                    <div class="ls-types">${chips}</div>
+                    ${d.warning ? `<p style="color:#f90;font-size:.73rem;margin-top:.5rem">⚠ ${d.warning}</p>` : ''}
+                `;
             }).catch(() => {
                 lastSessionBody.innerHTML = '<p class="sl-unavail">Son oturum yüklenemedi.</p>';
             });
