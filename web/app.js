@@ -446,10 +446,13 @@
                           + `<div class="qcard-avatar-fallback" style="display:none">${handle[0].toUpperCase()}</div>`
                         : `<div class="qcard-avatar-fallback">${handle[0].toUpperCase()}</div>`;
 
+                    const isPro = !!acct.is_pro;
+
                     card.innerHTML = `
                         <div class="qcard-header">
                             <div class="qcard-badges-top">
                                 ${isActive ? '<span class="qcard-active-badge">● AKTİF</span>' : ''}
+                                ${isPro ? '<span class="qcard-pro-badge">PRO</span>' : ''}
                                 <span class="qbadge ${exhausted ? 'qbadge-exhausted' : 'qbadge-available'}">${exhausted ? 'TÜKENDİ' : 'MÜSAİT'}</span>
                             </div>
                             <div class="qcard-identity">
@@ -900,19 +903,28 @@
         loadStatusline();
         loadLastSession();
 
-        // SSE connection
+        // SSE connection — statusline updates on every event; heavy rebuilds throttled
+        const HEAVY_REFRESH_INTERVAL_MS = 60_000; // quota grid + charts max once/min via SSE
+        let lastHeavyRefresh = 0;
+
         function connectSSE() {
             const es = new EventSource('/events');
             es.onmessage = function(ev) {
-                if (ev.data === 'refresh') {
-                    liveDot.classList.remove('flash');
-                    void liveDot.offsetWidth; // Trigger reflow to restart animation
-                    liveDot.classList.add('flash');
-                    
+                if (ev.data !== 'refresh') return;
+
+                liveDot.classList.remove('flash');
+                void liveDot.offsetWidth;
+                liveDot.classList.add('flash');
+
+                // Statusline is lightweight — always refresh (live session data)
+                loadStatusline();
+
+                const now = Date.now();
+                if (now - lastHeavyRefresh >= HEAVY_REFRESH_INTERVAL_MS) {
+                    lastHeavyRefresh = now;
                     loadData();
                     loadClaudeQuota();
                     loadQuota();
-                    loadStatusline();
                     loadLastSession();
                 }
             };

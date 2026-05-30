@@ -399,6 +399,17 @@
             border: 1px solid rgba(34, 211, 238, 0.2);
         }
 
+        .qcard-pro-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #a78bfa; /* violet */
+            background: rgba(167, 139, 250, 0.12);
+            padding: 0.15rem 0.45rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(167, 139, 250, 0.3);
+            letter-spacing: 0.04em;
+        }
+
         /* Status Visualizers */
         .qcard-body {
             min-height: 100px;

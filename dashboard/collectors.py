@@ -406,6 +406,11 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
             except Exception as _e:
                 acct["_avatar_err"] = str(_e)[:60]
 
+    plans = _load_plans_cache()
+    for acct in accounts:
+        plan = plans.get(acct["email"], "")
+        acct["is_pro"] = "Google AI Pro" in plan or "Pro Plus" in plan
+
     return {"accounts": accounts, "quota_window_seconds": quota_window, "warning": None}
 
 
@@ -939,6 +944,25 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
 
 _QUOTA_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
 _QUOTA_CACHE_TTL = 300  # 5 minutes
+_PLANS_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/account-plans.json")
+
+
+def _load_plans_cache() -> dict:
+    try:
+        return json.load(open(_PLANS_CACHE))
+    except Exception:
+        return {}
+
+
+def _save_plan(email: str, plan: str) -> None:
+    if not email or not plan:
+        return
+    try:
+        plans = _load_plans_cache()
+        plans[email] = plan
+        json.dump(plans, open(_PLANS_CACHE, "w"), ensure_ascii=False, indent=2)
+    except Exception:
+        pass
 
 
 def agy_model_quota_cached(*, force: bool = False) -> dict:
@@ -974,6 +998,8 @@ def agy_model_quota_cached(*, force: bool = False) -> dict:
             json.dump(data, open(_QUOTA_CACHE, "w"), ensure_ascii=False, indent=2)
         except Exception:
             pass
+        if data.get("account") and data.get("plan"):
+            _save_plan(data["account"], data["plan"])
     data["_from_cache"] = False
     return data
 

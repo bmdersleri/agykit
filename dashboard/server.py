@@ -187,7 +187,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         try:
             while True:
-                time.sleep(3)
+                time.sleep(10)
                 current_state = get_current_mtime_state()
                 if current_state != last_state:
                     self.wfile.write(b"data: refresh\n\n")
