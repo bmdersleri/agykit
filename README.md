@@ -2,8 +2,8 @@
 
 Orchestrator-agnostic agy management: works with Claude Code, OpenCode, Codex, or standalone.
 
-Multi-account rotation, model+effort selection, quota-aware running, keyring snapshots,
-caveman-style terse output for token savings.
+Multi-account rotation with quota-aware sorting, model ladder escalation with error context
+pass-through, usage dashboard, caveman-style terse output for token savings.
 
 ## Install
 ```bash
@@ -21,14 +21,15 @@ After install, run `agykit doctor` to verify everything is set up correctly.
 ## Commands
 ```
 agykit whoami                  Show active Google account
+agykit status                  One-line: active account | model | quota summary
 agykit models                  List model+effort combos
 agykit model [name]            Show / set model+effort
 agykit account-list            List saved account snapshots
 agykit account-save            Snapshot current keyring login
 agykit account-add             Guided: launch agy → login → snapshot
 agykit switch <email>          Switch to a saved account
-agykit run "prompt"            Quota-aware run (rotate accounts)
-agykit do-escalate "prompt"    Model ladder Flash→Pro→Opus on verify fail
+agykit run "prompt"            Quota-aware run (available accounts first)
+agykit do-escalate "prompt"    Model ladder Flash→Pro→Opus, verify error passed forward
 agykit dash [--port N]         Open the usage dashboard (localhost:8787)
 agykit quota [--refresh]       Show per-model quota table (5min cache)
 agykit quota --json            Machine-readable JSON (pipe to scripts)
@@ -177,8 +178,15 @@ examples/
 ---
 
 ## How it works
-- agy OAuth lives in the **system keyring** (`service=gemini, user=antigravity`).
-  Account snapshots saved to `~/.gemini/accounts/<email>.json`.
-- Model+effort is a single string in `~/.gemini/antigravity-cli/settings.json`.
-- Quota errors (`RESOURCE_EXHAUSTED`, `quota reached`, `code 429`, etc.) trigger account rotation. Note: bare `429` is intentionally excluded from the pattern to avoid false positives on Go log timestamps (e.g. `18:40:55.429005`).
-- `do-escalate` climbs Flash → Pro → Opus when `AGYKIT_VERIFY` fails.
+
+**Account rotation (`run` / `do-escalate`)**
+Before each run, accounts are sorted by quota status (reads agy CLI logs): available accounts are tried first, exhausted ones fall to the end as a fallback. On a quota error mid-run, agykit rotates to the next account automatically.
+
+**Model escalation (`do-escalate`)**
+Climbs Flash → Pro → Opus when `AGYKIT_VERIFY` fails. Each escalation passes the previous model's verify error output as context to the next model — so Pro/Opus know exactly what failed and why, rather than starting blind.
+
+**Quota detection**
+Errors matching `RESOURCE_EXHAUSTED`, `quota reached`, `rate limit`, `code 429`, etc. trigger rotation. Bare `429` is intentionally excluded to avoid false positives on Go log timestamps (e.g. `18:40:55.429005`).
+
+**Authentication**
+agy OAuth lives in the **system keyring** (`service=gemini, user=antigravity`). Account snapshots saved to `~/.gemini/accounts/<email>.json`. Model+effort is a single string in `~/.gemini/antigravity-cli/settings.json`.
