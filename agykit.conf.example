@@ -1,0 +1,23 @@
+# agykit per-project config — copy to your project root as .agykit.conf
+# Sourced by agykit when run from that directory.
+
+# Verify command run after a code task (required for `agykit do-escalate`)
+# Examples: "just spec-verify" | "npm test" | "pytest -q" | "cargo test"
+AGYKIT_VERIFY="just spec-verify"
+
+# System context file injected into every agy prompt (optional)
+AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
+
+# Extra agy flags (optional)
+AGYKIT_FLAGS="--add-dir $PWD --dangerously-skip-permissions"
+
+# agy print timeout (optional, default 15m)
+AGYKIT_TIMEOUT="15m"
+
+# Terse (caveman-style) output for `agykit run` — saves output tokens, quota
+# lasts longer. Only affects run/ask explanation prompts, NOT do-escalate code.
+# Levels: 0/off (default) | lite | full | ultra  ("1" = full, backward compat)
+#   lite  — no filler/hedging, keep full sentences
+#   full  — drop articles, fragments, caveman pattern
+#   ultra — abbreviate prose, arrows (X→Y), maximum compression
+AGYKIT_TERSE="0"
