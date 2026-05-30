@@ -1,26 +1,53 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="tr">
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>agykit Quota & Usage Dashboard</title>
-    <!-- Include Inter font -->
+    <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
-    <!-- Chart.js from CDN -->
+    <!-- Chart.js -->
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <style>
         :root {
-            --bg-color: #0f172a;
-            --card-bg: #1e293b;
-            --text-main: #f8fafc;
-            --text-muted: #94a3b8;
-            --border-color: #334155;
-            --accent-color: #38bdf8;
-            --warning-bg: #7f1d1d;
-            --warning-text: #fca5a5;
-            --success-color: #4ade80;
+            --font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            --transition-speed: 0.3s;
+        }
+
+        body[data-theme="dark"] {
+            --bg: #0a0f1a;
+            --surface: #111827;
+            --surface2: #1f2937;
+            --border: #374151;
+            --text: #f9fafb;
+            --muted: #9ca3af;
+            --accent: #38bdf8;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --shadow: none;
+            --card-hover-border: #4b5563;
+            --active-border: #22d3ee;
+            --glass-bg: rgba(17, 24, 39, 0.7);
+        }
+
+        body[data-theme="light"] {
+            --bg: #f8fafc;
+            --surface: #ffffff;
+            --surface2: #f1f5f9;
+            --border: #e2e8f0;
+            --text: #0f172a;
+            --muted: #64748b;
+            --accent: #0284c7;
+            --success: #10b981;
+            --warning: #f59e0b;
+            --danger: #ef4444;
+            --shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05), 0 2px 4px -1px rgba(0, 0, 0, 0.03);
+            --card-hover-border: #cbd5e1;
+            --active-border: #0284c7;
+            --glass-bg: rgba(255, 255, 255, 0.7);
         }
 
         * {
@@ -30,32 +57,42 @@
         }
 
         body {
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-main);
+            font-family: var(--font-family);
+            background-color: var(--bg);
+            color: var(--text);
             min-height: 100vh;
             padding: 2rem;
             line-height: 1.5;
+            transition: background-color var(--transition-speed) ease, color var(--transition-speed) ease;
         }
 
         .container {
             max-width: 1200px;
             margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
         }
 
-        header {
+        /* ── Header ── */
+        .dashboard-header {
             display: flex;
             justify-content: space-between;
             align-items: center;
-            margin-bottom: 2rem;
-            border-bottom: 1px solid var(--border-color);
             padding-bottom: 1.5rem;
+            border-bottom: 1px solid var(--border);
         }
 
-        h1 {
-            font-size: 1.75rem;
+        .logo-group {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .logo-title {
+            font-size: 1.5rem;
             font-weight: 700;
-            background: linear-gradient(to right, #38bdf8, #818cf8);
+            background: linear-gradient(to right, var(--accent), #818cf8);
             -webkit-background-clip: text;
             -webkit-text-fill-color: transparent;
             display: flex;
@@ -63,82 +100,98 @@
             gap: 0.5rem;
         }
 
-        .controls {
+        .version-badge {
+            font-size: 0.75rem;
+            font-weight: 600;
+            background: var(--surface2);
+            color: var(--muted);
+            padding: 0.15rem 0.5rem;
+            border-radius: 9999px;
+            border: 1px solid var(--border);
+            -webkit-text-fill-color: var(--muted); /* Reset gradient fill */
+        }
+
+        .header-actions {
             display: flex;
             align-items: center;
             gap: 1rem;
         }
 
-        select {
-            background-color: var(--card-bg);
-            color: var(--text-main);
-            border: 1px solid var(--border-color);
-            padding: 0.5rem 2rem 0.5rem 1rem;
-            border-radius: 0.375rem;
-            font-size: 0.875rem;
-            font-weight: 500;
-            cursor: pointer;
-            outline: none;
-            transition: border-color 0.2s;
-            appearance: none;
-            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2394a3b8'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
-            background-repeat: no-repeat;
-            background-position: right 0.75rem center;
-            background-size: 1rem;
-        }
-
-        select:focus {
-            border-color: var(--accent-color);
-        }
-
-        .status {
+        .live-indicator {
             display: flex;
             align-items: center;
             gap: 0.5rem;
-            font-size: 0.875rem;
-            color: var(--text-muted);
-            background-color: var(--card-bg);
-            padding: 0.5rem 1rem;
-            border-radius: 0.375rem;
-            border: 1px solid var(--border-color);
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: 0.35rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 600;
         }
 
         .live-dot {
             width: 8px;
             height: 8px;
-            background-color: var(--success-color);
+            background-color: var(--success);
             border-radius: 50%;
+            position: relative;
             display: inline-block;
-            box-shadow: 0 0 8px var(--success-color);
+        }
+
+        .live-dot::after {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            border-radius: 50%;
+            background-color: var(--success);
+            animation: pulse-ring 2s cubic-bezier(0.215, 0.610, 0.355, 1) infinite;
+        }
+
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            100% { transform: scale(2.5); opacity: 0; }
         }
 
         .live-dot.flash {
-            animation: pulse 0.5s ease-out;
+            animation: flash-animation 0.5s ease-out;
         }
 
-        @keyframes pulse {
-            0% {
-                transform: scale(1);
-                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0.7);
-            }
-            70% {
-                transform: scale(1.5);
-                box-shadow: 0 0 0 10px rgba(74, 222, 128, 0);
-            }
-            100% {
-                transform: scale(1);
-                box-shadow: 0 0 0 0 rgba(74, 222, 128, 0);
-            }
+        @keyframes flash-animation {
+            0% { transform: scale(1); filter: brightness(1); }
+            50% { transform: scale(1.6); filter: brightness(1.5); }
+            100% { transform: scale(1); filter: brightness(1); }
         }
 
+        .theme-toggle-btn {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            width: 40px;
+            height: 40px;
+            border-radius: 50%;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.2rem;
+            transition: background var(--transition-speed);
+        }
+
+        .theme-toggle-btn:hover {
+            background: var(--border);
+        }
+
+        /* ── Warning Banner ── */
         .warning-banner {
-            background-color: var(--warning-bg);
-            color: var(--warning-text);
-            border: 1px solid rgba(252, 165, 165, 0.2);
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
             padding: 1rem;
-            border-radius: 0.5rem;
-            margin-bottom: 2rem;
-            font-size: 0.875rem;
+            border-radius: 12px;
+            font-size: 0.9rem;
             display: flex;
             align-items: center;
             gap: 0.75rem;
@@ -150,203 +203,843 @@
             height: 1.25rem;
         }
 
-        .no-data {
+        /* ── Section Title ── */
+        .section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1rem;
+        }
+
+        .section-title {
+            font-size: 1.15rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+            color: var(--text);
+        }
+
+        .section-actions {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .btn {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            color: var(--text);
+            padding: 0.4rem 0.8rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: all 0.2s;
+            display: flex;
+            align-items: center;
+            gap: 0.35rem;
+        }
+
+        .btn:hover {
+            background: var(--border);
+        }
+
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+
+        /* ── 2. AGY Hesap Kotası ── */
+        .quota-grid {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 1.5rem;
+        }
+
+        @media (max-width: 1024px) {
+            .quota-grid {
+                grid-template-columns: 1fr;
+            }
+        }
+
+        .qcard {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.25rem;
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            transition: transform 0.3s cubic-bezier(0.4, 0, 0.2, 1), border-color 0.3s, box-shadow 0.3s;
+        }
+
+        .qcard:hover {
+            transform: translateY(-4px);
+            border-color: var(--card-hover-border);
+            box-shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -4px rgba(0, 0, 0, 0.1);
+        }
+
+        .qcard-active {
+            border-color: var(--active-border) !important;
+            box-shadow: 0 0 0 1px rgba(56, 189, 248, 0.25);
+        }
+
+        .qcard-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+        }
+
+        .qcard-identity {
+            display: flex;
+            flex-direction: column;
+        }
+
+        .qcard-handle {
+            font-size: 1.15rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .qcard-domain {
+            font-size: 0.8rem;
+            color: var(--muted);
+        }
+
+        .qcard-badges {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.25rem;
+        }
+
+        .qbadge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            letter-spacing: 0.05em;
+            padding: 0.2rem 0.5rem;
+            border-radius: 9999px;
+            text-transform: uppercase;
+        }
+
+        .qbadge-available {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .qbadge-exhausted {
+            background: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .qcard-active-badge {
+            font-size: 0.65rem;
+            font-weight: 700;
+            color: #22d3ee; /* cyan */
+            background: rgba(34, 211, 238, 0.1);
+            padding: 0.15rem 0.45rem;
+            border-radius: 9999px;
+            border: 1px solid rgba(34, 211, 238, 0.2);
+        }
+
+        /* Status Visualizers */
+        .qcard-body {
+            min-height: 100px;
+            display: flex;
+            align-items: center;
+        }
+
+        .available-container {
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            width: 100%;
+            padding: 1rem 0;
+            background: var(--surface2);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+        }
+
+        .available-text {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--success);
+            margin-top: 0.35rem;
+        }
+
+        .last-violation {
+            font-size: 0.72rem;
+            color: var(--muted);
+            margin-top: 0.25rem;
+        }
+
+        .exhausted-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-around;
+            width: 100%;
+            padding: 1rem;
+            background: var(--surface2);
+            border-radius: 10px;
+            border: 1px solid var(--border);
+            gap: 1rem;
+        }
+
+        .hourglass-wrapper {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            flex-shrink: 0;
+        }
+
+        .hourglass-svg {
+            overflow: visible;
+        }
+
+        .dripping-sand {
+            animation: drip 1s linear infinite;
+        }
+
+        @keyframes drip {
+            to {
+                stroke-dashoffset: -16;
+            }
+        }
+
+        .countdown-container {
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        .countdown-value {
+            font-size: 1.5rem;
+            font-weight: 700;
+            color: var(--danger);
+            line-height: 1.2;
+        }
+
+        .reset-time-lbl {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-top: 0.15rem;
+        }
+
+        /* ── Model Quota within Card ── */
+        .mq-card-section {
+            border-top: 1px solid var(--border);
+            padding-top: 1rem;
+        }
+
+        .mq-card-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 0.75rem;
+        }
+
+        .mq-card-section-title {
+            font-size: 0.75rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            color: var(--muted);
+        }
+
+        .mq-via {
+            font-size: 0.65rem;
+            font-weight: 400;
+            text-transform: none;
+            color: var(--muted);
+            margin-left: 0.25rem;
+        }
+
+        .mq-card-section-refresh {
+            background: none;
+            border: none;
+            color: var(--accent);
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            padding: 0.1rem 0.3rem;
+        }
+
+        .mq-card-section-refresh:hover {
+            text-decoration: underline;
+        }
+
+        .mq-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.4rem 0;
+            border-bottom: 1px solid rgba(0, 0, 0, 0.03);
+        }
+
+        .mq-row:last-child {
+            border-bottom: none;
+        }
+
+        .mq-model-name {
+            font-size: 0.75rem;
+            font-weight: 600;
+            width: 75px;
+            flex-shrink: 0;
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .mq-bar-container {
+            flex: 1;
+            height: 10px;
+            background: var(--bg);
+            border-radius: 5px;
+            overflow: hidden;
+        }
+
+        .mq-bar-fill {
+            height: 100%;
+            border-radius: 5px;
+            transition: width 0.4s ease;
+        }
+
+        .mq-pct {
+            font-size: 0.85rem;
+            font-weight: 700;
+            width: 38px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .mq-reset {
+            font-size: 0.7rem;
+            color: var(--muted);
+            width: 60px;
+            text-align: right;
+            flex-shrink: 0;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .not-active-text {
+            color: var(--muted);
+            font-size: 0.8rem;
+            font-style: italic;
             text-align: center;
-            padding: 4rem 2rem;
-            background-color: var(--card-bg);
-            border: 1px dashed var(--border-color);
-            border-radius: 0.75rem;
-            color: var(--text-muted);
-            margin-top: 2rem;
+            padding: 0.75rem 0;
+        }
+
+        .loading-text {
+            color: var(--muted);
+            font-size: 0.8rem;
+            text-align: center;
+            padding: 0.75rem 0;
+        }
+
+        .mq-meta {
+            font-size: 0.75rem;
+            color: var(--muted);
+            margin-bottom: 0.5rem;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .mq-captured-time {
+            font-size: 0.65rem;
+            opacity: 0.7;
+        }
+
+        .mq-err {
+            color: var(--danger);
+            font-size: 0.75rem;
+            text-align: center;
+            padding: 0.5rem;
+        }
+
+        .qcard-footer {
+            margin-top: auto;
+            border-top: 1px solid var(--border);
+            padding-top: 0.75rem;
+            display: flex;
+            justify-content: space-between;
+            font-size: 0.75rem;
+            color: var(--muted);
+        }
+
+        /* ── 3. Claude Code Kotası ── */
+        .cq-section {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .cq-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+        }
+
+        .cq-row {
+            display: grid;
+            grid-template-columns: 200px 1fr 80px 120px;
+            align-items: center;
+            gap: 1.5rem;
+            padding: 1rem 0;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .cq-row:last-child {
+            border-bottom: none;
+        }
+
+        @media (max-width: 768px) {
+            .cq-row {
+                grid-template-columns: 1fr;
+                gap: 0.5rem;
+                padding: 1rem 0;
+            }
+            .cq-pct-remaining, .cq-reset-time {
+                text-align: left !important;
+            }
+        }
+
+        .cq-tier-name {
+            font-size: 0.95rem;
+            font-weight: 700;
+            color: var(--text);
+        }
+
+        .cq-bar-container {
+            height: 8px;
+            background: var(--surface2);
+            border-radius: 4px;
+            overflow: hidden;
+            width: 100%;
+        }
+
+        .cq-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            width: 0;
+            transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .cq-pct-remaining {
+            font-size: 1.2rem;
+            font-weight: 700;
+            text-align: right;
+        }
+
+        .cq-reset-time {
+            font-size: 0.95rem;
+            color: var(--text);
+            font-weight: 500;
+            text-align: right;
+        }
+
+        .cq-unavail {
+            color: var(--muted);
+            font-size: 0.85rem;
+            text-align: center;
+            padding: 1.5rem 0;
+        }
+
+        /* ── 4. Kullanım Grafikleri ── */
+        .charts-filter-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 1rem;
+        }
+
+        .filter-controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+
+        .filter-controls label {
+            font-size: 0.8rem;
+            font-weight: 600;
+            color: var(--muted);
+            margin-right: 0.25rem;
+        }
+
+        select {
+            background-color: var(--surface2);
+            color: var(--text);
+            border: 1px solid var(--border);
+            padding: 0.4rem 1.75rem 0.4rem 0.75rem;
+            border-radius: 8px;
+            font-size: 0.8rem;
+            font-weight: 600;
+            cursor: pointer;
+            outline: none;
+            transition: border-color 0.2s;
+            appearance: none;
+            background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%239ca3af'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'/%3E%3C/svg%3E");
+            background-repeat: no-repeat;
+            background-position: right 0.5rem center;
+            background-size: 0.9rem;
+        }
+
+        select:focus {
+            border-color: var(--accent);
         }
 
         .charts-grid {
             display: grid;
-            grid-template-columns: 1fr;
-            gap: 2rem;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
         }
 
-        @media (min-width: 1024px) {
+        @media (max-width: 1024px) {
             .charts-grid {
-                grid-template-columns: 1fr 1fr;
+                grid-template-columns: 1fr;
             }
         }
 
         .chart-card {
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 0.75rem;
+            background-color: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
             padding: 1.5rem;
-            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            box-shadow: var(--shadow);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
         }
 
-        .chart-card h2 {
-            font-size: 1.125rem;
-            font-weight: 600;
-            margin-bottom: 1rem;
-            color: var(--text-main);
+        .chart-card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
         }
 
         .chart-container {
             position: relative;
-            height: 350px;
+            height: 320px;
             width: 100%;
         }
 
-        /* ── agy Account Quota cards ── */
-        /* ── agy model quota panel ── */
-        .mq-section { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.1rem 1.25rem; margin-top: 1.25rem; }
-        .mq-header  { display: flex; justify-content: space-between; align-items: center; margin-bottom: .85rem; }
-        .mq-title   { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; }
-        .mq-acct    { margin-bottom: .85rem; }
-        .mq-acct-label { font-size: .75rem; font-weight: 600; color: #38bdf8; margin-bottom: .4rem; }
-        .mq-row     { display: flex; align-items: center; gap: .6rem; padding: .25rem 0; border-bottom: 1px solid #1e293b; }
-        .mq-row:last-child { border-bottom: none; }
-        .mq-name    { font-size: .77rem; color: var(--text-muted); flex: 0 0 180px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .mq-bar-wrap{ flex: 1; display: flex; align-items: center; gap: .45rem; }
-        .mq-bar     { flex: 1; height: 7px; background: #0f172a; border-radius: 4px; overflow: hidden; }
-        .mq-bar-fill{ height: 100%; border-radius: 4px; transition: width .5s ease; }
-        .mq-pct     { font-size: .73rem; font-weight: 600; width: 42px; text-align: right; }
-        .mq-reset   { font-size: .68rem; color: #475569; width: 75px; text-align: right; flex-shrink: 0; }
-        .mq-err     { font-size: .75rem; color: #f87171; }
-
-        .quota-section { margin-bottom: 2rem; }
-        .section-title { font-size: 1rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 1rem; }
-        .quota-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(280px, 1fr)); gap: 1rem; }
-        .qcard {
-            background: var(--card-bg); border: 1px solid var(--border-color);
-            border-radius: .75rem; padding: 1rem 1.1rem;
-            display: flex; flex-direction: column; gap: .7rem;
-            transition: transform .15s ease, box-shadow .15s ease;
+        .no-data {
+            text-align: center;
+            padding: 4rem 2rem;
+            background-color: var(--surface);
+            border: 1px dashed var(--border);
+            border-radius: 12px;
+            color: var(--muted);
+            width: 100%;
         }
-        .qcard:hover { transform: translateY(-2px); box-shadow: 0 4px 16px #0006; }
-        .qcard-ok       { border-color: #166534; }
-        .qcard-exhausted{ border-color: #7f1d1d; }
-        .qcard-active   { border-color: #38bdf8 !important; box-shadow: 0 0 0 1px #38bdf826; }
-        /* header row */
-        .qcard-header { display: flex; justify-content: space-between; align-items: flex-start; }
-        .qcard-identity { display: flex; flex-direction: column; gap: .2rem; }
-        .qcard-handle { font-size: 1rem; font-weight: 700; color: var(--text-main); }
-        .qcard-domain { font-size: .72rem; color: var(--text-muted); }
-        .qcard-badges { display: flex; flex-direction: column; align-items: flex-end; gap: .25rem; }
-        .qbadge { font-size: .62rem; font-weight: 700; letter-spacing: .05em; padding: .2rem .55rem; border-radius: 99px; }
-        .qgood  { background: #14532d; color: #4ade80; }
-        .qbad   { background: #7f1d1d; color: #fca5a5; }
-        .qcard-active-badge { font-size: .6rem; background: #0c2233; color: #38bdf8; border-radius: 99px; padding: .15rem .45rem; font-weight: 700; }
-        /* reset bar */
-        .qcard-bar-label { font-size: .68rem; color: var(--text-muted); display: flex; justify-content: space-between; margin-bottom: .3rem; }
-        .qcard-countdown { font-size: 1.15rem; font-weight: 700; }
-        .qcard-bar { position: relative; height: 10px; background: #0f172a; border-radius: 5px; overflow: hidden; }
-        .qcard-bar-elapsed   { position: absolute; left: 0; top: 0; height: 100%; background: #1e3a5f; transition: width .6s ease; }
-        .qcard-bar-remaining { position: absolute; top: 0; height: 100%; transition: width .6s ease, left .6s ease; }
-        .qcard-bar-available { position: absolute; inset: 0; background: #14532d; }
-        /* footer stats */
-        .qcard-stats { display: flex; gap: 1.25rem; padding-top: .5rem; border-top: 1px solid #1e293b; }
-        .qstat { display: flex; flex-direction: column; }
-        .qstat-val { font-size: .95rem; font-weight: 600; color: var(--text-main); }
-        .qstat-lbl { font-size: .62rem; color: var(--text-muted); }
 
-        /* ── Claude Quota panel ── */
-        .cq-section { margin-bottom: 2rem; }
-        .cq-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; }
-        .cq-card h3 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
-        .cq-refresh-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: .8rem; padding: .2rem .5rem; border-radius: .25rem; }
-        .cq-refresh-btn:hover { color: var(--text-main); background: #1e293b; }
-        .cq-row { display: flex; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid #1e293b; font-size: .83rem; }
-        .cq-row:last-child { border-bottom: none; }
-        .cq-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
-        .cq-name { flex: 0 0 170px; color: var(--text-muted); }
-        .cq-bar-wrap { flex: 1; display: flex; align-items: center; gap: .5rem; }
-        .cq-bar { flex: 1; height: 6px; background: #1e3a5f; border-radius: 3px; overflow: hidden; }
-        .cq-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
-        .cq-util { font-size: .78rem; font-weight: 600; width: 46px; text-align: right; }
-        .cq-pct { font-size: .78rem; color: var(--text-muted); width: 50px; text-align: right; }
-        .cq-reset { font-size: .75rem; color: var(--text-muted); width: 90px; text-align: right; }
-        .cq-reset b { color: var(--text-main); font-weight: 500; }
-        .cq-unavail { color: #475569; font-size: .82rem; }
-        .cq-dot-red    { background: #ef4444; }
-        .cq-dot-yellow { background: #eab308; }
-        .cq-dot-green  { background: #22c55e; }
-        .cq-bar-red    { background: #ef4444; }
-        .cq-bar-yellow { background: #eab308; }
-        .cq-bar-green  { background: #22c55e; }
+        /* ── 5. Bilgi Panelleri ── */
+        .info-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1.5rem;
+        }
 
-        /* ── Statusline + Last Session panels ── */
-        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 2rem; }
-        @media (max-width: 700px) { .info-grid { grid-template-columns: 1fr; } }
-        /* min-height prevents layout shift on refresh */
-        .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; min-height: 280px; }
-        .info-card h3 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .85rem; }
-        .sl-row { display: flex; justify-content: space-between; align-items: center; padding: .3rem 0; border-bottom: 1px solid #1e293b; font-size: .82rem; }
-        .sl-row:last-child { border-bottom: none; }
-        .sl-key { color: var(--text-muted); }
-        .sl-val { color: var(--text-main); font-weight: 500; }
-        .sl-val.active { color: #4ade80; }
-        .sl-val.warn   { color: #fb923c; }
-        .sl-val.stale  { color: #64748b; font-style: italic; }
-        .sl-unavail { color: #475569; font-size: .82rem; }
-        .ctx-bar { width: 100%; height: 6px; background: #1e3a5f; border-radius: 3px; margin-top: 2px; overflow: hidden; }
-        .ctx-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+        @media (max-width: 800px) {
+            .info-grid {
+                grid-template-columns: 1fr;
+            }
+        }
 
-        /* ── Last Session card redesign ── */
-        .ls-stats { display: grid; grid-template-columns: repeat(3, 1fr); gap: .5rem; margin-bottom: 1rem; }
-        .ls-stat { background: #0f172a; border-radius: .5rem; padding: .6rem .75rem; text-align: center; }
-        .ls-stat-val { font-size: 1.25rem; font-weight: 700; color: var(--text-main); line-height: 1.2; }
-        .ls-stat-lbl { font-size: .65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-top: .15rem; }
-        .ls-model { font-size: .78rem; color: #38bdf8; background: #0c2233; border-radius: .375rem; padding: .25rem .6rem; display: inline-block; margin-bottom: .75rem; max-width: 100%; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .ls-meta { font-size: .75rem; color: var(--text-muted); display: flex; flex-direction: column; gap: .2rem; }
-        .ls-meta span b { color: var(--text-main); font-weight: 500; }
-        .ls-types { margin-top: .6rem; display: flex; flex-wrap: wrap; gap: .3rem; }
-        .ls-type-chip { font-size: .65rem; background: #1e293b; border-radius: 99px; padding: .15rem .5rem; color: #94a3b8; }
-        .ls-type-chip b { color: var(--text-main); }
+        .info-card {
+            background: var(--surface);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: var(--shadow);
+            min-height: 300px;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
 
-        /* type distribution mini bar chart */
-        .ls-chart { margin-top: .75rem; }
-        .ls-chart-title { font-size: .65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .4rem; }
-        .ls-bar-row { display: flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
-        .ls-bar-label { font-size: .68rem; color: #94a3b8; width: 130px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .ls-bar-track { flex: 1; height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; }
-        .ls-bar-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
-        .ls-bar-count { font-size: .68rem; color: var(--text-main); font-weight: 600; width: 28px; text-align: right; flex-shrink: 0; }
+        .info-card-title-group {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
 
-        .rt-reset { font-size: .72rem; color: var(--text-muted); width: 80px; text-align: right; flex-shrink: 0; white-space: nowrap; }
-        .rt-reset b { color: var(--text-main); }
+        .info-card-title {
+            font-size: 1.1rem;
+            font-weight: 700;
+            color: var(--text);
+        }
 
-        /* active account highlight on quota cards */
-        .qcard-active { border-color: #38bdf8 !important; box-shadow: 0 0 0 1px #38bdf826; }
-        .qcard-active-badge { font-size: .6rem; background: #0c2233; color: #38bdf8; border-radius: 99px; padding: .1rem .45rem; font-weight: 700; letter-spacing: .04em; }
-        .qcard { transition: transform .15s ease, box-shadow .15s ease; cursor: default; }
-        .qcard:hover { transform: translateY(-2px); box-shadow: 0 4px 16px #0006; }
+        .sl-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .sl-table tr {
+            border-bottom: 1px solid var(--border);
+        }
+
+        .sl-table tr:last-child {
+            border-bottom: none;
+        }
+
+        .sl-table td {
+            padding: 0.6rem 0;
+            font-size: 0.85rem;
+            vertical-align: middle;
+        }
+
+        .sl-key {
+            color: var(--muted);
+            font-weight: 500;
+        }
+
+        .sl-val {
+            text-align: right;
+            font-weight: 600;
+            color: var(--text);
+        }
+
+        .status-badge {
+            font-size: 0.75rem;
+            font-weight: 700;
+            padding: 0.2rem 0.5rem;
+            border-radius: 6px;
+        }
+
+        .status-badge.active {
+            background: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+        }
+
+        .status-badge.idle {
+            background: rgba(156, 163, 175, 0.1);
+            color: var(--muted);
+        }
+
+        .status-badge.stale {
+            background: rgba(245, 158, 11, 0.1);
+            color: var(--warning);
+            font-style: italic;
+        }
+
+        .ctx-usage-container {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            justify-content: flex-end;
+            width: 100%;
+        }
+
+        .ctx-pct-text {
+            font-size: 0.85rem;
+            font-weight: 700;
+        }
+
+        .ctx-bar-container {
+            width: 80px;
+            height: 8px;
+            background: var(--surface2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .ctx-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease-out;
+        }
+
+        .sl-captured-at {
+            font-size: 0.7rem;
+            color: var(--muted);
+            margin-top: auto;
+            text-align: right;
+            padding-top: 0.5rem;
+        }
+
+        .sl-unavail {
+            color: var(--muted);
+            font-size: 0.85rem;
+            text-align: center;
+            margin: auto;
+        }
+
+        /* Last Session */
+        .ls-stats {
+            display: grid;
+            grid-template-columns: repeat(3, 1fr);
+            gap: 0.75rem;
+        }
+
+        .ls-stat-card {
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: 0.75rem;
+            border-radius: 10px;
+            text-align: center;
+        }
+
+        .ls-stat-val {
+            font-size: 1.25rem;
+            font-weight: 700;
+            color: var(--text);
+            line-height: 1.2;
+        }
+
+        .ls-stat-lbl {
+            font-size: 0.65rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            font-weight: 600;
+            margin-top: 0.25rem;
+        }
+
+        .ls-meta-section {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            padding: 0.75rem;
+            border-radius: 10px;
+            flex-wrap: wrap;
+        }
+
+        .ls-model-badge {
+            font-size: 0.78rem;
+            font-weight: 600;
+            color: var(--accent);
+            background: rgba(56, 189, 248, 0.1);
+            border: 1px solid rgba(56, 189, 248, 0.2);
+            border-radius: 6px;
+            padding: 0.25rem 0.5rem;
+        }
+
+        .ls-meta-details {
+            display: flex;
+            flex-direction: column;
+            gap: 0.15rem;
+            font-size: 0.75rem;
+        }
+
+        .ls-meta-row {
+            display: flex;
+            gap: 0.25rem;
+        }
+
+        .ls-meta-row span {
+            color: var(--muted);
+        }
+
+        .ls-meta-row b {
+            color: var(--text);
+        }
+
+        .ls-id-code {
+            font-family: monospace;
+            background: var(--bg);
+            padding: 0 0.2rem;
+            border-radius: 3px;
+        }
+
+        .ls-chart-section {
+            display: flex;
+            flex-direction: column;
+            gap: 0.5rem;
+            margin-top: 0.5rem;
+        }
+
+        .ls-chart-title {
+            font-size: 0.7rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            color: var(--muted);
+            letter-spacing: 0.05em;
+        }
+
+        .ls-chart-body {
+            display: flex;
+            flex-direction: column;
+            gap: 0.4rem;
+        }
+
+        .ls-bar-row {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
+        .ls-bar-label {
+            font-size: 0.72rem;
+            color: var(--text);
+            width: 110px;
+            flex-shrink: 0;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ls-bar-track {
+            flex: 1;
+            height: 8px;
+            background: var(--surface2);
+            border-radius: 4px;
+            overflow: hidden;
+        }
+
+        .ls-bar-fill {
+            height: 100%;
+            border-radius: 4px;
+            transition: width 0.5s ease;
+        }
+
+        .ls-bar-count {
+            font-size: 0.72rem;
+            color: var(--text);
+            font-weight: 700;
+            width: 25px;
+            text-align: right;
+            flex-shrink: 0;
+        }
+
+        .warning-text-small {
+            font-size: 0.75rem;
+            color: var(--warning);
+            margin-top: 0.5rem;
+        }
     </style>
 </head>
-<body>
+<body data-theme="dark">
     <div class="container">
-        <header>
-            <h1>
-                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <!-- 1. Header -->
+        <header class="dashboard-header">
+            <div class="logo-group">
+                <svg class="header-logo" viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="var(--accent)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
                     <line x1="18" y1="20" x2="18" y2="10"></line>
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                 </svg>
-                agykit dashboard
-            </h1>
-            <div class="controls">
-                <div class="status">
+                <h1 class="logo-title">agykit quota <span class="version-badge">v1.0.0</span></h1>
+            </div>
+            <div class="header-actions">
+                <div class="live-indicator">
                     <span class="live-dot" id="liveDot"></span>
-                    <span>Live Sync</span>
+                    <span class="live-label">Live</span>
                 </div>
-                <select id="sourceSelect">
-                    <option value="claude">Claude Code</option>
-                    <option value="agy">agy (Antigravity)</option>
-                </select>
-                <select id="rangeSelect">
-                    <option value="7d">Last 7 Days</option>
-                    <option value="30d">Last 30 Days</option>
-                    <option value="all" selected>All Time</option>
-                </select>
+                <button id="themeToggle" class="theme-toggle-btn">🌙</button>
             </div>
         </header>
 
+        <!-- Warning Banner -->
         <div id="warningBanner" class="warning-banner" style="display: none;">
             <svg viewBox="0 0 20 20" fill="currentColor">
                 <path fill-rule="evenodd" d="M8.257 3.099c.765-1.36 2.722-1.36 3.486 0l5.58 9.92c.75 1.334-.213 2.98-1.742 2.98H4.42c-1.53 0-2.493-1.646-1.743-2.98l5.58-9.92zM11 13a1 1 0 11-2 0 1 1 0 012 0zm-1-8a1 1 0 00-1 1v3a1 1 0 002 0V6a1 1 0 00-1-1z" clip-rule="evenodd" />
@@ -354,81 +1047,111 @@
             <span id="warningText"></span>
         </div>
 
-        <div id="noDataContainer" class="no-data" style="display: none;">
-            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 1rem; opacity: 0.5;">
-                <circle cx="12" cy="12" r="10"></circle>
-                <line x1="12" y1="8" x2="12" y2="12"></line>
-                <line x1="12" y1="16" x2="12.01" y2="16"></line>
-            </svg>
-            <p>No statistics found. Run some commands to populate logs!</p>
-        </div>
-
-        <!-- Claude Quota -->
-        <section class="cq-section">
-            <div class="cq-card">
-                <h3>Claude Code Kotası
-                    <button class="cq-refresh-btn" onclick="loadClaudeQuota()">↻ Yenile</button>
-                </h3>
-                <div id="claudeQuotaBody"><p class="cq-unavail">Yükleniyor…</p></div>
-            </div>
-        </section>
-
-        <!-- Statusline + Last Session -->
-        <div class="info-grid">
-            <div class="info-card" id="statuslineCard">
-                <h3>agy Canlı Durum <span id="slAge" style="font-size:.7rem;color:#475569;font-weight:400;text-transform:none"></span></h3>
-                <div id="statuslineBody"><p class="sl-unavail">Henüz snapshot yok — agy çalıştırınca burada görünür.</p></div>
-            </div>
-            <div class="info-card" id="lastSessionCard">
-                <h3>Son agy Oturumu</h3>
-                <div id="lastSessionBody">
-                    <div class="ls-stats">
-                        <div class="ls-stat"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Araç Çağrısı</div></div>
-                        <div class="ls-stat"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Kayıt</div></div>
-                        <div class="ls-stat"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Süre</div></div>
-                    </div>
-                    <p class="sl-unavail" style="margin-top:.5rem">Yükleniyor…</p>
-                </div>
-            </div>
-        </div>
-
-        <!-- Account Quota Status -->
+        <!-- 2. AGY Hesap Kotası -->
         <section class="quota-section">
-            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
-                <h2 class="section-title" style="margin-bottom:0">agy Hesap Kotası</h2>
-                <span style="display:flex;gap:.5rem">
-                    <button class="cq-refresh-btn" onclick="loadQuota()">↻ Yenile</button>
-                    <button class="cq-refresh-btn" id="refreshAllBtn" onclick="refreshAllAccounts()">⟳ Tüm Hesapları Çalıştır</button>
-                </span>
-            </div>
-            <div id="refreshAllStatus" style="display:none;font-size:.8rem;color:#94a3b8;margin-bottom:.75rem"></div>
-            <div id="quotaGrid" class="quota-grid"></div>
-            <!-- Model quota breakdown -->
-            <div class="mq-section">
-                <div class="mq-header">
-                    <span class="mq-title">Model Bazlı Kota
-                        <span style="font-size:.62rem;color:#475569;font-weight:400;text-transform:none;margin-left:.5rem">via agy /usage</span>
-                    </span>
-                    <button class="cq-refresh-btn" onclick="loadModelQuota()">↻ Yenile</button>
+            <div class="section-header">
+                <h2 class="section-title">agy Hesap Kotası</h2>
+                <div class="section-actions">
+                    <button class="btn" onclick="loadQuota()">↻ Yenile</button>
+                    <button class="btn" id="refreshAllBtn" onclick="refreshAllAccounts()">⟳ Tüm Hesapları Çalıştır</button>
                 </div>
-                <div id="modelQuotaBody"><p class="cq-unavail">Yükleniyor…</p></div>
+            </div>
+            <div id="refreshAllStatus" style="display:none; font-size:.8rem; color:var(--muted); margin-bottom:.75rem;"></div>
+            <div id="quotaGrid" class="quota-grid"></div>
+        </section>
+
+        <!-- 3. Claude Code Kotası -->
+        <section class="cq-section">
+            <div class="section-header">
+                <div class="cq-title-area" style="display: flex; align-items: center; gap: 0.5rem;">
+                    <h2 class="section-title">Claude Code Kotası</h2>
+                    <span class="version-badge" style="font-size: 0.65rem;">Anthropic OAuth</span>
+                </div>
+                <button class="btn" onclick="loadClaudeQuota()">↻ Yenile</button>
+            </div>
+            <div class="cq-card">
+                <div id="claudeQuotaBody"><div class="cq-unavail">Yükleniyor…</div></div>
             </div>
         </section>
 
-        <div id="chartsGrid" class="charts-grid">
-            <div class="chart-card">
-                <h2 id="mainChartTitle">Daily Usage</h2>
-                <div class="chart-container">
-                    <canvas id="mainChart"></canvas>
+        <!-- 4. Kullanım Grafikleri -->
+        <section class="charts-section">
+            <div class="charts-filter-header">
+                <h2 class="section-title">Kullanım Grafikleri</h2>
+                <div class="filter-controls">
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <label for="sourceSelect">Kaynak:</label>
+                        <select id="sourceSelect">
+                            <option value="claude">Claude</option>
+                            <option value="agy">agy</option>
+                        </select>
+                    </div>
+                    <div style="display: flex; align-items: center; gap: 0.25rem;">
+                        <label for="rangeSelect">Aralık:</label>
+                        <select id="rangeSelect">
+                            <option value="7d">7g</option>
+                            <option value="30d">30g</option>
+                            <option value="all" selected>Tümü</option>
+                        </select>
+                    </div>
                 </div>
             </div>
-            <div class="chart-card">
-                <h2 id="mixChartTitle">Model Breakdown</h2>
-                <div class="chart-container">
-                    <canvas id="mixChart"></canvas>
+
+            <div id="noDataContainer" class="no-data" style="display: none;">
+                <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" style="margin: 0 auto 1rem; opacity: 0.5;">
+                    <circle cx="12" cy="12" r="10"></circle>
+                    <line x1="12" y1="8" x2="12" y2="12"></line>
+                    <line x1="12" y1="16" x2="12.01" y2="16"></line>
+                </svg>
+                <p>İstatistik bulunamadı. Veri toplamak için komut çalıştırın!</p>
+            </div>
+
+            <div id="chartsGrid" class="charts-grid" style="margin-top: 1rem;">
+                <div class="chart-card">
+                    <h3 class="chart-card-title" id="mainChartTitle">Günlük Token Kullanımı</h3>
+                    <div class="chart-container">
+                        <canvas id="mainChart"></canvas>
+                    </div>
+                </div>
+                <div class="chart-card">
+                    <h3 class="chart-card-title" id="mixChartTitle">Model Dağılımı</h3>
+                    <div class="chart-container">
+                        <canvas id="mixChart"></canvas>
+                    </div>
                 </div>
             </div>
-        </div>
+        </section>
+
+        <!-- 5. Bilgi Panelleri -->
+        <section class="info-section">
+            <div class="info-grid">
+                <!-- agy Canlı Durum -->
+                <div class="info-card" id="statuslineCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">agy Canlı Durum</h3>
+                        <span id="slAge" style="font-size: 0.72rem; color: var(--muted); font-weight: 500;"></span>
+                    </div>
+                    <div id="statuslineBody" style="display: flex; flex-direction: column; height: 100%;">
+                        <div class="sl-unavail">Henüz snapshot yok — agy çalıştırınca burada görünür.</div>
+                    </div>
+                </div>
+
+                <!-- Son agy Oturumu -->
+                <div class="info-card" id="lastSessionCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">Son agy Oturumu</h3>
+                    </div>
+                    <div id="lastSessionBody" style="display: flex; flex-direction: column; gap: 1rem; height: 100%;">
+                        <div class="ls-stats">
+                            <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Araç Çağrısı</div></div>
+                            <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Kayıt</div></div>
+                            <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Süre</div></div>
+                        </div>
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+            </div>
+        </section>
     </div>
 
     <script>
@@ -442,6 +1165,7 @@
         const noDataContainer = document.getElementById('noDataContainer');
         const chartsGrid = document.getElementById('chartsGrid');
         const liveDot = document.getElementById('liveDot');
+        const themeToggleBtn = document.getElementById('themeToggle');
 
         const colors = [
             'rgba(56, 189, 248, 1)',   // light blue
@@ -464,9 +1188,59 @@
             'rgba(239, 68, 68, 0.2)',
         ];
 
-        // Global Chart.js defaults
-        Chart.defaults.color = '#94a3b8';
-        Chart.defaults.borderColor = '#334155';
+        // Theme management
+        let currentTheme = localStorage.getItem('theme') || 'dark';
+        applyTheme(currentTheme);
+
+        themeToggleBtn.addEventListener('click', () => {
+            currentTheme = currentTheme === 'dark' ? 'light' : 'dark';
+            applyTheme(currentTheme);
+        });
+
+        function getChartColors() {
+            const isDark = document.body.getAttribute('data-theme') === 'dark';
+            return {
+                text: isDark ? '#9ca3af' : '#64748b',
+                grid: isDark ? '#374151' : '#e2e8f0',
+            };
+        }
+
+        function applyTheme(theme) {
+            document.body.setAttribute('data-theme', theme);
+            localStorage.setItem('theme', theme);
+            themeToggleBtn.textContent = theme === 'dark' ? '☀️' : '🌙';
+            
+            const cColors = getChartColors();
+            Chart.defaults.color = cColors.text;
+            Chart.defaults.borderColor = cColors.grid;
+            
+            if (mainChartInstance) {
+                if (mainChartInstance.options.scales.x) {
+                    mainChartInstance.options.scales.x.grid.color = cColors.grid;
+                    mainChartInstance.options.scales.x.ticks.color = cColors.text;
+                }
+                if (mainChartInstance.options.scales.y) {
+                    mainChartInstance.options.scales.y.grid.color = cColors.grid;
+                    mainChartInstance.options.scales.y.ticks.color = cColors.text;
+                }
+                if (mainChartInstance.options.scales.y1) {
+                    mainChartInstance.options.scales.y1.grid.color = cColors.grid;
+                    mainChartInstance.options.scales.y1.ticks.color = cColors.text;
+                }
+                mainChartInstance.update();
+            }
+            if (mixChartInstance) {
+                if (mixChartInstance.options.scales.x) {
+                    mixChartInstance.options.scales.x.grid.color = cColors.grid;
+                    mixChartInstance.options.scales.x.ticks.color = cColors.text;
+                }
+                if (mixChartInstance.options.scales.y) {
+                    mixChartInstance.options.scales.y.grid.color = cColors.grid;
+                    mixChartInstance.options.scales.y.ticks.color = cColors.text;
+                }
+                mixChartInstance.update();
+            }
+        }
 
         function showWarning(msg) {
             if (msg) {
@@ -502,7 +1276,7 @@
 
                 renderCharts(source, data);
             } catch (err) {
-                showWarning(`Failed to load data: ${err.message}`);
+                showWarning(`Veri yüklenemedi: ${err.message}`);
                 noDataContainer.style.display = 'block';
                 chartsGrid.style.display = 'none';
             }
@@ -515,9 +1289,11 @@
             if (mainChartInstance) mainChartInstance.destroy();
             if (mixChartInstance) mixChartInstance.destroy();
 
+            const cColors = getChartColors();
+
             if (source === 'claude') {
-                document.getElementById('mainChartTitle').textContent = 'Daily Token Usage';
-                document.getElementById('mixChartTitle').textContent = 'Daily Tokens by Model';
+                document.getElementById('mainChartTitle').textContent = 'Günlük Token Kullanımı';
+                document.getElementById('mixChartTitle').textContent = 'Model Dağılımı';
 
                 // Main line chart (total tokens)
                 mainChartInstance = new Chart(ctxMain, {
@@ -525,7 +1301,7 @@
                     data: {
                         labels: data.labels,
                         datasets: [{
-                            label: 'Total Tokens',
+                            label: 'Toplam Token',
                             data: data.tokens_total,
                             borderColor: 'rgba(56, 189, 248, 1)',
                             backgroundColor: 'rgba(56, 189, 248, 0.1)',
@@ -541,7 +1317,8 @@
                             legend: { display: false }
                         },
                         scales: {
-                            y: { beginAtZero: true }
+                            x: { grid: { color: cColors.grid }, ticks: { color: cColors.text } },
+                            y: { beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text } }
                         }
                     }
                 });
@@ -549,7 +1326,7 @@
                 // Stacked bar chart (tokens by model)
                 const mixDatasets = [];
                 let colorIdx = 0;
-                for (const [model, tokensList] of Object.entries(data.tokens_by_model)) {
+                for (const [model, tokensList] of Object.entries(data.tokens_by_model || {})) {
                     mixDatasets.push({
                         label: model,
                         data: tokensList,
@@ -571,16 +1348,16 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            x: { stacked: true },
-                            y: { stacked: true, beginAtZero: true }
+                            x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text } },
+                            y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text } }
                         }
                     }
                 });
 
             } else {
                 // source === 'agy'
-                document.getElementById('mainChartTitle').textContent = 'Daily Activity (Sessions & Tools)';
-                document.getElementById('mixChartTitle').textContent = 'Daily Model Interactions';
+                document.getElementById('mainChartTitle').textContent = 'Günlük Aktivite (Oturumlar & Araçlar)';
+                document.getElementById('mixChartTitle').textContent = 'Model Dağılımı';
 
                 // Main line chart (sessions and tool calls)
                 mainChartInstance = new Chart(ctxMain, {
@@ -589,7 +1366,7 @@
                         labels: data.labels,
                         datasets: [
                             {
-                                label: 'Sessions',
+                                label: 'Oturumlar',
                                 data: data.sessions,
                                 borderColor: 'rgba(16, 185, 129, 1)',
                                 backgroundColor: 'rgba(16, 185, 129, 0.1)',
@@ -599,7 +1376,7 @@
                                 yAxisID: 'y'
                             },
                             {
-                                label: 'Tool Calls',
+                                label: 'Araç Çağrıları',
                                 data: data.tool_calls,
                                 borderColor: 'rgba(139, 92, 246, 1)',
                                 backgroundColor: 'transparent',
@@ -614,20 +1391,24 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
+                            x: { grid: { color: cColors.grid }, ticks: { color: cColors.text } },
                             y: {
                                 type: 'linear',
                                 display: true,
                                 position: 'left',
                                 beginAtZero: true,
-                                title: { display: true, text: 'Sessions' }
+                                title: { display: true, text: 'Oturumlar' },
+                                grid: { color: cColors.grid },
+                                ticks: { color: cColors.text }
                             },
                             y1: {
                                 type: 'linear',
                                 display: true,
                                 position: 'right',
                                 beginAtZero: true,
-                                title: { display: true, text: 'Tool Calls' },
-                                grid: { drawOnChartArea: false } // only want the grid lines for one axis
+                                title: { display: true, text: 'Araç Çağrıları' },
+                                grid: { drawOnChartArea: false },
+                                ticks: { color: cColors.text }
                             }
                         }
                     }
@@ -636,7 +1417,7 @@
                 // Stacked bar chart (model mix)
                 const mixDatasets = [];
                 let colorIdx = 0;
-                for (const [model, countsList] of Object.entries(data.model_mix)) {
+                for (const [model, countsList] of Object.entries(data.model_mix || {})) {
                     mixDatasets.push({
                         label: model,
                         data: countsList,
@@ -658,43 +1439,44 @@
                         responsive: true,
                         maintainAspectRatio: false,
                         scales: {
-                            x: { stacked: true },
-                            y: { stacked: true, beginAtZero: true, ticks: { precision: 0 } }
+                            x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text } },
+                            y: { stacked: true, beginAtZero: true, ticks: { precision: 0, color: cColors.text }, grid: { color: cColors.grid } }
                         }
                     }
                 });
             }
         }
 
-        // Event listeners
         sourceSelect.addEventListener('change', loadData);
         rangeSelect.addEventListener('change', loadData);
 
-        // ── Quota Panel ──────────────────────────────────────────────────
+        // ── Quota Panel (3 accounts grid) ──
         const quotaGrid = document.getElementById('quotaGrid');
-
-        function fmtSec(sec) {
-            if (sec <= 0) return '0s';
-            const h = Math.floor(sec / 3600), m = Math.floor((sec % 3600) / 60), s = sec % 60;
-            if (h > 0) return `${h}h ${m}m`;
-            if (m > 0) return `${m}m ${s}s`;
-            return `${s}s`;
-        }
-
-        // live update: card bars + countdowns
-        const qcCountdowns = {};  // id → {cdEl, elBar, remBar, targetEpoch, windowSecs}
+        const qcCountdowns = {};
 
         setInterval(() => {
             const now = Date.now() / 1000;
             for (const [id, ct] of Object.entries(qcCountdowns)) {
                 const rem = Math.max(0, ct.targetEpoch - now);
                 const win = ct.windowSecs || 1;
-                const elPct  = Math.min(100, Math.round((win - rem) / win * 100));
-                const remPct = 100 - elPct;
-                const remColor = remPct > 40 ? '#fb923c' : remPct > 15 ? '#f97316' : '#ef4444';
-                if (ct.elBar) ct.elBar.style.width = elPct + '%';
-                if (ct.remBar) { ct.remBar.style.left = elPct + '%'; ct.remBar.style.width = remPct + '%'; ct.remBar.style.background = remColor; }
-                if (ct.cdEl)  ct.cdEl.textContent = rem > 0 ? fmtReset(Math.round(rem)) : '✓ Sıfırlandı';
+                const ratio = rem / win;
+                
+                if (ct.cdEl) {
+                    ct.cdEl.textContent = rem > 0 ? fmtReset(Math.round(rem)) : '✓ Sıfırlandı';
+                }
+                
+                if (ct.upperRect) {
+                    const y = 5 + 35 * (1 - ratio);
+                    const h = 35 * ratio;
+                    ct.upperRect.setAttribute('y', y);
+                    ct.upperRect.setAttribute('height', h);
+                }
+                if (ct.lowerRect) {
+                    const y = 75 - 35 * (1 - ratio);
+                    const h = 35 * (1 - ratio);
+                    ct.lowerRect.setAttribute('y', y);
+                    ct.lowerRect.setAttribute('height', h);
+                }
             }
         }, 1000);
 
@@ -705,65 +1487,90 @@
             ]).then(([data, activeData]) => {
                 const activeEmail = activeData.email || null;
                 quotaGrid.innerHTML = '';
-                for (const k of Object.keys(qcCountdowns)) delete qcCountdowns[k];
+                
+                for (const k of Object.keys(qcCountdowns)) {
+                    delete qcCountdowns[k];
+                }
 
                 if (!data.accounts || data.accounts.length === 0) {
-                    quotaGrid.innerHTML = '<p style="color:#888">Hesap verisi yok.</p>'; return;
+                    quotaGrid.innerHTML = '<div class="cq-unavail">Hesap verisi yok.</div>';
+                    return;
                 }
-                const win = data.quota_window_seconds || 14400;
+
+                const windowSecs = data.quota_window_seconds || 14400;
                 const nowEpoch = Date.now() / 1000;
 
-                // active account first
-                const sorted = [...data.accounts].sort((a,b) =>
-                    a.email === activeEmail ? -1 : b.email === activeEmail ? 1 : 0);
+                const sorted = [...data.accounts].sort((a, b) => 
+                    a.email === activeEmail ? -1 : b.email === activeEmail ? 1 : 0
+                );
 
                 sorted.forEach((acct, i) => {
                     const exhausted = acct.status === 'exhausted';
-                    const isActive  = acct.email === activeEmail;
-                    const handle    = acct.email.split('@')[0];
-                    const domain    = '@' + (acct.email.split('@')[1] || '');
-                    const qid       = `qc${i}`;
-
-                    // Bar geometry
-                    let elPct = 0, remPct = 0, remColor = '#4ade80', barHtml;
+                    const isActive = acct.email === activeEmail;
+                    const handle = acct.email.split('@')[0];
+                    const domain = '@' + (acct.email.split('@')[1] || '');
+                    const qid = `qc${i}`;
+                    
+                    let statusHtml = '';
+                    
                     if (exhausted && acct.resets_in_seconds > 0) {
                         const total = acct.resets_in_seconds + (acct.elapsed_seconds || 0);
-                        elPct   = Math.round((acct.elapsed_seconds || 0) / total * 100);
-                        remPct  = 100 - elPct;
-                        remColor = remPct > 40 ? '#fb923c' : remPct > 15 ? '#f97316' : '#ef4444';
-                        barHtml = `
-                            <div class="qcard-bar-label">
-                                <span>Pencere ilerlemesi</span>
-                                <span id="${qid}-cd" style="color:${remColor};font-weight:700">${fmtReset(acct.resets_in_seconds)}</span>
+                        const ratio = Math.max(0, Math.min(1, acct.resets_in_seconds / total));
+                        
+                        statusHtml = `
+                            <div class="exhausted-container">
+                                <div class="hourglass-wrapper">
+                                    <svg class="hourglass-svg" viewBox="0 0 60 80" width="40" height="53">
+                                        <defs>
+                                            <clipPath id="upper-clip-${qid}">
+                                                <rect id="upper-rect-${qid}" x="0" y="${5 + 35 * (1 - ratio)}" width="60" height="${35 * ratio}" />
+                                            </clipPath>
+                                            <clipPath id="lower-clip-${qid}">
+                                                <rect id="lower-rect-${qid}" x="0" y="${75 - 35 * (1 - ratio)}" width="60" height="${35 * (1 - ratio)}" />
+                                            </clipPath>
+                                        </defs>
+                                        <!-- Frame -->
+                                        <path d="M 10,5 L 50,5 L 30,40 Z" fill="none" stroke="var(--border)" stroke-width="3.5" stroke-linejoin="round" />
+                                        <path d="M 10,75 L 50,75 L 30,40 Z" fill="none" stroke="var(--border)" stroke-width="3.5" stroke-linejoin="round" />
+                                        <!-- Upper sand -->
+                                        <polygon points="10,5 50,5 30,40" fill="var(--warning)" clip-path="url(#upper-clip-${qid})" />
+                                        <!-- Lower sand -->
+                                        <polygon points="10,75 50,75 30,40" fill="var(--warning)" clip-path="url(#lower-clip-${qid})" />
+                                        <!-- Stream -->
+                                        <line x1="30" y1="40" x2="30" y2="75" stroke="var(--warning)" stroke-width="2" stroke-dasharray="4,4" class="dripping-sand" />
+                                    </svg>
+                                </div>
+                                <div class="countdown-container">
+                                    <div class="countdown-value" id="${qid}-cd">${fmtReset(acct.resets_in_seconds)}</div>
+                                    <div class="reset-time-lbl">Sıfırlanma: ${acct.resets_at || '—'}</div>
+                                </div>
                             </div>
-                            <div class="qcard-bar">
-                                <div class="qcard-bar-elapsed" id="${qid}-el" style="width:${elPct}%"></div>
-                                <div class="qcard-bar-remaining" id="${qid}-rem" style="left:${elPct}%;width:${remPct}%;background:${remColor}"></div>
-                            </div>
-                            <div style="display:flex;justify-content:space-between;font-size:.67rem;color:#475569;margin-top:.25rem">
-                                <span>${elPct}% geçti</span>
-                                <span>Sıfırlanma: ${acct.resets_at || '—'}</span>
-                            </div>`;
+                        `;
+                        
                         setTimeout(() => {
                             qcCountdowns[qid] = {
                                 cdEl: document.getElementById(`${qid}-cd`),
-                                elBar: document.getElementById(`${qid}-el`),
-                                remBar: document.getElementById(`${qid}-rem`),
+                                upperRect: document.getElementById(`upper-rect-${qid}`),
+                                lowerRect: document.getElementById(`lower-rect-${qid}`),
                                 targetEpoch: nowEpoch + acct.resets_in_seconds,
-                                windowSecs: total,
+                                windowSecs: total
                             };
                         }, 0);
                     } else {
-                        const lastHit = acct.last_exhausted_at
-                            ? `Son ihlal: ${acct.last_exhausted_at}` : 'İhlal kaydı yok';
-                        barHtml = `
-                            <div class="qcard-bar-label"><span>Kota durumu</span><span style="color:#4ade80;font-weight:700">✓ Müsait</span></div>
-                            <div class="qcard-bar"><div class="qcard-bar-available"></div></div>
-                            <div style="font-size:.67rem;color:#475569;margin-top:.25rem">${lastHit}</div>`;
+                        statusHtml = `
+                            <div class="available-container">
+                                <svg class="checkmark-svg" viewBox="0 0 24 24" width="36" height="36" fill="none" stroke="var(--success)" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                                    <path d="M22 11.08V12a10 10 0 1 1-5.93-9.14" />
+                                    <polyline points="22 4 12 14.01 9 11.01" />
+                                </svg>
+                                <span class="available-text">Müsait</span>
+                                ${acct.last_exhausted_at ? `<div class="last-violation">Son ihlal: ${acct.last_exhausted_at}</div>` : ''}
+                            </div>
+                        `;
                     }
 
                     const card = document.createElement('div');
-                    card.className = 'qcard ' + (exhausted ? 'qcard-exhausted' : 'qcard-ok') + (isActive ? ' qcard-active' : '');
+                    card.className = `qcard ${isActive ? 'qcard-active' : ''} ${exhausted ? 'qcard-exhausted' : 'qcard-ok'}`;
                     card.innerHTML = `
                         <div class="qcard-header">
                             <div class="qcard-identity">
@@ -771,147 +1578,205 @@
                                 <span class="qcard-domain">${domain}</span>
                             </div>
                             <div class="qcard-badges">
-                                ${exhausted ? '<span class="qbadge qbad">TÜKENDI</span>' : '<span class="qbadge qgood">MÜSAİT</span>'}
                                 ${isActive ? '<span class="qcard-active-badge">● AKTİF</span>' : ''}
+                                <span class="qbadge ${exhausted ? 'qbadge-exhausted' : 'qbadge-available'}">${exhausted ? 'TÜKENDİ' : 'MÜSAİT'}</span>
                             </div>
                         </div>
-                        ${barHtml}
-                        <div class="qcard-stats">
-                            <div class="qstat"><span class="qstat-val">${acct.session_count}</span><span class="qstat-lbl">Oturum</span></div>
-                            <div class="qstat"><span class="qstat-val">${acct.exhaustion_count}</span><span class="qstat-lbl">Kota İhlali</span></div>
+                        
+                        <div class="qcard-body">
+                            ${statusHtml}
+                        </div>
+
+                        <!-- Model Quota Area -->
+                        <div class="mq-card-section">
+                            <div class="mq-card-section-header">
+                                <span class="mq-card-section-title">Model Kotası <span class="mq-via">via agy /usage</span></span>
+                                ${isActive ? `<button class="mq-card-section-refresh" onclick="event.stopPropagation(); loadModelQuota(true);">Yenile</button>` : ''}
+                            </div>
+                            <div class="mq-card-section-body" id="${isActive ? 'activeModelQuotaBody' : ''}">
+                                ${isActive ? `<div class="loading-text">Yükleniyor…</div>` : `<div class="not-active-text">Aktif hesap değil</div>`}
+                            </div>
+                        </div>
+
+                        <div class="qcard-footer">
+                            <span>${acct.session_count} oturum</span>
+                            <span>${acct.exhaustion_count} kota ihlali</span>
                         </div>
                     `;
                     quotaGrid.appendChild(card);
                 });
 
+                if (activeEmail) {
+                    loadModelQuota();
+                }
+
                 if (data.warning) {
-                    const w = document.createElement('p');
-                    w.style.cssText = 'color:#f90;font-size:.8rem;margin-top:.5rem';
-                    w.textContent = '⚠ ' + data.warning;
-                    quotaGrid.appendChild(w);
+                    showWarning(data.warning);
                 }
             }).catch(() => {
-                quotaGrid.innerHTML = '<p style="color:#f44">Kota verisi yüklenemedi.</p>';
+                quotaGrid.innerHTML = '<div class="cq-unavail">Kota verisi yüklenemedi.</div>';
             });
         }
 
-        // ── Claude Quota panel ──────────────────────────────────────────
+        // ── Claude Quota Panel ──
         const claudeQuotaBody = document.getElementById('claudeQuotaBody');
-        const cqCountdowns = {};
+        const clCountdowns = {};
 
         setInterval(() => {
             const now = Date.now() / 1000;
-            for (const [id, ct] of Object.entries(cqCountdowns)) {
+            for (const [id, ct] of Object.entries(clCountdowns)) {
                 const rem = Math.max(0, Math.round(ct.targetEpoch - now));
-                if (ct.el) ct.el.textContent = rem > 0 ? (ct.fmt || fmtSec)(rem) : 'şimdi';
+                if (ct.el) ct.el.textContent = rem > 0 ? (ct.fmt || fmtReset)(rem) : 'şimdi';
             }
         }, 1000);
 
-        // color based on REMAINING (green=good, red=critical)
-        function cqColor(pctRemaining) {
-            if (pctRemaining <= 10) return 'red';
-            if (pctRemaining <= 40) return 'yellow';
-            return 'green';
-        }
-
-        // format seconds to human: "4s 23d" → "4s 23d", >24h → "Xg Ys"
-        function fmtReset(sec) {
-            if (!sec || sec <= 0) return '—';
-            const days  = Math.floor(sec / 86400);
-            const hours = Math.floor((sec % 86400) / 3600);
-            const mins  = Math.floor((sec % 3600) / 60);
-            if (days > 0)  return `${days}g ${hours}sa`;
-            if (hours > 0) return `${hours}sa ${mins}dk`;
-            return `${mins}dk`;
-        }
-
         function loadClaudeQuota() {
+            claudeQuotaBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
             fetch('/api/claude-quota').then(r => r.json()).then(data => {
-                for (const k of Object.keys(cqCountdowns)) delete cqCountdowns[k];
+                for (const k of Object.keys(clCountdowns)) {
+                    delete clCountdowns[k];
+                }
+                
                 if (data.warning || !data.quotas || data.quotas.length === 0) {
-                    claudeQuotaBody.innerHTML = `<p class="cq-unavail">${data.warning || 'Kota verisi bulunamadı.'}</p>`;
+                    claudeQuotaBody.innerHTML = `<div class="cq-unavail">${data.warning || 'Claude kota verisi bulunamadı.'}</div>`;
                     return;
                 }
+
                 const nowEpoch = Date.now() / 1000;
                 let html = '';
+                
                 data.quotas.forEach((q, i) => {
-                    const col = cqColor(q.pct_remaining);
-                    const colHex = col==='red'?'#ef4444':col==='yellow'?'#eab308':'#22c55e';
-                    const cdId = `cqcd${i}`;
+                    const pct = q.pct_remaining;
+                    const col = pct >= 60 ? 'var(--success)' : pct >= 25 ? 'var(--warning)' : 'var(--danger)';
+                    const cdId = `clcd${i}`;
                     let resetHtml = '';
+                    
                     if (q.resets_in_seconds > 0) {
                         const targetEpoch = nowEpoch + q.resets_in_seconds;
-                        resetHtml = `<span id="${cdId}" class="cq-reset"><b>${fmtReset(q.resets_in_seconds)}</b></span>`;
+                        resetHtml = `<span id="${cdId}" class="cq-reset-time"><b>${fmtReset(q.resets_in_seconds)}</b></span>`;
                         setTimeout(() => {
                             const el = document.getElementById(cdId);
-                            if (el) cqCountdowns[cdId] = {
+                            if (el) clCountdowns[cdId] = {
                                 el: el.querySelector('b'),
                                 targetEpoch,
-                                fmt: fmtReset   // use day-aware formatter
+                                fmt: fmtReset
                             };
                         }, 0);
                     } else {
-                        resetHtml = `<span class="cq-reset">—</span>`;
+                        resetHtml = `<span class="cq-reset-time">—</span>`;
                     }
-                    html += `<div class="cq-row">
-                        <span class="cq-dot" style="background:${colHex}"></span>
-                        <span class="cq-name">${q.label}</span>
-                        <div class="cq-bar-wrap">
-                            <span style="font-size:.72rem;color:#475569;width:52px;text-align:right">${q.utilization}/100</span>
-                            <div class="cq-bar"><div class="cq-bar-fill" style="width:${q.pct_remaining}%;background:${colHex}"></div></div>
-                            <span class="cq-pct" style="color:${colHex}">${q.pct_remaining}%</span>
+                    
+                    html += `
+                        <div class="cq-row">
+                            <span class="cq-tier-name">${q.label}</span>
+                            <div class="cq-bar-container">
+                                <div id="cq-bar-fill-${i}" class="cq-bar-fill" style="width: 0%; background: ${col};"></div>
+                            </div>
+                            <span class="cq-pct-remaining" style="color: ${col};">${pct}%</span>
+                            ${resetHtml}
                         </div>
-                        ${resetHtml}
-                    </div>`;
+                    `;
+                    
+                    setTimeout(() => {
+                        const fillEl = document.getElementById(`cq-bar-fill-${i}`);
+                        if (fillEl) fillEl.style.width = `${pct}%`;
+                    }, 50);
                 });
                 claudeQuotaBody.innerHTML = html;
             }).catch(e => {
-                claudeQuotaBody.innerHTML = `<p class="cq-unavail">Yüklenemedi: ${e}</p>`;
+                claudeQuotaBody.innerHTML = `<div class="cq-unavail">Yüklenemedi: ${e}</div>`;
             });
         }
 
-        // ── Statusline panel ────────────────────────────────────────────
+        // ── agy Canlı Durum Panel ──
         const statuslineBody = document.getElementById('statuslineBody');
         const slAge = document.getElementById('slAge');
-
-        function slRow(key, val, cls) {
-            return `<div class="sl-row"><span class="sl-key">${key}</span><span class="sl-val ${cls||''}">${val}</span></div>`;
-        }
 
         function loadStatusline() {
             fetch('/api/statusline').then(r => r.json()).then(d => {
                 if (!d.available) {
-                    statuslineBody.innerHTML = `<p class="sl-unavail">${d.warning}</p>`; return;
+                    statuslineBody.innerHTML = `<div class="sl-unavail">${d.warning}</div>`;
+                    slAge.textContent = '';
+                    return;
                 }
                 const age = d.age_seconds;
                 const stale = age > 300;
-                slAge.textContent = `(${age < 60 ? age+'s' : Math.round(age/60)+'m'} önce)`;
-                const ctxPct = Math.round(d.context_pct);
-                const ctxColor = ctxPct >= 90 ? '#f87171' : ctxPct >= 60 ? '#fb923c' : '#4ade80';
+                slAge.textContent = `(${age < 60 ? age+'sn' : Math.round(age/60)+'dk'} önce)`;
+                
+                const ctxPct = Math.round(d.context_pct || 0);
+                const ctxColor = ctxPct >= 90 ? 'var(--danger)' : ctxPct >= 60 ? 'var(--warning)' : 'var(--success)';
                 const inTok = d.context_input_tokens >= 1000 ? Math.round(d.context_input_tokens/1000)+'k' : d.context_input_tokens;
                 const outTok = d.context_output_tokens >= 1000 ? Math.round(d.context_output_tokens/1000)+'k' : d.context_output_tokens;
-                statuslineBody.innerHTML =
-                    slRow('Durum', d.agent_state, stale?'stale':d.agent_state==='idle'?'':'active') +
-                    `<div class="sl-row"><span class="sl-key">Bağlam Kullanımı</span><span class="sl-val">${ctxPct}%
-                        <div class="ctx-bar"><div class="ctx-bar-fill" style="width:${ctxPct}%;background:${ctxColor}"></div></div>
-                    </span></div>` +
-                    slRow('Giriş Tokenleri', inTok) +
-                    slRow('Çıkış Tokenleri', outTok) +
-                    slRow('Model', d.model || '—', stale?'stale':'') +
-                    slRow('Plan', d.plan_tier || '—') +
-                    slRow('Hesap', d.email ? d.email.split('@')[0] : '—') +
-                    slRow('VCS Dal', d.vcs_branch ? `${d.vcs_branch}${d.vcs_dirty?' *':''}` : '—') +
-                    slRow('Sandbox', d.sandbox ? 'Açık' : 'Kapalı') +
-                    slRow('Artifacts', d.artifacts) +
-                    slRow('Alt Agent', d.subagents) +
-                    slRow('Arka Plan Görev', d.bg_tasks) +
-                    `<div class="sl-row" style="font-size:.7rem;color:#334155;padding-top:.5rem">Son güncelleme: ${d.captured_at}</div>`;
+                
+                const statusClass = stale ? 'stale' : d.agent_state === 'idle' ? 'idle' : 'active';
+                const statusLabel = d.agent_state === 'idle' ? 'Boşta' : d.agent_state;
+
+                statuslineBody.innerHTML = `
+                    <table class="sl-table">
+                        <tr>
+                            <td class="sl-key">Durum</td>
+                            <td class="sl-val"><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Bağlam Kullanımı</td>
+                            <td class="sl-val">
+                                <div class="ctx-usage-container">
+                                    <span class="ctx-pct-text" style="color: ${ctxColor};">${ctxPct}%</span>
+                                    <div class="ctx-bar-container">
+                                        <div class="ctx-bar-fill" style="width: ${ctxPct}%; background: ${ctxColor};"></div>
+                                    </div>
+                                </div>
+                            </td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Giriş Tokenleri</td>
+                            <td class="sl-val">${inTok}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Çıkış Tokenleri</td>
+                            <td class="sl-val">${outTok}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Model</td>
+                            <td class="sl-val ${stale ? 'stale' : ''}">${d.model || '—'}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Plan</td>
+                            <td class="sl-val">${d.plan_tier || '—'}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Hesap</td>
+                            <td class="sl-val">${d.email ? d.email.split('@')[0] : '—'}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">VCS Dal</td>
+                            <td class="sl-val">${d.vcs_branch ? `${d.vcs_branch}${d.vcs_dirty ? ' *' : ''}` : '—'}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Sandbox</td>
+                            <td class="sl-val">${d.sandbox ? 'Açık' : 'Kapalı'}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Artifacts</td>
+                            <td class="sl-val">${d.artifacts ?? 0}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Alt Agent</td>
+                            <td class="sl-val">${d.subagents ?? 0}</td>
+                        </tr>
+                        <tr>
+                            <td class="sl-key">Arka Plan Görev</td>
+                            <td class="sl-val">${d.bg_tasks ?? 0}</td>
+                        </tr>
+                    </table>
+                    <div class="sl-captured-at">Son güncelleme: ${d.captured_at}</div>
+                `;
             }).catch(() => {
-                statuslineBody.innerHTML = '<p class="sl-unavail">Statusline yüklenemedi.</p>';
+                statuslineBody.innerHTML = '<div class="sl-unavail">Durum verisi yüklenemedi.</div>';
             });
         }
 
-        // ── Last Session panel ───────────────────────────────────────────
+        // ── Son agy Oturumu Panel ──
         const lastSessionBody = document.getElementById('lastSessionBody');
 
         function fmtDur(sec) {
@@ -924,7 +1789,6 @@
 
         function fmtTime(iso) {
             if (!iso) return '—';
-            // "2026-05-30T12:34:56Z" → "12:34"
             const m = iso.match(/T(\d{2}:\d{2})/);
             const d = iso.match(/(\d{4}-\d{2}-\d{2})/);
             return m ? (d ? d[1].slice(5)+' '+m[1] : m[1]) : iso;
@@ -933,135 +1797,197 @@
         function loadLastSession() {
             fetch('/api/last-session').then(r => r.json()).then(d => {
                 if (!d.available) {
-                    lastSessionBody.innerHTML = `<p class="sl-unavail">${d.warning}</p>`; return;
+                    lastSessionBody.innerHTML = `<div class="sl-unavail">${d.warning}</div>`;
+                    return;
                 }
 
-                const chips = Object.entries(d.record_types || {})
-                    .sort((a,b) => b[1]-a[1])
-                    .map(([t,c]) => `<span class="ls-type-chip">${t} <b>${c}</b></span>`)
-                    .join('');
-
-                const modelShort = (d.model || '').replace('Gemini ','').trim() || '—';
-
-                // Type distribution mini bar chart
-                const typeEntries = Object.entries(d.record_types || {}).sort((a,b)=>b[1]-a[1]);
+                const modelShort = (d.model || '').replace('Gemini ', '').trim() || '—';
+                const typeEntries = Object.entries(d.record_types || {}).sort((a, b) => b[1] - a[1]);
                 const maxCount = typeEntries.length ? typeEntries[0][1] : 1;
-                const typeColors = ['#38bdf8','#818cf8','#34d399','#fb923c','#f87171','#a78bfa','#fbbf24','#6ee7b7'];
-                const barRows = typeEntries.map(([t,c], i) =>
-                    `<div class="ls-bar-row">
-                        <span class="ls-bar-label" title="${t}">${t}</span>
-                        <div class="ls-bar-track"><div class="ls-bar-fill" style="width:${Math.round(c/maxCount*100)}%;background:${typeColors[i%typeColors.length]}"></div></div>
-                        <span class="ls-bar-count">${c}</span>
-                    </div>`
-                ).join('');
+                const typeColors = [
+                    '#38bdf8', '#818cf8', '#34d399', '#fb923c',
+                    '#f87171', '#a78bfa', '#fbbf24', '#6ee7b7'
+                ];
 
-                // Build HTML — structure is stable across refreshes (same elements)
+                const barRows = typeEntries.map(([t, c], i) => `
+                    <div class="ls-bar-row">
+                        <span class="ls-bar-label" title="${t}">${t}</span>
+                        <div class="ls-bar-track">
+                            <div class="ls-bar-fill" style="width: ${Math.round(c/maxCount*100)}%; background: ${typeColors[i%typeColors.length]};"></div>
+                        </div>
+                        <span class="ls-bar-count">${c}</span>
+                    </div>
+                `).join('');
+
                 lastSessionBody.innerHTML = `
                     <div class="ls-stats">
-                        <div class="ls-stat">
+                        <div class="ls-stat-card">
                             <div class="ls-stat-val">${d.tool_call_count}</div>
                             <div class="ls-stat-lbl">Araç Çağrısı</div>
                         </div>
-                        <div class="ls-stat">
+                        <div class="ls-stat-card">
                             <div class="ls-stat-val">${d.record_count}</div>
                             <div class="ls-stat-lbl">Kayıt</div>
                         </div>
-                        <div class="ls-stat">
+                        <div class="ls-stat-card">
                             <div class="ls-stat-val">${fmtDur(d.duration_seconds)}</div>
                             <div class="ls-stat-lbl">Süre</div>
                         </div>
                     </div>
-                    ${d.model ? `<div class="ls-model" title="${d.model}">${modelShort}</div>` : ''}
-                    <div class="ls-meta">
-                        <span>Başlangıç: <b>${fmtTime(d.started_at)}</b></span>
-                        <span>Bitiş: <b>${fmtTime(d.ended_at)}</b></span>
-                        <span>ID: <b style="font-family:monospace;font-size:.72rem">${d.session_id.slice(0,8)}…</b></span>
+                    
+                    <div class="ls-meta-section">
+                        ${d.model ? `<div class="ls-model-badge" title="${d.model}">${modelShort}</div>` : ''}
+                        <div class="ls-meta-details">
+                            <div class="ls-meta-row"><span>Başlangıç:</span> <b>${fmtTime(d.started_at)}</b></div>
+                            <div class="ls-meta-row"><span>Bitiş:</span> <b>${fmtTime(d.ended_at)}</b></div>
+                            <div class="ls-meta-row"><span>ID:</span> <code class="ls-id-code">${d.session_id.slice(0, 8)}…</code></div>
+                        </div>
                     </div>
-                    <div class="ls-chart">
+
+                    <div class="ls-chart-section">
                         <div class="ls-chart-title">Kayıt Türü Dağılımı</div>
-                        ${barRows}
+                        <div class="ls-chart-body">
+                            ${barRows || '<div class="not-active-text">Kayıt türü verisi yok.</div>'}
+                        </div>
                     </div>
-                    ${d.warning ? `<p style="color:#f90;font-size:.73rem;margin-top:.5rem">⚠ ${d.warning}</p>` : ''}
+                    ${d.warning ? `<div class="warning-text-small">⚠ ${d.warning}</div>` : ''}
                 `;
             }).catch(() => {
-                lastSessionBody.innerHTML = '<p class="sl-unavail">Son oturum yüklenemedi.</p>';
+                lastSessionBody.innerHTML = '<div class="sl-unavail">Son oturum yüklenemedi.</div>';
             });
         }
 
-        // ── Refresh all agy accounts ────────────────────────────────────
+        // ── Refresh all agy accounts ──
         const refreshAllStatus = document.getElementById('refreshAllStatus');
+        
         function refreshAllAccounts() {
             const btn = document.getElementById('refreshAllBtn');
-            btn.disabled = true; btn.textContent = '⟳ Çalışıyor…';
+            btn.disabled = true;
+            btn.textContent = '⟳ Çalışıyor…';
             refreshAllStatus.style.display = 'block';
             refreshAllStatus.textContent = 'Hesaplar sırayla çalıştırılıyor, lütfen bekleyin…';
+            
             fetch('/api/agy-refresh-accounts').then(r => r.json()).then(data => {
-                btn.disabled = false; btn.textContent = '⟳ Tüm Hesapları Çalıştır';
-                if (data.warning) { refreshAllStatus.textContent = '⚠ ' + data.warning; return; }
-                const lines = (data.results || []).map(r =>
+                btn.disabled = false;
+                btn.textContent = '⟳ Tüm Hesapları Çalıştır';
+                if (data.warning) {
+                    refreshAllStatus.textContent = '⚠ ' + data.warning;
+                    return;
+                }
+                const lines = (data.results || []).map(r => 
                     `${r.ok ? '✓' : '✗'} ${r.email}${r.error ? ' — '+r.error : ''}`
                 );
                 refreshAllStatus.textContent = lines.join('  |  ') || 'Tamamlandı.';
-                loadQuota(); loadStatusline(); loadLastSession();
+                loadQuota();
+                loadStatusline();
+                loadLastSession();
             }).catch(e => {
-                btn.disabled = false; btn.textContent = '⟳ Tüm Hesapları Çalıştır';
+                btn.disabled = false;
+                btn.textContent = '⟳ Tüm Hesapları Çalıştır';
                 refreshAllStatus.textContent = 'Hata: ' + e;
             });
         }
 
-        // ── agy Model Quota panel (tmux capture) ────────────────────────
-        const modelQuotaBody = document.getElementById('modelQuotaBody');
+        // ── agy Model Quota Panel (inject into active account card) ──
+        function shortenModelName(name) {
+            if (!name) return '—';
+            const lower = name.toLowerCase();
+            if (lower.includes('flash') && (lower.includes('medium') || lower.includes('med'))) return 'Flash Med';
+            if (lower.includes('flash') && lower.includes('high')) return 'Flash High';
+            if (lower.includes('pro') && (lower.includes('low') || lower.includes('lo'))) return 'Pro Low';
+            if (lower.includes('pro') && (lower.includes('medium') || lower.includes('med'))) return 'Pro Med';
+            if (lower.includes('pro') && lower.includes('high')) return 'Pro High';
+            if (lower.includes('lite') && (lower.includes('medium') || lower.includes('med'))) return 'Lite Med';
+            if (lower.includes('lite') && lower.includes('high')) return 'Lite High';
+            if (lower.includes('lite') && lower.includes('low')) return 'Lite Low';
+            
+            let short = name.replace(/^Gemini\s+/i, '');
+            short = short.replace(/\(Medium\)/i, 'Med');
+            short = short.replace(/\(High\)/i, 'High');
+            short = short.replace(/\(Low\)/i, 'Low');
+            return short;
+        }
 
-        function loadModelQuota() {
-            modelQuotaBody.innerHTML = '<p class="cq-unavail">agy başlatılıyor, kota ekranı yakalanıyor (~30s)…</p>';
-            fetch('/api/agy-model-quota').then(r => r.json()).then(data => {
-                if (data.warning && !data.models?.length) {
-                    modelQuotaBody.innerHTML = `<p class="mq-err">⚠ ${data.warning}</p>`; return;
+        function loadModelQuota(force = false) {
+            const el = document.getElementById('activeModelQuotaBody');
+            if (!el) return;
+            el.innerHTML = '<div class="loading-text">agy başlatılıyor, kota ekranı yakalanıyor (~30sn)…</div>';
+            
+            fetch(`/api/agy-model-quota${force ? '?refresh=1' : ''}`).then(r => r.json()).then(data => {
+                if (data.warning && (!data.models || data.models.length === 0)) {
+                    el.innerHTML = `<div class="mq-err">⚠ ${data.warning}</div>`;
+                    return;
                 }
-                let meta = '';
-                if (data.account) meta += `<span style="color:#38bdf8">${data.account}</span>`;
-                if (data.plan)    meta += `<span style="color:#94a3b8;margin-left:.5rem">${data.plan}</span>`;
-                if (data.captured_at) meta += `<span style="color:#334155;font-size:.68rem;margin-left:.75rem">@ ${data.captured_at}</span>`;
-                let html = meta ? `<div style="margin-bottom:.6rem;font-size:.75rem">${meta}</div>` : '';
+                
+                let html = '';
+                if (data.plan) {
+                    html += `
+                        <div class="mq-meta">
+                            <span>${data.plan}</span>
+                            <span class="mq-captured-time">@ ${data.captured_at || ''}</span>
+                        </div>
+                    `;
+                }
 
                 (data.models || []).forEach(m => {
                     const pct = m.pct_shown ?? m.pct_remaining ?? 100;
-                    const col = pct >= 60 ? '#4ade80' : pct >= 25 ? '#fb923c' : '#f87171';
+                    const col = pct >= 60 ? 'var(--success)' : pct >= 25 ? 'var(--warning)' : 'var(--danger)';
                     const resetTxt = m.refreshes_in ? m.refreshes_in : (m.status === 'available' ? '✓' : '—');
-                    html += `<div class="mq-row">
-                        <span class="mq-name">${m.display_name}</span>
-                        <div class="mq-bar-wrap">
-                            <div class="mq-bar"><div class="mq-bar-fill" style="width:${pct}%;background:${col}"></div></div>
-                            <span class="mq-pct" style="color:${col}">${pct}%</span>
+                    const name = shortenModelName(m.display_name);
+                    
+                    html += `
+                        <div class="mq-row">
+                            <span class="mq-model-name" title="${m.display_name}">${name}</span>
+                            <div class="mq-bar-container">
+                                <div class="mq-bar-fill" style="width: ${pct}%; background: ${col};"></div>
+                            </div>
+                            <span class="mq-pct" style="color: ${col};">${pct}%</span>
+                            <span class="mq-reset">${resetTxt}</span>
                         </div>
-                        <span class="mq-reset">${resetTxt}</span>
-                    </div>`;
+                    `;
                 });
-                if (data.warning) html += `<p class="mq-err" style="margin-top:.5rem">⚠ ${data.warning}</p>`;
-                modelQuotaBody.innerHTML = html || '<p class="cq-unavail">Model verisi yok.</p>';
+                
+                if (data.warning) {
+                    html += `<div class="mq-err" style="margin-top:.5rem;">⚠ ${data.warning}</div>`;
+                }
+                
+                el.innerHTML = html || '<div class="not-active-text">Model verisi bulunamadı.</div>';
             }).catch(e => {
-                modelQuotaBody.innerHTML = `<p class="mq-err">Yüklenemedi: ${e}</p>`;
+                el.innerHTML = `<div class="mq-err">Yüklenemedi: ${e}</div>`;
             });
+        }
+
+        function loadActiveAccount() {
+            return fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null}));
         }
 
         // Initial Load
         loadData();
         loadClaudeQuota();
         loadQuota();
-        loadModelQuota();
         loadStatusline();
         loadLastSession();
 
-        // SSE — refresh all panels
+        // SSE connection
         function connectSSE() {
             const es = new EventSource('/events');
             es.onmessage = function(ev) {
                 if (ev.data === 'refresh') {
-                    liveDot.classList.remove('flash'); void liveDot.offsetWidth; liveDot.classList.add('flash');
-                    loadData(); loadClaudeQuota(); loadQuota(); loadModelQuota(); loadStatusline(); loadLastSession();
+                    liveDot.classList.remove('flash');
+                    void liveDot.offsetWidth; // Trigger reflow to restart animation
+                    liveDot.classList.add('flash');
+                    
+                    loadData();
+                    loadClaudeQuota();
+                    loadQuota();
+                    loadStatusline();
+                    loadLastSession();
                 }
             };
-            es.onerror = function() { es.close(); setTimeout(connectSSE, 5000); };
+            es.onerror = function() {
+                es.close();
+                setTimeout(connectSSE, 5000);
+            };
         }
         connectSSE();
     </script>
