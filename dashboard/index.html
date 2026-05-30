@@ -286,6 +286,21 @@
         .ls-types { margin-top: .6rem; display: flex; flex-wrap: wrap; gap: .3rem; }
         .ls-type-chip { font-size: .65rem; background: #1e293b; border-radius: 99px; padding: .15rem .5rem; color: #94a3b8; }
         .ls-type-chip b { color: var(--text-main); }
+
+        /* type distribution mini bar chart */
+        .ls-chart { margin-top: .75rem; }
+        .ls-chart-title { font-size: .65rem; color: var(--text-muted); text-transform: uppercase; letter-spacing: .04em; margin-bottom: .4rem; }
+        .ls-bar-row { display: flex; align-items: center; gap: .5rem; margin-bottom: .25rem; }
+        .ls-bar-label { font-size: .68rem; color: #94a3b8; width: 130px; flex-shrink: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ls-bar-track { flex: 1; height: 8px; background: #1e293b; border-radius: 4px; overflow: hidden; }
+        .ls-bar-fill  { height: 100%; border-radius: 4px; transition: width .5s ease; }
+        .ls-bar-count { font-size: .68rem; color: var(--text-main); font-weight: 600; width: 28px; text-align: right; flex-shrink: 0; }
+
+        /* active account highlight on quota cards */
+        .qcard-active { border-color: #38bdf8 !important; box-shadow: 0 0 0 1px #38bdf826; }
+        .qcard-active-badge { font-size: .6rem; background: #0c2233; color: #38bdf8; border-radius: 99px; padding: .1rem .45rem; font-weight: 700; letter-spacing: .04em; }
+        .qcard { transition: transform .15s ease, box-shadow .15s ease; cursor: default; }
+        .qcard:hover { transform: translateY(-2px); box-shadow: 0 4px 16px #0006; }
     </style>
 </head>
 <body>
@@ -677,7 +692,12 @@
         }
 
         function loadQuota() {
-            fetch('/api/quota').then(r => r.json()).then(data => {
+            // Fetch quota + active account in parallel
+            Promise.all([
+                fetch('/api/quota').then(r => r.json()),
+                fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null}))
+            ]).then(([data, activeData]) => {
+                const activeEmail = activeData.email || null;
                 quotaGrid.innerHTML = '';
                 for (const k of Object.keys(countdowns)) delete countdowns[k];
                 _gaugeEls = {};
@@ -688,10 +708,16 @@
                 const win = data.quota_window_seconds || 14400;
                 const nowEpoch = Date.now() / 1000;
 
-                data.accounts.forEach((acct, i) => {
+                // Sort: active first
+                const sorted = [...data.accounts].sort((a,b) =>
+                    a.email === activeEmail ? -1 : b.email === activeEmail ? 1 : 0
+                );
+
+                sorted.forEach((acct, i) => {
                     const exhausted = acct.status === 'exhausted';
+                    const isActive = acct.email === activeEmail;
                     const card = document.createElement('div');
-                    card.className = 'qcard ' + (exhausted ? 'qcard-exhausted' : 'qcard-ok');
+                    card.className = 'qcard ' + (exhausted ? 'qcard-exhausted' : 'qcard-ok') + (isActive ? ' qcard-active' : '');
 
                     const handle = acct.email.split('@')[0];
                     const domain = '@' + (acct.email.split('@')[1] || '');
@@ -716,6 +742,9 @@
                     const badge = exhausted
                         ? '<span class="qbadge qbad">EXHAUSTED</span>'
                         : '<span class="qbadge qgood">AVAILABLE</span>';
+                    const activeBadge = isActive
+                        ? ' <span class="qcard-active-badge">● AKTİF</span>'
+                        : '';
 
                     let cdHtml = '', atHtml = '';
                     if (exhausted && acct.resets_in_seconds > 0) {
@@ -735,7 +764,7 @@
                     }
 
                     card.innerHTML = `
-                        ${badge}
+                        <div style="display:flex;justify-content:space-between;align-items:center;width:100%">${badge}${activeBadge}</div>
                         <div class="qgauge">
                             ${gaugeSvg}
                             <div class="qgauge-center">
@@ -760,7 +789,7 @@
                     quotaGrid.appendChild(w);
                 }
             }).catch(() => {
-                quotaGrid.innerHTML = '<p style="color:#f44">Failed to load quota.</p>';
+                quotaGrid.innerHTML = '<p style="color:#f44">Kota verisi yüklenemedi.</p>';
             });
         }
 
@@ -912,6 +941,18 @@
 
                 const modelShort = (d.model || '').replace('Gemini ','').trim() || '—';
 
+                // Type distribution mini bar chart
+                const typeEntries = Object.entries(d.record_types || {}).sort((a,b)=>b[1]-a[1]);
+                const maxCount = typeEntries.length ? typeEntries[0][1] : 1;
+                const typeColors = ['#38bdf8','#818cf8','#34d399','#fb923c','#f87171','#a78bfa','#fbbf24','#6ee7b7'];
+                const barRows = typeEntries.map(([t,c], i) =>
+                    `<div class="ls-bar-row">
+                        <span class="ls-bar-label" title="${t}">${t}</span>
+                        <div class="ls-bar-track"><div class="ls-bar-fill" style="width:${Math.round(c/maxCount*100)}%;background:${typeColors[i%typeColors.length]}"></div></div>
+                        <span class="ls-bar-count">${c}</span>
+                    </div>`
+                ).join('');
+
                 // Build HTML — structure is stable across refreshes (same elements)
                 lastSessionBody.innerHTML = `
                     <div class="ls-stats">
@@ -934,7 +975,10 @@
                         <span>Bitiş: <b>${fmtTime(d.ended_at)}</b></span>
                         <span>ID: <b style="font-family:monospace;font-size:.72rem">${d.session_id.slice(0,8)}…</b></span>
                     </div>
-                    <div class="ls-types">${chips}</div>
+                    <div class="ls-chart">
+                        <div class="ls-chart-title">Kayıt Türü Dağılımı</div>
+                        ${barRows}
+                    </div>
                     ${d.warning ? `<p style="color:#f90;font-size:.73rem;margin-top:.5rem">⚠ ${d.warning}</p>` : ''}
                 `;
             }).catch(() => {
