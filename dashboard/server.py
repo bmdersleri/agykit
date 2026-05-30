@@ -53,6 +53,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.serve_json(collectors.agy_last_session())
         elif path == "/api/claude-quota":
             self.serve_json(collectors.claude_quota())
+        elif path == "/api/agy-refresh-accounts":
+            self.serve_json(collectors.agy_refresh_all_accounts())
         elif path == "/events":
             self.serve_events()
         else:
@@ -172,6 +174,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.wfile.write(body)
 
 def make_server(host: str, port: int) -> ThreadingHTTPServer:
+    if host != "127.0.0.1":
+        raise ValueError("Must bind to 127.0.0.1 only")
     return ThreadingHTTPServer((host, port), DashboardHandler)
 
 def main():

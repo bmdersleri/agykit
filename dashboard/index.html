@@ -343,7 +343,14 @@
 
         <!-- Account Quota Status -->
         <section class="quota-section">
-            <h2 class="section-title">agy Hesap Kotası</h2>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:1rem">
+                <h2 class="section-title" style="margin-bottom:0">agy Hesap Kotası</h2>
+                <span style="display:flex;gap:.5rem">
+                    <button class="cq-refresh-btn" onclick="loadQuota()">↻ Yenile</button>
+                    <button class="cq-refresh-btn" id="refreshAllBtn" onclick="refreshAllAccounts()">⟳ Tüm Hesapları Çalıştır</button>
+                </span>
+            </div>
+            <div id="refreshAllStatus" style="display:none;font-size:.8rem;color:#94a3b8;margin-bottom:.75rem"></div>
             <div id="quotaGrid" class="quota-grid"></div>
         </section>
 
@@ -745,14 +752,26 @@
             const now = Date.now() / 1000;
             for (const [id, ct] of Object.entries(cqCountdowns)) {
                 const rem = Math.max(0, Math.round(ct.targetEpoch - now));
-                if (ct.el) ct.el.textContent = rem > 0 ? fmtSec(rem) : 'şimdi';
+                if (ct.el) ct.el.textContent = rem > 0 ? (ct.fmt || fmtSec)(rem) : 'şimdi';
             }
         }, 1000);
 
-        function cqColor(util) {
-            if (util >= 90) return 'red';
-            if (util >= 50) return 'yellow';
+        // color based on REMAINING (green=good, red=critical)
+        function cqColor(pctRemaining) {
+            if (pctRemaining <= 10) return 'red';
+            if (pctRemaining <= 40) return 'yellow';
             return 'green';
+        }
+
+        // format seconds to human: "4s 23d" → "4s 23d", >24h → "Xg Ys"
+        function fmtReset(sec) {
+            if (!sec || sec <= 0) return '—';
+            const days  = Math.floor(sec / 86400);
+            const hours = Math.floor((sec % 86400) / 3600);
+            const mins  = Math.floor((sec % 3600) / 60);
+            if (days > 0)  return `${days}g ${hours}sa`;
+            if (hours > 0) return `${hours}sa ${mins}dk`;
+            return `${mins}dk`;
         }
 
         function loadClaudeQuota() {
@@ -765,26 +784,31 @@
                 const nowEpoch = Date.now() / 1000;
                 let html = '';
                 data.quotas.forEach((q, i) => {
-                    const col = cqColor(q.utilization);
+                    const col = cqColor(q.pct_remaining);
+                    const colHex = col==='red'?'#ef4444':col==='yellow'?'#eab308':'#22c55e';
                     const cdId = `cqcd${i}`;
                     let resetHtml = '';
                     if (q.resets_in_seconds > 0) {
                         const targetEpoch = nowEpoch + q.resets_in_seconds;
-                        resetHtml = `<span id="${cdId}" class="cq-reset"><b>${fmtSec(q.resets_in_seconds)}</b></span>`;
+                        resetHtml = `<span id="${cdId}" class="cq-reset"><b>${fmtReset(q.resets_in_seconds)}</b></span>`;
                         setTimeout(() => {
                             const el = document.getElementById(cdId);
-                            if (el) cqCountdowns[cdId] = { el: el.querySelector('b'), targetEpoch };
+                            if (el) cqCountdowns[cdId] = {
+                                el: el.querySelector('b'),
+                                targetEpoch,
+                                fmt: fmtReset   // use day-aware formatter
+                            };
                         }, 0);
                     } else {
                         resetHtml = `<span class="cq-reset">—</span>`;
                     }
                     html += `<div class="cq-row">
-                        <span class="cq-dot cq-dot-${col}"></span>
+                        <span class="cq-dot" style="background:${colHex}"></span>
                         <span class="cq-name">${q.label}</span>
                         <div class="cq-bar-wrap">
-                            <span style="font-size:.72rem;color:#475569;width:40px;text-align:right">${q.utilization}/100</span>
-                            <div class="cq-bar"><div class="cq-bar-fill cq-bar-${col}" style="width:${q.utilization}%"></div></div>
-                            <span class="cq-pct" style="color:${col==='red'?'#ef4444':col==='yellow'?'#eab308':'#22c55e'}">${q.pct_remaining}%</span>
+                            <span style="font-size:.72rem;color:#475569;width:52px;text-align:right">${q.utilization}/100</span>
+                            <div class="cq-bar"><div class="cq-bar-fill" style="width:${q.pct_remaining}%;background:${colHex}"></div></div>
+                            <span class="cq-pct" style="color:${colHex}">${q.pct_remaining}%</span>
                         </div>
                         ${resetHtml}
                     </div>`;
@@ -868,6 +892,27 @@
                     (d.warning ? `<div class="sl-row"><span style="color:#f90;font-size:.75rem">⚠ ${d.warning}</span></div>` : '');
             }).catch(() => {
                 lastSessionBody.innerHTML = '<p class="sl-unavail">Son oturum yüklenemedi.</p>';
+            });
+        }
+
+        // ── Refresh all agy accounts ────────────────────────────────────
+        const refreshAllStatus = document.getElementById('refreshAllStatus');
+        function refreshAllAccounts() {
+            const btn = document.getElementById('refreshAllBtn');
+            btn.disabled = true; btn.textContent = '⟳ Çalışıyor…';
+            refreshAllStatus.style.display = 'block';
+            refreshAllStatus.textContent = 'Hesaplar sırayla çalıştırılıyor, lütfen bekleyin…';
+            fetch('/api/agy-refresh-accounts').then(r => r.json()).then(data => {
+                btn.disabled = false; btn.textContent = '⟳ Tüm Hesapları Çalıştır';
+                if (data.warning) { refreshAllStatus.textContent = '⚠ ' + data.warning; return; }
+                const lines = (data.results || []).map(r =>
+                    `${r.ok ? '✓' : '✗'} ${r.email}${r.error ? ' — '+r.error : ''}`
+                );
+                refreshAllStatus.textContent = lines.join('  |  ') || 'Tamamlandı.';
+                loadQuota(); loadStatusline(); loadLastSession();
+            }).catch(e => {
+                btn.disabled = false; btn.textContent = '⟳ Tüm Hesapları Çalıştır';
+                refreshAllStatus.textContent = 'Hata: ' + e;
             });
         }
 

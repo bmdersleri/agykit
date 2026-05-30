@@ -544,3 +544,56 @@ def claude_quota(*, creds_path: str | None = None) -> dict:
         "extra_usage": data.get("extra_usage"),
         "warning": None,
     }
+
+def agy_refresh_all_accounts(*, agykit_path: str | None = None) -> dict:
+    """Switch to each saved agy account and run a lightweight agy --print to
+    refresh log data (triggers email auth log + statusline capture).
+
+    Returns {"results": [{"email", "ok", "error"}], "warning": str|None}
+    """
+    import subprocess, shutil
+
+    agykit = agykit_path or shutil.which("agykit")
+    if not agykit:
+        return {"results": [], "warning": "agykit not found in PATH"}
+
+    accounts_dir = os.path.expanduser("~/.gemini/accounts")
+    if not os.path.isdir(accounts_dir):
+        return {"results": [], "warning": "No accounts dir found"}
+
+    emails = sorted(
+        os.path.basename(f).replace(".json", "")
+        for f in glob.glob(os.path.join(accounts_dir, "*.json"))
+    )
+    if not emails:
+        return {"results": [], "warning": "No saved accounts found"}
+
+    results = []
+    for email in emails:
+        try:
+            # Switch account
+            sw = subprocess.run(
+                [agykit, "switch", email],
+                capture_output=True, text=True, timeout=15
+            )
+            if sw.returncode != 0:
+                results.append({"email": email, "ok": False, "error": sw.stderr.strip()[:80]})
+                continue
+
+            # Minimal agy run just to trigger auth log + statusline
+            run = subprocess.run(
+                [agykit, "run", "echo ok"],
+                capture_output=True, text=True, timeout=60
+            )
+            ok = run.returncode == 0
+            results.append({
+                "email": email,
+                "ok": ok,
+                "error": run.stderr.strip()[:80] if not ok else None,
+            })
+        except subprocess.TimeoutExpired:
+            results.append({"email": email, "ok": False, "error": "timeout"})
+        except Exception as e:
+            results.append({"email": email, "ok": False, "error": str(e)[:80]})
+
+    return {"results": results, "warning": None}
