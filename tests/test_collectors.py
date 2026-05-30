@@ -2,8 +2,12 @@ import os
 
 from dashboard import collectors
 
-FIX = os.path.join(os.path.dirname(__file__), "..", "dashboard", "fixtures", "stats-cache.json")
-FIXBRAIN = os.path.join(os.path.dirname(__file__), "..", "dashboard", "fixtures", "brain")
+FIX = os.path.join(
+    os.path.dirname(__file__), "..", "dashboard", "fixtures", "stats-cache.json"
+)
+FIXBRAIN = os.path.join(
+    os.path.dirname(__file__), "..", "dashboard", "fixtures", "brain"
+)
 
 
 def test_claude_series_all():
@@ -41,6 +45,10 @@ def test_agy_series_missing_dir():
 
 def test_apply_range_7d():
     labels = ["2026-05-20", "2026-05-27", "2026-05-28", "2026-05-29"]
-    assert collectors._apply_range(labels, "7d") == ["2026-05-27", "2026-05-28", "2026-05-29"]
+    assert collectors._apply_range(labels, "7d") == [
+        "2026-05-27",
+        "2026-05-28",
+        "2026-05-29",
+    ]
     assert collectors._apply_range(labels, "all") == labels
     assert collectors._apply_range([], "7d") == []

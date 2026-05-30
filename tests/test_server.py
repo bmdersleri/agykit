@@ -7,8 +7,12 @@ import pytest
 
 from dashboard import server
 
-FIX = os.path.join(os.path.dirname(__file__), "..", "dashboard", "fixtures", "stats-cache.json")
-FIXBRAIN = os.path.join(os.path.dirname(__file__), "..", "dashboard", "fixtures", "brain")
+FIX = os.path.join(
+    os.path.dirname(__file__), "..", "dashboard", "fixtures", "stats-cache.json"
+)
+FIXBRAIN = os.path.join(
+    os.path.dirname(__file__), "..", "dashboard", "fixtures", "brain"
+)
 
 
 @pytest.fixture(autouse=True)
