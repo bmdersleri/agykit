@@ -18,6 +18,11 @@ cd agykit && ./install.sh
 
 After install, run `agykit doctor` to verify everything is set up correctly.
 
+**Claude Code skill (optional):** install `skills/agykit.md` so Claude Code knows how to use agykit:
+```bash
+cp "$(dirname $(which agykit))/../skills/agykit.md" ~/.claude/skills/agykit.md
+```
+
 ## Commands
 ```
 agykit whoami                  Show active Google account
