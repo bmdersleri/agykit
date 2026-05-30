@@ -463,3 +463,84 @@ def agy_last_session(*, brain_dir: str | None = None) -> dict:
         "record_types": type_counts,
         "warning": f"Skipped {skipped} malformed lines" if skipped else None,
     }
+
+_CLAUDE_USAGE_URL = "https://claude.ai/api/oauth/usage"
+_CLAUDE_CREDS = "~/.claude/.credentials.json"
+
+_QUOTA_LABELS = {
+    "five_hour":          "Oturum (5s)",
+    "seven_day":          "Haftalık (7g)",
+    "seven_day_sonnet":   "Haftalık Sonnet (7g)",
+    "seven_day_opus":     "Haftalık Opus (7g)",
+    "seven_day_cowork":   "Haftalık CoWork (7g)",
+    "seven_day_omelette": "Haftalık Omelette (7g)",
+    "seven_day_oauth_apps": "Haftalık OAuth Apps (7g)",
+    "tangelo":            "Tangelo",
+    "iguana_necktie":     "Iguana Necktie",
+    "omelette_promotional": "Omelette Promo",
+}
+
+
+def claude_quota(*, creds_path: str | None = None) -> dict:
+    """Fetch live Claude Code quota from the /api/oauth/usage endpoint.
+
+    Requires the OAuth access token stored in ~/.claude/.credentials.json.
+    Returns:
+        {"quotas": [{"key", "label", "utilization", "resets_at",
+                     "resets_in_seconds", "pct_remaining"}],
+         "extra_usage": {...},
+         "warning": str|None}
+    utilization: 0–100 (100 = fully exhausted).
+    pct_remaining: 100 − utilization.
+    resets_in_seconds: seconds until reset window refills; 0 if null/past.
+    """
+    import urllib.request, urllib.error
+
+    cp = os.path.expanduser(creds_path or _CLAUDE_CREDS)
+    try:
+        creds = json.load(open(cp))
+        token = creds["claudeAiOauth"]["accessToken"]
+    except Exception as e:
+        return {"quotas": [], "extra_usage": None, "warning": f"Cannot read creds: {e}"}
+
+    try:
+        req = urllib.request.Request(
+            _CLAUDE_USAGE_URL,
+            headers={"Authorization": f"Bearer {token}", "User-Agent": "claude-code"},
+        )
+        with urllib.request.urlopen(req, timeout=10) as r:
+            data = json.loads(r.read())
+    except Exception as e:
+        return {"quotas": [], "extra_usage": None, "warning": f"API error: {e}"}
+
+    now = datetime.datetime.now(datetime.timezone.utc)
+    quotas = []
+    for key, label in _QUOTA_LABELS.items():
+        entry = data.get(key)
+        if entry is None:
+            continue
+        util = entry.get("utilization") or 0.0
+        resets_raw = entry.get("resets_at")
+        resets_in = 0
+        resets_at_str = None
+        if resets_raw:
+            try:
+                resets_dt = datetime.datetime.fromisoformat(resets_raw)
+                resets_at_str = resets_dt.astimezone().strftime("%Y-%m-%d %H:%M")
+                resets_in = max(0, int((resets_dt - now).total_seconds()))
+            except Exception:
+                pass
+        quotas.append({
+            "key": key,
+            "label": label,
+            "utilization": round(util, 1),
+            "pct_remaining": round(100.0 - util, 1),
+            "resets_at": resets_at_str,
+            "resets_in_seconds": resets_in,
+        })
+
+    return {
+        "quotas": quotas,
+        "extra_usage": data.get("extra_usage"),
+        "warning": None,
+    }

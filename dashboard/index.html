@@ -233,6 +233,31 @@
         .qcd    { color: #fb923c; font-weight: 600; }
         .qat    { font-size: .7rem; color: #475569; text-align: center; }
 
+        /* ── Claude Quota panel ── */
+        .cq-section { margin-bottom: 2rem; }
+        .cq-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; }
+        .cq-card h3 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 1rem; display: flex; justify-content: space-between; align-items: center; }
+        .cq-refresh-btn { background: none; border: none; color: var(--text-muted); cursor: pointer; font-size: .8rem; padding: .2rem .5rem; border-radius: .25rem; }
+        .cq-refresh-btn:hover { color: var(--text-main); background: #1e293b; }
+        .cq-row { display: flex; align-items: center; gap: .75rem; padding: .45rem 0; border-bottom: 1px solid #1e293b; font-size: .83rem; }
+        .cq-row:last-child { border-bottom: none; }
+        .cq-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; }
+        .cq-name { flex: 0 0 170px; color: var(--text-muted); }
+        .cq-bar-wrap { flex: 1; display: flex; align-items: center; gap: .5rem; }
+        .cq-bar { flex: 1; height: 6px; background: #1e3a5f; border-radius: 3px; overflow: hidden; }
+        .cq-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
+        .cq-util { font-size: .78rem; font-weight: 600; width: 46px; text-align: right; }
+        .cq-pct { font-size: .78rem; color: var(--text-muted); width: 50px; text-align: right; }
+        .cq-reset { font-size: .75rem; color: var(--text-muted); width: 90px; text-align: right; }
+        .cq-reset b { color: var(--text-main); font-weight: 500; }
+        .cq-unavail { color: #475569; font-size: .82rem; }
+        .cq-dot-red    { background: #ef4444; }
+        .cq-dot-yellow { background: #eab308; }
+        .cq-dot-green  { background: #22c55e; }
+        .cq-bar-red    { background: #ef4444; }
+        .cq-bar-yellow { background: #eab308; }
+        .cq-bar-green  { background: #22c55e; }
+
         /* ── Statusline + Last Session panels ── */
         .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 2rem; }
         @media (max-width: 700px) { .info-grid { grid-template-columns: 1fr; } }
@@ -293,6 +318,16 @@
             </svg>
             <p>No statistics found. Run some commands to populate logs!</p>
         </div>
+
+        <!-- Claude Quota -->
+        <section class="cq-section">
+            <div class="cq-card">
+                <h3>Claude Code Kotası
+                    <button class="cq-refresh-btn" onclick="loadClaudeQuota()">↻ Yenile</button>
+                </h3>
+                <div id="claudeQuotaBody"><p class="cq-unavail">Yükleniyor…</p></div>
+            </div>
+        </section>
 
         <!-- Statusline + Last Session -->
         <div class="info-grid">
@@ -702,6 +737,64 @@
             });
         }
 
+        // ── Claude Quota panel ──────────────────────────────────────────
+        const claudeQuotaBody = document.getElementById('claudeQuotaBody');
+        const cqCountdowns = {};
+
+        setInterval(() => {
+            const now = Date.now() / 1000;
+            for (const [id, ct] of Object.entries(cqCountdowns)) {
+                const rem = Math.max(0, Math.round(ct.targetEpoch - now));
+                if (ct.el) ct.el.textContent = rem > 0 ? fmtSec(rem) : 'şimdi';
+            }
+        }, 1000);
+
+        function cqColor(util) {
+            if (util >= 90) return 'red';
+            if (util >= 50) return 'yellow';
+            return 'green';
+        }
+
+        function loadClaudeQuota() {
+            fetch('/api/claude-quota').then(r => r.json()).then(data => {
+                for (const k of Object.keys(cqCountdowns)) delete cqCountdowns[k];
+                if (data.warning || !data.quotas || data.quotas.length === 0) {
+                    claudeQuotaBody.innerHTML = `<p class="cq-unavail">${data.warning || 'Kota verisi bulunamadı.'}</p>`;
+                    return;
+                }
+                const nowEpoch = Date.now() / 1000;
+                let html = '';
+                data.quotas.forEach((q, i) => {
+                    const col = cqColor(q.utilization);
+                    const cdId = `cqcd${i}`;
+                    let resetHtml = '';
+                    if (q.resets_in_seconds > 0) {
+                        const targetEpoch = nowEpoch + q.resets_in_seconds;
+                        resetHtml = `<span id="${cdId}" class="cq-reset"><b>${fmtSec(q.resets_in_seconds)}</b></span>`;
+                        setTimeout(() => {
+                            const el = document.getElementById(cdId);
+                            if (el) cqCountdowns[cdId] = { el: el.querySelector('b'), targetEpoch };
+                        }, 0);
+                    } else {
+                        resetHtml = `<span class="cq-reset">—</span>`;
+                    }
+                    html += `<div class="cq-row">
+                        <span class="cq-dot cq-dot-${col}"></span>
+                        <span class="cq-name">${q.label}</span>
+                        <div class="cq-bar-wrap">
+                            <span style="font-size:.72rem;color:#475569;width:40px;text-align:right">${q.utilization}/100</span>
+                            <div class="cq-bar"><div class="cq-bar-fill cq-bar-${col}" style="width:${q.utilization}%"></div></div>
+                            <span class="cq-pct" style="color:${col==='red'?'#ef4444':col==='yellow'?'#eab308':'#22c55e'}">${q.pct_remaining}%</span>
+                        </div>
+                        ${resetHtml}
+                    </div>`;
+                });
+                claudeQuotaBody.innerHTML = html;
+            }).catch(e => {
+                claudeQuotaBody.innerHTML = `<p class="cq-unavail">Yüklenemedi: ${e}</p>`;
+            });
+        }
+
         // ── Statusline panel ────────────────────────────────────────────
         const statuslineBody = document.getElementById('statuslineBody');
         const slAge = document.getElementById('slAge');
@@ -780,6 +873,7 @@
 
         // Initial Load
         loadData();
+        loadClaudeQuota();
         loadQuota();
         loadStatusline();
         loadLastSession();
@@ -790,7 +884,7 @@
             es.onmessage = function(ev) {
                 if (ev.data === 'refresh') {
                     liveDot.classList.remove('flash'); void liveDot.offsetWidth; liveDot.classList.add('flash');
-                    loadData(); loadQuota(); loadStatusline(); loadLastSession();
+                    loadData(); loadClaudeQuota(); loadQuota(); loadStatusline(); loadLastSession();
                 }
             };
             es.onerror = function() { es.close(); setTimeout(connectSSE, 5000); };

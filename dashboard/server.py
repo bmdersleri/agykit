@@ -51,6 +51,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.serve_json(collectors.agy_statusline_snapshot())
         elif path == "/api/last-session":
             self.serve_json(collectors.agy_last_session())
+        elif path == "/api/claude-quota":
+            self.serve_json(collectors.claude_quota())
         elif path == "/events":
             self.serve_events()
         else:
