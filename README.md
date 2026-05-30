@@ -56,7 +56,80 @@ agykit quota --json | jq  # pipe to any tool
 
 The quota cache (`~/.gemini/antigravity-cli/quota-cache.json`) is also read by the dashboard and the statusline badge.
 
-## Config
+## Project Setup (new project)
+
+**Step 1 — Create `.agykit.conf` in your project root:**
+
+```bash
+cp "$(dirname $(which agykit))/../agykit.conf.example" .agykit.conf
+# or:
+curl -sL https://raw.githubusercontent.com/bmdersleri/agykit/main/agykit.conf.example > .agykit.conf
+```
+
+**Step 2 — Edit `.agykit.conf` for your project:**
+
+```bash
+# Verify command: runs after every code task (required for do-escalate)
+AGYKIT_VERIFY="pytest -q"          # Python
+# AGYKIT_VERIFY="npm test"         # Node
+# AGYKIT_VERIFY="cargo test"       # Rust
+# AGYKIT_VERIFY="just test"        # Justfile
+
+# System context file: injected into every agy prompt (optional but recommended)
+AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
+
+# IMPORTANT: point to your source directory, NOT $PWD
+# $PWD loads everything including logs, lock files, build artifacts → wastes tokens
+AGYKIT_FLAGS="--add-dir $PWD/src --dangerously-skip-permissions"
+# Single-dir projects: --add-dir $PWD/mypackage
+# Monorepos:          --add-dir $PWD/src --add-dir $PWD/lib
+
+AGYKIT_TIMEOUT="15m"
+AGYKIT_TERSE="ultra"   # token savings: lite | full | ultra
+```
+
+**Step 3 — Create `CLAUDE_AGY_SYSTEM.md` (optional but recommended):**
+
+This file is injected as a system prompt prefix into every `agykit run`/`do-escalate` call.
+Include: what the project does, hard constraints, file layout, delegation rules for agy.
+
+```bash
+cat > CLAUDE_AGY_SYSTEM.md << 'EOF'
+# Project Context
+
+<what the project does, 2-3 sentences>
+
+## Hard constraints
+- <language/framework version>
+- <zero-X-dependency, stdlib-only, etc.>
+
+## Delegation rules (when invoked via agykit do-escalate)
+- Follow the given plan exactly. No scope creep.
+- Never delete or weaken tests.
+- Never run git commands. Leave changes in working tree.
+- Only edit: <list the files agy is allowed to touch>
+EOF
+```
+
+**Step 4 — Add `.agykit.conf` to `.gitignore`:**
+
+```bash
+echo ".agykit.conf" >> .gitignore
+```
+
+Config contains local paths (`$PWD`) and is user-specific — do not commit it.
+
+**Step 5 — Test:**
+
+```bash
+cd /your/project
+agykit whoami          # verify active account
+agykit run "hello"     # smoke test
+```
+
+---
+
+## Config reference
 Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 - `AGYKIT_VERIFY` — command run after a code task (needed for `do-escalate`)
 - `AGYKIT_SYSTEM` — path to system-context file injected into prompts
@@ -64,7 +137,7 @@ Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 - `AGYKIT_TIMEOUT` — agy print timeout (default: `15m`)
 - `AGYKIT_TERSE` — terse output for `run`: `0`/`lite`/`full`/`ultra` (saves output tokens; default `0`)
 
-See `agykit.conf.example`. Copy to your project root as `.agykit.conf`.
+See `agykit.conf.example` for a full annotated template.
 
 ## How it works
 - agy OAuth lives in the **system keyring** (`service=gemini, user=antigravity`).
