@@ -32,6 +32,7 @@ agykit model [name]            Show / set model+effort
 agykit account-list            List saved account snapshots
 agykit account-save            Snapshot current keyring login
 agykit account-add             Guided: launch agy → login → snapshot
+agykit account-remove <email>  Remove a saved account snapshot
 agykit switch <email>          Switch to a saved account
 agykit run "prompt"            Quota-aware run (available accounts first)
 agykit do-escalate "prompt"    Model ladder Flash→Pro→Opus, verify error passed forward
