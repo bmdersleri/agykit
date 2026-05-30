@@ -139,6 +139,66 @@ Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 
 See `agykit.conf.example` for a full annotated template.
 
+## System File Dependencies
+
+agykit reads files written by **agy** and **Claude Code** — none of these are created manually.
+Example copies live in `examples/` for reference.
+
+### agy files (`~/.gemini/`)
+
+| File | Written by | Used for | Missing → |
+|------|-----------|----------|-----------|
+| `~/.gemini/antigravity-cli/settings.json` | agy | Active model+effort (`agykit model`) | `agykit model` errors |
+| `~/.gemini/accounts/<email>.json` | `agykit account-save` | Account rotation, dashboard cards | No accounts to rotate |
+| `~/.gemini/antigravity-cli/brain/*/` | agy (per session) | agy usage charts in dashboard | Charts empty |
+| `~/.gemini/antigravity-cli/log/cli-*.log` | agy | Quota status, exhaustion tracking | Quota panel empty |
+| `~/.gemini/antigravity-cli/statusline-latest.json` | agy statusline hook | "agy Canlı Durum" panel | Panel shows "snapshot yok" |
+| `~/.gemini/antigravity-cli/quota-cache.json` | `agykit quota` | Dashboard quota display, 5min cache | Fetched live on demand |
+
+**System keyring** (`service=gemini, user=antigravity`): holds the active OAuth token.
+Managed entirely by agy — never edit directly.
+
+### Claude Code files (`~/.claude/`)
+
+| File | Written by | Used for | Missing → |
+|------|-----------|----------|-----------|
+| `~/.claude/stats-cache.json` | Claude Code (auto) | Claude usage charts in dashboard | Claude charts empty |
+| `~/.claude/.credentials.json` | `claude auth login` | Claude Code quota API call | Quota panel shows warning |
+
+### Setup checklist
+
+```bash
+# 1. agy: log in and save account snapshot
+agy                          # complete OAuth login
+agykit account-save          # snapshot keyring → ~/.gemini/accounts/<email>.json
+
+# 2. Claude Code: ensure credentials exist
+claude auth login            # writes ~/.claude/.credentials.json
+
+# 3. Verify dashboard data sources
+agykit quota                 # populates quota-cache.json
+agykit dash                  # open dashboard — check all panels load
+```
+
+The `statusline-latest.json` is populated automatically each time agy renders its statusline.
+Configure it via `agy`'s settings or the `statusline.sh` hook in `~/.gemini/antigravity-cli/`.
+
+### Example file formats
+
+See `examples/` for annotated JSON skeletons of each file:
+
+```
+examples/
+  agy-settings.json.example          ~/.gemini/antigravity-cli/settings.json
+  agy-account-snapshot.json.example  ~/.gemini/accounts/<email>.json
+  agy-statusline-latest.json.example ~/.gemini/antigravity-cli/statusline-latest.json
+  agy-quota-cache.json.example       ~/.gemini/antigravity-cli/quota-cache.json
+  claude-credentials.json.example    ~/.claude/.credentials.json
+  claude-stats-cache.json.example    ~/.claude/stats-cache.json
+```
+
+---
+
 ## How it works
 - agy OAuth lives in the **system keyring** (`service=gemini, user=antigravity`).
   Account snapshots saved to `~/.gemini/accounts/<email>.json`.

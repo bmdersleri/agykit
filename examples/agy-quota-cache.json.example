@@ -1,0 +1,28 @@
+{
+  "_ts": 1748600000.0,
+  "plan": "Google AI Pro",
+  "captured_at": "14:30",
+  "models": [
+    {
+      "display_name": "Gemini 3.5 Flash (Medium)",
+      "pct_shown": 100,
+      "pct_remaining": 100,
+      "status": "available",
+      "refreshes_in": null
+    },
+    {
+      "display_name": "Gemini 3.1 Pro (High)",
+      "pct_shown": 40,
+      "pct_remaining": 40,
+      "status": "limited",
+      "refreshes_in": "2h 22m"
+    },
+    {
+      "display_name": "Claude Opus 4.6 (Thinking)",
+      "pct_shown": 0,
+      "pct_remaining": 0,
+      "status": "exhausted",
+      "refreshes_in": "1h 5m"
+    }
+  ]
+}

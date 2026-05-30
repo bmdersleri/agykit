@@ -1,0 +1,22 @@
+{
+  "session_id": "e16405ec-0f6b-44d8-909f-5712221b3337",
+  "model": {
+    "id": "Gemini 3.5 Flash (Medium)",
+    "display_name": "Gemini 3.5 Flash (Medium)"
+  },
+  "agent_state": "idle",
+  "context_window": {
+    "total_input_tokens": 50000,
+    "total_output_tokens": 5000,
+    "context_window_size": 1048576,
+    "used_percentage": 5.2,
+    "remaining_percentage": 94.8
+  },
+  "vcs": {
+    "branch": "main",
+    "is_dirty": false
+  },
+  "artifacts": 0,
+  "subagents": 0,
+  "background_tasks": 0
+}

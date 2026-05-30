@@ -1,0 +1,7 @@
+{
+  "token": {
+    "access_token": "<OAuth access token — written by agy after login>",
+    "expiry": "2026-01-01T00:00:00.000000Z"
+  },
+  "auth_method": "consumer"
+}
