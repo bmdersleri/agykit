@@ -28,8 +28,33 @@ agykit account-add             Guided: launch agy → login → snapshot
 agykit switch <email>          Switch to a saved account
 agykit run "prompt"            Quota-aware run (rotate accounts)
 agykit do-escalate "prompt"    Model ladder Flash→Pro→Opus on verify fail
-agykit dash [--port N]          Open the usage dashboard (localhost)
+agykit dash [--port N]         Open the usage dashboard (localhost:8787)
+agykit quota [--refresh]       Show per-model quota table (5min cache)
+agykit quota --json            Machine-readable JSON (pipe to scripts)
+agykit quota --status          One-line summary for statusline/scripts
 ```
+
+## Dashboard (`agykit dash`)
+
+Live localhost web dashboard at `http://127.0.0.1:8787` (light/dark theme):
+
+- **agy Account Quota** — per-account cards with Gmail profile photo, model quota bars (from `agy /usage` via tmux), reset times, exhaustion status and countdown
+- **Claude Code Quota** — session (5h) + weekly tiers via Anthropic OAuth API
+- **Usage Charts** — daily token consumption and model distribution (Chart.js)
+- **agy Status** — statusline snapshot + last session summary
+
+Requires `tmux` for model quota capture. First load takes ~30s; results cached for 5 minutes.
+
+## Quota CLI (`agykit quota`)
+
+```bash
+agykit quota              # colored table from 5-min cache (instant after first run)
+agykit quota --refresh    # force live fetch from agy
+agykit quota --status     # "✓ 8 models available" — suitable for shell prompts
+agykit quota --json | jq  # pipe to any tool
+```
+
+The quota cache (`~/.gemini/antigravity-cli/quota-cache.json`) is also read by the dashboard and the statusline badge.
 
 ## Config
 Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
@@ -45,5 +70,5 @@ See `agykit.conf.example`. Copy to your project root as `.agykit.conf`.
 - agy OAuth lives in the **system keyring** (`service=gemini, user=antigravity`).
   Account snapshots saved to `~/.gemini/accounts/<email>.json`.
 - Model+effort is a single string in `~/.gemini/antigravity-cli/settings.json`.
-- Quota errors (`429`, `RESOURCE_EXHAUSTED`, etc.) trigger account rotation.
+- Quota errors (`RESOURCE_EXHAUSTED`, `quota reached`, `code 429`, etc.) trigger account rotation. Note: bare `429` is intentionally excluded from the pattern to avoid false positives on Go log timestamps (e.g. `18:40:55.429005`).
 - `do-escalate` climbs Flash → Pro → Opus when `AGYKIT_VERIFY` fails.
