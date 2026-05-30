@@ -159,11 +159,13 @@ cmd_account_add() {
 
 cmd_account_switch() {
     [ -z "${1:-}" ] && { echo "Usage: agykit switch <email>"; exit 1; }
-    python3 - "$1" <<'PY'
-import keyring, json, os, sys, urllib.request
+    # Returns "EXPIRED" on stdout if the switched-in token needs refreshing.
+    local need_refresh
+    need_refresh=$(python3 - "$1" <<'PY'
+import keyring, json, os, sys, urllib.request, datetime
 email = sys.argv[1]
 p = os.path.expanduser(f'~/.gemini/accounts/{email}.json')
-if not os.path.exists(p): print(f"No snapshot for {email}"); raise SystemExit(1)
+if not os.path.exists(p): print(f"NOSNAP", file=sys.stderr); raise SystemExit(2)
 cur = keyring.get_password('gemini','antigravity')
 if cur:
     try:
@@ -175,9 +177,26 @@ if cur:
             bp = os.path.expanduser(f'~/.gemini/accounts/{ce}.json')
             open(bp,'w').write(cur); os.chmod(bp,0o600)
     except Exception: pass
-keyring.set_password('gemini','antigravity', open(p).read())
-print(f"==> Switched to {email}")
+data = open(p).read()
+keyring.set_password('gemini','antigravity', data)
+# Check if the new token is expired → signal refresh needed
+try:
+    exp = json.loads(data)['token'].get('expiry','')
+    if exp:
+        # ISO 8601 with tz; compare to now
+        t = datetime.datetime.fromisoformat(exp.replace('Z','+00:00'))
+        if t <= datetime.datetime.now(datetime.timezone.utc):
+            print("EXPIRED")
+except Exception:
+    pass
 PY
+    ) || { echo "No snapshot for $1"; exit 1; }
+    echo "==> Switched to $1"
+    # Auto-refresh: agy renews the access_token from refresh_token on its first call.
+    if [ "$need_refresh" = "EXPIRED" ]; then
+        echo "==> token expired — refreshing via agy..."
+        agy -p "ok" --dangerously-skip-permissions >/dev/null 2>&1 || true
+    fi
 }
 
 # Run agy with quota-aware account rotation. Returns 0 on first success.
