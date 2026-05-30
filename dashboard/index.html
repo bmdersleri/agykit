@@ -286,53 +286,69 @@
         }
 
         .qcard-header {
+            position: relative;
             display: flex;
-            justify-content: space-between;
-            align-items: flex-start;
+            flex-direction: column;
+            align-items: center;
+            text-align: center;
+            padding-bottom: 0.5rem;
+        }
+
+        .qcard-badges-top {
+            position: absolute;
+            top: 0;
+            right: 0;
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.25rem;
         }
 
         .qcard-identity {
             display: flex;
+            flex-direction: column;
             align-items: center;
-            gap: 0.65rem;
+            gap: 0.5rem;
         }
 
         .qcard-avatar {
-            width: 40px;
-            height: 40px;
+            width: 72px;
+            height: 72px;
             border-radius: 50%;
             object-fit: cover;
-            border: 2px solid var(--border);
-            flex-shrink: 0;
+            border: 3px solid var(--accent);
+            box-shadow: 0 0 0 3px var(--surface), 0 4px 12px rgba(0,0,0,0.25);
         }
 
         .qcard-avatar-fallback {
-            width: 40px;
-            height: 40px;
+            width: 72px;
+            height: 72px;
             border-radius: 50%;
             background: linear-gradient(135deg, var(--accent), #818cf8);
             display: flex;
             align-items: center;
             justify-content: center;
-            font-size: 1rem;
+            font-size: 1.6rem;
             font-weight: 700;
             color: #fff;
-            flex-shrink: 0;
+            border: 3px solid var(--accent);
+            box-shadow: 0 0 0 3px var(--surface), 0 4px 12px rgba(0,0,0,0.2);
         }
 
         .qcard-identity-text {
             display: flex;
             flex-direction: column;
+            align-items: center;
         }
 
         .qcard-handle {
-            font-size: 1.05rem;
+            font-size: 1rem;
             font-weight: 700;
             color: var(--text);
         }
 
         .qcard-domain {
-            font-size: 0.75rem;
+            font-size: 0.72rem;
             color: var(--muted);
         }
 
@@ -352,6 +368,13 @@
         }
 
         .qcard-badges {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: 0.25rem;
+        }
+        /* alias for new centered header layout */
+        .qcard-badges-top {
             display: flex;
             flex-direction: column;
             align-items: flex-end;
@@ -1676,16 +1699,16 @@
 
                     card.innerHTML = `
                         <div class="qcard-header">
+                            <div class="qcard-badges-top">
+                                ${isActive ? '<span class="qcard-active-badge">● AKTİF</span>' : ''}
+                                <span class="qbadge ${exhausted ? 'qbadge-exhausted' : 'qbadge-available'}">${exhausted ? 'TÜKENDİ' : 'MÜSAİT'}</span>
+                            </div>
                             <div class="qcard-identity">
                                 ${avatarHtml}
                                 <div class="qcard-identity-text">
                                     <span class="qcard-handle">${acct.name || handle}</span>
                                     <span class="qcard-domain">${acct.email}</span>
                                 </div>
-                            </div>
-                            <div class="qcard-badges">
-                                ${isActive ? '<span class="qcard-active-badge">● AKTİF</span>' : ''}
-                                <span class="qbadge ${exhausted ? 'qbadge-exhausted' : 'qbadge-available'}">${exhausted ? 'TÜKENDİ' : 'MÜSAİT'}</span>
                             </div>
                         </div>
                         
