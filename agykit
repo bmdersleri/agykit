@@ -317,6 +317,158 @@ cmd_quota() {
     python3 "$dir/quota.py" "$@"
 }
 
+cmd_doctor() {
+    local ok=0 warn=0 fail=0
+    _ok()   { echo "  ✓ $*"; }
+    _warn() { echo "  ⚠ $*"; warn=$((warn+1)); }
+    _fail() { echo "  ✗ $*"; fail=$((fail+1)); }
+
+    # ── Dependencies ────────────────────────────────────────────────────────
+    echo "Dependencies"
+    if command -v "$AGY_BIN" >/dev/null 2>&1; then
+        local av; av=$("$AGY_BIN" --version 2>/dev/null | head -1 || echo "unknown version")
+        _ok "agy ($av)"
+    else
+        _fail "agy not found — install Antigravity CLI"
+    fi
+    command -v python3 >/dev/null 2>&1 && _ok "python3" || _fail "python3 not found"
+    python3 -c "import keyring" 2>/dev/null && _ok "python keyring" \
+        || _fail "python keyring missing — pip install keyring"
+    command -v tmux >/dev/null 2>&1 && _ok "tmux" \
+        || _warn "tmux not found — dashboard model quota capture requires tmux"
+    echo
+
+    # ── agy State ───────────────────────────────────────────────────────────
+    echo "agy State"
+    local email
+    email=$(python3 - <<'PY' 2>/dev/null
+import keyring, json, urllib.request
+v = keyring.get_password('gemini', 'antigravity')
+if not v: raise SystemExit("no token")
+at = json.loads(v)['token']['access_token']
+req = urllib.request.Request('https://www.googleapis.com/oauth2/v3/userinfo',
+    headers={'Authorization': f'Bearer {at}'})
+print(json.loads(urllib.request.urlopen(req, timeout=5).read()).get('email','(unknown)'))
+PY
+)
+    if [ -n "$email" ]; then
+        _ok "OAuth token active ($email)"
+    else
+        _fail "no OAuth token — run: agy  (complete login, then: agykit account-save)"
+    fi
+
+    if [ -f "$AGY_SETTINGS" ]; then
+        local model; model=$(python3 -c "import json; d=json.load(open('$AGY_SETTINGS')); print(d.get('model','?'))" 2>/dev/null || echo "?")
+        _ok "settings.json (model: $model)"
+    else
+        _fail "settings.json missing ($AGY_SETTINGS) — run agy once to create it"
+    fi
+
+    if [ -d "$ACCOUNTS_DIR" ]; then
+        local acct_count; acct_count=$(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | wc -l | tr -d ' ')
+        [ "$acct_count" -gt 0 ] \
+            && _ok "$acct_count account snapshot(s) in $ACCOUNTS_DIR" \
+            || _warn "no account snapshots — run: agykit account-save"
+    else
+        _warn "accounts dir missing ($ACCOUNTS_DIR) — run: agykit account-save"
+    fi
+    echo
+
+    # ── Dashboard Sources ────────────────────────────────────────────────────
+    echo "Dashboard Sources"
+    local brain_dir="$GEMINI_DIR/antigravity-cli/brain"
+    if [ -d "$brain_dir" ]; then
+        local sess_count; sess_count=$(ls -d "$brain_dir"/*/  2>/dev/null | wc -l | tr -d ' ')
+        _ok "brain/ ($sess_count session(s))"
+    else
+        _warn "brain/ not found ($brain_dir) — populated automatically when agy runs"
+    fi
+
+    local log_dir="$GEMINI_DIR/antigravity-cli/log"
+    if [ -d "$log_dir" ]; then
+        local log_count; log_count=$(ls "$log_dir"/cli-*.log 2>/dev/null | wc -l | tr -d ' ')
+        [ "$log_count" -gt 0 ] \
+            && _ok "log/ ($log_count log file(s))" \
+            || _warn "log/ exists but no cli-*.log files yet"
+    else
+        _warn "log/ not found ($log_dir) — populated automatically when agy runs"
+    fi
+
+    local sl_file="$GEMINI_DIR/antigravity-cli/statusline-latest.json"
+    [ -f "$sl_file" ] \
+        && _ok "statusline-latest.json" \
+        || _warn "statusline-latest.json missing — run agy once to populate"
+
+    local qc_file="$GEMINI_DIR/antigravity-cli/quota-cache.json"
+    if [ -f "$qc_file" ]; then
+        local age_min; age_min=$(python3 -c "
+import json, time
+d = json.load(open('$qc_file'))
+print(int((time.time() - d.get('_ts', 0)) / 60))
+" 2>/dev/null || echo "?")
+        _ok "quota-cache.json (${age_min}min old)"
+    else
+        _warn "quota-cache.json missing — run: agykit quota  to populate"
+    fi
+    echo
+
+    # ── Claude Code ─────────────────────────────────────────────────────────
+    echo "Claude Code"
+    local creds="$HOME/.claude/.credentials.json"
+    [ -f "$creds" ] \
+        && _ok ".credentials.json" \
+        || _warn ".credentials.json missing — run: claude auth login  (enables Claude quota panel)"
+
+    local stats="$HOME/.claude/stats-cache.json"
+    [ -f "$stats" ] \
+        && _ok "stats-cache.json" \
+        || _warn "stats-cache.json missing — populated automatically by Claude Code"
+    echo
+
+    # ── Project Config ───────────────────────────────────────────────────────
+    echo "Project Config ($(pwd))"
+    if [ -f ".agykit.conf" ]; then
+        _ok ".agykit.conf found"
+        [ -n "$VERIFY_CMD" ] \
+            && _ok "AGYKIT_VERIFY: \"$VERIFY_CMD\"" \
+            || _warn "AGYKIT_VERIFY not set — do-escalate will not verify output"
+
+        if [ -n "$SYSTEM_FILE" ]; then
+            [ -f "$SYSTEM_FILE" ] \
+                && _ok "AGYKIT_SYSTEM: $SYSTEM_FILE" \
+                || _fail "AGYKIT_SYSTEM file not found: $SYSTEM_FILE"
+        else
+            _warn "AGYKIT_SYSTEM not set — no system context injected into prompts"
+        fi
+
+        # Check --add-dir targets exist
+        local adddir_ok=1
+        for token in $AGY_FLAGS; do
+            if [[ "$token" != "--add-dir" && "$prev_token" == "--add-dir" ]]; then
+                local expanded; expanded=$(eval echo "$token")
+                [ -d "$expanded" ] \
+                    || { _fail "--add-dir target missing: $expanded  (fix AGYKIT_FLAGS)"; adddir_ok=0; }
+            fi
+            prev_token="$token"
+        done
+        [ "$adddir_ok" -eq 1 ] && [ -n "$(echo "$AGY_FLAGS" | grep -o '\-\-add-dir' || true)" ] \
+            && _ok "AGYKIT_FLAGS: --add-dir target(s) exist"
+    else
+        _warn "no .agykit.conf in CWD — copy agykit.conf.example to .agykit.conf and edit"
+    fi
+    echo
+
+    # ── Summary ──────────────────────────────────────────────────────────────
+    if [ "$fail" -gt 0 ]; then
+        echo "  $fail critical issue(s) — fix above before using agykit"
+        return 1
+    elif [ "$warn" -gt 0 ]; then
+        echo "  $warn warning(s) — agykit functional, some features may be limited"
+    else
+        echo "  All checks passed."
+    fi
+}
+
 usage() {
     cat <<'EOF'
 agykit — portable Antigravity (agy) CLI manager
@@ -334,6 +486,7 @@ agykit — portable Antigravity (agy) CLI manager
   agykit quota [--refresh]        Show model quota table (cached 5min)
   agykit quota --json             Machine-readable JSON quota output
   agykit quota --status           One-line summary for scripts/statusline
+  agykit doctor                  Check installation and system file dependencies
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
@@ -354,6 +507,7 @@ case "${1:-}" in
     do-escalate)   cmd_do_escalate "${2:-}" ;;
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
+    doctor)        cmd_doctor ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;
     ""|-h|--help|help) usage ;;
     *)             echo "Unknown command: $1"; usage; exit 1 ;;
