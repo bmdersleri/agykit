@@ -826,10 +826,8 @@
                 const timelineRows = document.getElementById('resetTimelineRows');
                 const exhaustedAccounts = sorted.filter(a => a.status === 'exhausted' && a.resets_in_seconds > 0);
 
-                if (exhaustedAccounts.length === 0) {
-                    timelineEl.style.display = 'none';
-                } else {
-                    timelineEl.style.display = 'block';
+                timelineEl.style.display = 'block';
+                {
                     timelineRows.innerHTML = '';
                     const nowEp = Date.now() / 1000;
 
