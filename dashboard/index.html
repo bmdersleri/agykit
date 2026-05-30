@@ -232,6 +232,22 @@
         .qreset { font-size: .78rem; color: var(--text-muted); text-align: center; }
         .qcd    { color: #fb923c; font-weight: 600; }
         .qat    { font-size: .7rem; color: #475569; text-align: center; }
+
+        /* ── Statusline + Last Session panels ── */
+        .info-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1.25rem; margin-bottom: 2rem; }
+        @media (max-width: 700px) { .info-grid { grid-template-columns: 1fr; } }
+        .info-card { background: var(--card-bg); border: 1px solid var(--border-color); border-radius: .75rem; padding: 1.25rem; }
+        .info-card h3 { font-size: .85rem; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: .05em; margin-bottom: .85rem; }
+        .sl-row { display: flex; justify-content: space-between; align-items: center; padding: .3rem 0; border-bottom: 1px solid #1e293b; font-size: .82rem; }
+        .sl-row:last-child { border-bottom: none; }
+        .sl-key { color: var(--text-muted); }
+        .sl-val { color: var(--text-main); font-weight: 500; }
+        .sl-val.active { color: #4ade80; }
+        .sl-val.warn   { color: #fb923c; }
+        .sl-val.stale  { color: #64748b; font-style: italic; }
+        .sl-unavail { color: #475569; font-size: .82rem; }
+        .ctx-bar { width: 100%; height: 6px; background: #1e3a5f; border-radius: 3px; margin-top: 2px; overflow: hidden; }
+        .ctx-bar-fill { height: 100%; border-radius: 3px; transition: width .5s ease; }
     </style>
 </head>
 <body>
@@ -278,9 +294,21 @@
             <p>No statistics found. Run some commands to populate logs!</p>
         </div>
 
+        <!-- Statusline + Last Session -->
+        <div class="info-grid">
+            <div class="info-card" id="statuslineCard">
+                <h3>agy Canlı Durum <span id="slAge" style="font-size:.7rem;color:#475569;font-weight:400;text-transform:none"></span></h3>
+                <div id="statuslineBody"><p class="sl-unavail">Henüz snapshot yok — agy çalıştırınca burada görünür.</p></div>
+            </div>
+            <div class="info-card" id="lastSessionCard">
+                <h3>Son agy Oturumu</h3>
+                <div id="lastSessionBody"><p class="sl-unavail">Yükleniyor…</p></div>
+            </div>
+        </div>
+
         <!-- Account Quota Status -->
         <section class="quota-section">
-            <h2 class="section-title">agy Account Quota</h2>
+            <h2 class="section-title">agy Hesap Kotası</h2>
             <div id="quotaGrid" class="quota-grid"></div>
         </section>
 
@@ -655,8 +683,8 @@
                         </div>
                         <div class="qemail"><b>${handle}</b>${domain}</div>
                         <div class="qstats">
-                            <div class="qstat"><span class="qstat-val">${acct.session_count}</span><span class="qstat-lbl">sessions</span></div>
-                            <div class="qstat"><span class="qstat-val">${acct.exhaustion_count}</span><span class="qstat-lbl">429s</span></div>
+                            <div class="qstat"><span class="qstat-val">${acct.session_count}</span><span class="qstat-lbl">Oturum</span></div>
+                            <div class="qstat"><span class="qstat-val">${acct.exhaustion_count}</span><span class="qstat-lbl">Kota İhlali</span></div>
                         </div>
                         ${cdHtml}${atHtml}
                     `;
@@ -674,17 +702,95 @@
             });
         }
 
+        // ── Statusline panel ────────────────────────────────────────────
+        const statuslineBody = document.getElementById('statuslineBody');
+        const slAge = document.getElementById('slAge');
+
+        function slRow(key, val, cls) {
+            return `<div class="sl-row"><span class="sl-key">${key}</span><span class="sl-val ${cls||''}">${val}</span></div>`;
+        }
+
+        function loadStatusline() {
+            fetch('/api/statusline').then(r => r.json()).then(d => {
+                if (!d.available) {
+                    statuslineBody.innerHTML = `<p class="sl-unavail">${d.warning}</p>`; return;
+                }
+                const age = d.age_seconds;
+                const stale = age > 300;
+                slAge.textContent = `(${age < 60 ? age+'s' : Math.round(age/60)+'m'} önce)`;
+                const ctxPct = Math.round(d.context_pct);
+                const ctxColor = ctxPct >= 90 ? '#f87171' : ctxPct >= 60 ? '#fb923c' : '#4ade80';
+                const inTok = d.context_input_tokens >= 1000 ? Math.round(d.context_input_tokens/1000)+'k' : d.context_input_tokens;
+                const outTok = d.context_output_tokens >= 1000 ? Math.round(d.context_output_tokens/1000)+'k' : d.context_output_tokens;
+                statuslineBody.innerHTML =
+                    slRow('Durum', d.agent_state, stale?'stale':d.agent_state==='idle'?'':'active') +
+                    `<div class="sl-row"><span class="sl-key">Bağlam Kullanımı</span><span class="sl-val">${ctxPct}%
+                        <div class="ctx-bar"><div class="ctx-bar-fill" style="width:${ctxPct}%;background:${ctxColor}"></div></div>
+                    </span></div>` +
+                    slRow('Giriş Tokenleri', inTok) +
+                    slRow('Çıkış Tokenleri', outTok) +
+                    slRow('Model', d.model || '—', stale?'stale':'') +
+                    slRow('Plan', d.plan_tier || '—') +
+                    slRow('Hesap', d.email ? d.email.split('@')[0] : '—') +
+                    slRow('VCS Dal', d.vcs_branch ? `${d.vcs_branch}${d.vcs_dirty?' *':''}` : '—') +
+                    slRow('Sandbox', d.sandbox ? 'Açık' : 'Kapalı') +
+                    slRow('Artifacts', d.artifacts) +
+                    slRow('Alt Agent', d.subagents) +
+                    slRow('Arka Plan Görev', d.bg_tasks) +
+                    `<div class="sl-row" style="font-size:.7rem;color:#334155;padding-top:.5rem">Son güncelleme: ${d.captured_at}</div>`;
+            }).catch(() => {
+                statuslineBody.innerHTML = '<p class="sl-unavail">Statusline yüklenemedi.</p>';
+            });
+        }
+
+        // ── Last Session panel ───────────────────────────────────────────
+        const lastSessionBody = document.getElementById('lastSessionBody');
+
+        function fmtDur(sec) {
+            if (!sec) return '—';
+            const m = Math.floor(sec / 60), s = sec % 60;
+            return m > 0 ? `${m}d ${s}s` : `${s}s`;
+        }
+
+        function loadLastSession() {
+            fetch('/api/last-session').then(r => r.json()).then(d => {
+                if (!d.available) {
+                    lastSessionBody.innerHTML = `<p class="sl-unavail">${d.warning}</p>`; return;
+                }
+                const started = d.started_at ? d.started_at.replace('T',' ').replace('Z','') : '—';
+                const ended   = d.ended_at   ? d.ended_at.replace('T',' ').replace('Z','') : '—';
+                const types = Object.entries(d.record_types || {})
+                    .sort((a,b) => b[1]-a[1])
+                    .map(([t,c]) => `<span style="color:#94a3b8">${t}</span> <b>${c}</b>`)
+                    .join(' · ');
+                lastSessionBody.innerHTML =
+                    slRow('Oturum ID', d.session_id.slice(0,8)+'…') +
+                    slRow('Başlangıç', started) +
+                    slRow('Bitiş', ended) +
+                    slRow('Süre', fmtDur(d.duration_seconds)) +
+                    slRow('Kayıt Sayısı', d.record_count) +
+                    slRow('Araç Çağrısı', d.tool_call_count) +
+                    slRow('Model', d.model || '—') +
+                    `<div class="sl-row" style="flex-wrap:wrap;gap:.25rem"><span class="sl-key">Türler</span><span style="font-size:.75rem;line-height:1.6">${types}</span></div>` +
+                    (d.warning ? `<div class="sl-row"><span style="color:#f90;font-size:.75rem">⚠ ${d.warning}</span></div>` : '');
+            }).catch(() => {
+                lastSessionBody.innerHTML = '<p class="sl-unavail">Son oturum yüklenemedi.</p>';
+            });
+        }
+
         // Initial Load
         loadData();
         loadQuota();
+        loadStatusline();
+        loadLastSession();
 
-        // SSE — refresh both charts and quota
+        // SSE — refresh all panels
         function connectSSE() {
             const es = new EventSource('/events');
             es.onmessage = function(ev) {
                 if (ev.data === 'refresh') {
                     liveDot.classList.remove('flash'); void liveDot.offsetWidth; liveDot.classList.add('flash');
-                    loadData(); loadQuota();
+                    loadData(); loadQuota(); loadStatusline(); loadLastSession();
                 }
             };
             es.onerror = function() { es.close(); setTimeout(connectSSE, 5000); };

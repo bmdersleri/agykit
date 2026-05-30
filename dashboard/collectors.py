@@ -353,3 +353,113 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
                 })
 
     return {"accounts": accounts, "quota_window_seconds": quota_window, "warning": None}
+
+_STATUSLINE_JSON = "~/.gemini/antigravity-cli/statusline-latest.json"
+_BRAIN_DIR_DEFAULT = "~/.gemini/antigravity-cli/brain"
+
+
+def agy_statusline_snapshot(*, path: str | None = None) -> dict:
+    """Read the last-captured agy statusline JSON snapshot.
+
+    The snapshot is written by the patched statusline.sh on every agy render.
+    Returns the raw statusline dict plus a 'captured_at' mtime timestamp string,
+    or {"available": False, "warning": "..."} if no snapshot exists yet.
+    """
+    p = os.path.expanduser(path or _STATUSLINE_JSON)
+    if not os.path.isfile(p):
+        return {"available": False, "warning": "No statusline snapshot yet. Run agy to populate."}
+    try:
+        mtime = datetime.datetime.fromtimestamp(os.path.getmtime(p))
+        age_s = (datetime.datetime.now() - mtime).total_seconds()
+        with open(p, encoding="utf-8") as f:
+            raw = json.load(f)
+        # flatten useful fields
+        cw = raw.get("context_window") or {}
+        model = raw.get("model") or {}
+        vcs = raw.get("vcs") or {}
+        artifacts = raw.get("artifacts", raw.get("artifact_count", 0))
+        subagents = raw.get("subagents", 0)
+        bg_tasks = raw.get("background_tasks", raw.get("task_count", 0))
+        return {
+            "available": True,
+            "captured_at": mtime.strftime("%Y-%m-%d %H:%M:%S"),
+            "age_seconds": int(age_s),
+            "agent_state": raw.get("agent_state", "idle"),
+            "context_pct": cw.get("used_percentage", 0),
+            "context_input_tokens": cw.get("total_input_tokens", 0),
+            "context_output_tokens": cw.get("total_output_tokens", 0),
+            "model": model.get("display_name") or model.get("id") or raw.get("model", ""),
+            "plan_tier": raw.get("plan_tier", ""),
+            "email": raw.get("email", ""),
+            "vcs_branch": vcs.get("branch", ""),
+            "vcs_dirty": vcs.get("dirty", False),
+            "sandbox": (raw.get("sandbox") or {}).get("enabled", False),
+            "artifacts": len(artifacts) if isinstance(artifacts, list) else int(artifacts or 0),
+            "subagents": len(subagents) if isinstance(subagents, list) else int(subagents or 0),
+            "bg_tasks": len(bg_tasks) if isinstance(bg_tasks, list) else int(bg_tasks or 0),
+            "warning": None,
+        }
+    except Exception as e:
+        return {"available": False, "warning": f"Error reading snapshot: {e}"}
+
+
+def agy_last_session(*, brain_dir: str | None = None) -> dict:
+    """Summarise the most-recent agy brain session from its transcript.
+
+    Returns {"available", "session_id", "started_at", "ended_at",
+             "duration_seconds", "record_count", "tool_call_count",
+             "model", "record_types": {type: count}, "warning"}
+    """
+    base = os.path.expanduser(brain_dir or _BRAIN_DIR_DEFAULT)
+    pattern = os.path.join(base, "*", ".system_generated", "logs", "transcript_full.jsonl")
+    files = sorted(glob.glob(pattern), key=os.path.getmtime)
+    if not files:
+        return {"available": False, "warning": "No brain transcripts found"}
+    f = files[-1]
+    session_id = os.path.basename(os.path.dirname(os.path.dirname(os.path.dirname(f))))
+    records, skipped = [], 0
+    try:
+        for line in open(f, errors="replace"):
+            line = line.strip()
+            if not line:
+                continue
+            try:
+                records.append(json.loads(line))
+            except Exception:
+                skipped += 1
+    except Exception as e:
+        return {"available": False, "warning": str(e)}
+    if not records:
+        return {"available": False, "warning": "Empty transcript"}
+
+    times = [r["created_at"] for r in records if r.get("created_at")]
+    started = min(times) if times else None
+    ended   = max(times) if times else None
+    dur = 0
+    if started and ended:
+        try:
+            fmt = "%Y-%m-%dT%H:%M:%SZ"
+            dur = int((datetime.datetime.strptime(ended, fmt) -
+                       datetime.datetime.strptime(started, fmt)).total_seconds())
+        except Exception:
+            pass
+    models = [r["model"] for r in records if r.get("model")]
+    model = max(set(models), key=models.count) if models else ""
+    tool_calls = sum(len(r["tool_calls"]) for r in records
+                     if isinstance(r.get("tool_calls"), list))
+    type_counts: dict[str, int] = {}
+    for r in records:
+        t = r.get("type", "?")
+        type_counts[t] = type_counts.get(t, 0) + 1
+    return {
+        "available": True,
+        "session_id": session_id,
+        "started_at": started,
+        "ended_at":   ended,
+        "duration_seconds": dur,
+        "record_count": len(records),
+        "tool_call_count": tool_calls,
+        "model": model,
+        "record_types": type_counts,
+        "warning": f"Skipped {skipped} malformed lines" if skipped else None,
+    }
