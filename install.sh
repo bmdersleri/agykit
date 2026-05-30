@@ -47,4 +47,27 @@ elif [ ! -f ".agykit.conf" ]; then
     echo "Tip: copy $SRC_DIR/agykit.conf.example to your project root as .agykit.conf"
 fi
 
-echo "Done. Verify: agykit --version && agykit whoami"
+echo
+
+# ── Post-install: agy OAuth check ────────────────────────────────────────────
+echo "Post-install check:"
+if python3 -c "
+import keyring, sys
+v = keyring.get_password('gemini', 'antigravity')
+sys.exit(0 if v else 1)
+" 2>/dev/null; then
+    echo "  ✓ agy OAuth token found"
+    "$TARGET" account-save 2>/dev/null \
+        && echo "  ✓ account snapshot saved" \
+        || echo "  ⚠ account-save failed — run manually: agykit account-save"
+else
+    echo "  ⚠ No agy OAuth token found"
+    echo
+    echo "  Next steps:"
+    echo "    1. Run:  agy                   (complete Google OAuth login)"
+    echo "    2. Run:  agykit account-save   (snapshot the login for rotation)"
+    echo "    3. Run:  agykit doctor         (verify everything is set up)"
+    echo
+    echo "  Then in each project directory:"
+    echo "    agykit init                    (create .agykit.conf interactively)"
+fi
