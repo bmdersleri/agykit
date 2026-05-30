@@ -28,6 +28,7 @@ agykit account-add             Guided: launch agy → login → snapshot
 agykit switch <email>          Switch to a saved account
 agykit run "prompt"            Quota-aware run (rotate accounts)
 agykit do-escalate "prompt"    Model ladder Flash→Pro→Opus on verify fail
+agykit dash [--port N]          Open the usage dashboard (localhost)
 ```
 
 ## Config

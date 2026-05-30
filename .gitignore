@@ -1,2 +1,7 @@
 .agykit.conf
 *.log
+
+# python + agy artifacts
+__pycache__/
+*.pyc
+.antigravitycli/
