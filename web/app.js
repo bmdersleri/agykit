@@ -1,3 +1,51 @@
+        // ── Gear status indicator helpers ──
+        function gearPath(cx, cy, n, Ro, Ri, Rh) {
+            const PI2 = 2 * Math.PI;
+            const step = PI2 / n;
+            const tw = step * 0.30;
+            const pt = (r, a) =>
+                `${(cx + r * Math.cos(a)).toFixed(2)},${(cy + r * Math.sin(a)).toFixed(2)}`;
+            let d = '';
+            for (let i = 0; i < n; i++) {
+                const a = i * step;
+                const rA = a - tw, tS = a - tw * 0.48, tE = a + tw * 0.48, rB = a + tw;
+                const nA = (i + 1) * step - tw;
+                if (i === 0) d += `M ${pt(Ri, rA)}`;
+                else         d += ` L ${pt(Ri, rA)}`;
+                d += ` L ${pt(Ro, tS)} L ${pt(Ro, tE)} L ${pt(Ri, rB)}`;
+                d += ` A ${Ri} ${Ri} 0 0 1 ${pt(Ri, nA)}`;
+            }
+            d += ' Z';
+            const h1x = (cx + Rh).toFixed(2), h2x = (cx - Rh).toFixed(2), cys = String(cy);
+            d += ` M ${h1x},${cys} A ${Rh} ${Rh} 0 1 0 ${h2x},${cys} A ${Rh} ${Rh} 0 1 0 ${h1x},${cys} Z`;
+            return d;
+        }
+
+        function gearStatusHTML(statusClass, labelText) {
+            const working = statusClass === 'active';
+            const stale   = statusClass === 'stale';
+            const bigP    = gearPath(13, 17, 14, 13, 10,   3.5);
+            const smallP  = gearPath(32, 17,  9,  8.5, 6.5, 2.5);
+            const bigCol   = working ? '#10b981' : stale ? '#d97706' : '#374151';
+            const smallCol = working ? '#22d3ee' : stale ? '#b45309' : '#1f2937';
+            const bigOp    = working ? '0.9' : '0.4';
+            const smallOp  = working ? '0.9' : '0.35';
+            const bigAnim  = working
+                ? ' style="transform-origin:13px 17px;animation:gear-cw 3s linear infinite"' : '';
+            const smAnim   = working
+                ? ' style="transform-origin:32px 17px;animation:gear-ccw 2s linear infinite"' : '';
+            return `<div class="gear-status-cell">
+                <svg viewBox="0 0 43 35" width="46" height="36"
+                     xmlns="http://www.w3.org/2000/svg" style="vertical-align:middle;overflow:visible">
+                    <path d="${bigP}" fill="${bigCol}" fill-rule="evenodd" opacity="${bigOp}"${bigAnim}/>
+                    <circle cx="13" cy="17" r="2" fill="#0a0a1a"/>
+                    <path d="${smallP}" fill="${smallCol}" fill-rule="evenodd" opacity="${smallOp}"${smAnim}/>
+                    <circle cx="32" cy="17" r="1.5" fill="#0a0a1a"/>
+                </svg>
+                <span class="gear-status-label ${statusClass}">${labelText}</span>
+            </div>`;
+        }
+
         let mainChartInstance = null;
         let mixChartInstance = null;
         let currentChartSource = null;
@@ -604,13 +652,13 @@
                 const outTok = d.context_output_tokens >= 1000 ? Math.round(d.context_output_tokens/1000)+'k' : d.context_output_tokens;
                 
                 const statusClass = stale ? 'stale' : d.agent_state === 'idle' ? 'idle' : 'active';
-                const statusLabel = d.agent_state === 'idle' ? 'Boşta' : d.agent_state;
+                const statusLabel = stale ? 'Eski veri' : d.agent_state === 'idle' ? 'Boşta' : 'Çalışıyor';
 
                 statuslineBody.innerHTML = `
                     <table class="sl-table">
                         <tr>
                             <td class="sl-key">Durum</td>
-                            <td class="sl-val"><span class="status-badge ${statusClass}">${statusLabel}</span></td>
+                            <td class="sl-val">${gearStatusHTML(statusClass, statusLabel)}</td>
                         </tr>
                         <tr>
                             <td class="sl-key">Bağlam Kullanımı</td>

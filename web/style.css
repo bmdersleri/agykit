@@ -918,6 +918,26 @@
             color: var(--text);
         }
 
+        /* Gear status indicator */
+        @keyframes gear-cw  { to { transform: rotate(360deg);  } }
+        @keyframes gear-ccw { to { transform: rotate(-360deg); } }
+
+        .gear-status-cell {
+            display: flex;
+            align-items: center;
+            gap: 0.4rem;
+        }
+
+        .gear-status-label {
+            font-size: 0.75rem;
+            font-weight: 700;
+        }
+
+        .gear-status-label.active { color: var(--success); }
+        .gear-status-label.idle   { color: var(--muted); }
+        .gear-status-label.stale  { color: var(--warning); font-style: italic; }
+
+        /* Legacy badge (kept for fallback) */
         .status-badge {
             font-size: 0.75rem;
             font-weight: 700;
