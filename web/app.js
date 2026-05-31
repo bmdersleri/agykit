@@ -437,6 +437,7 @@
                         `;
                     }
 
+                    const isPro = !!acct.is_pro;
                     const card = document.createElement('div');
                     card.className = `qcard ${isActive ? 'qcard-active' : ''} ${exhausted ? 'qcard-exhausted' : 'qcard-ok'} ${!isPro ? 'qcard-free' : ''}`;
 
@@ -445,8 +446,6 @@
                         ? `<img class="qcard-avatar" src="${acct.picture}" alt="${handle}" onerror="this.style.display='none';this.nextElementSibling.style.display='flex'">`
                           + `<div class="qcard-avatar-fallback" style="display:none">${handle[0].toUpperCase()}</div>`
                         : `<div class="qcard-avatar-fallback">${handle[0].toUpperCase()}</div>`;
-
-                    const isPro = !!acct.is_pro;
 
                     card.innerHTML = `
                         <div class="qcard-header">
