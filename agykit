@@ -284,12 +284,29 @@ PY
 }
 
 # Append a single JSON line to ~/.gemini/agykit-ops.log
+# Uses python3 for safe JSON serialization (escapes quotes/backslashes in prompt).
+# Rotates to last 400 entries when file exceeds 512KB.
 _ops_log() {
     local cmd="$1" status="$2" account="${3:-}" model="${4:-}" prompt_preview="${5:-}"
-    local ts; ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
-    printf '{"ts":"%s","cmd":"%s","status":"%s","account":"%s","model":"%s","prompt":"%s"}\n' \
-        "$ts" "$cmd" "$status" "$account" "$model" "$prompt_preview" \
-        >> "$HOME/.gemini/agykit-ops.log"
+    python3 - \
+        "$(date -u +"%Y-%m-%dT%H:%M:%SZ")" "$cmd" "$status" \
+        "$account" "$model" "$prompt_preview" \
+        "$HOME/.gemini/agykit-ops.log" <<'PY'
+import json, sys, os
+ts, cmd, status, account, model, prompt, path = sys.argv[1:8]
+entry = json.dumps({'ts': ts, 'cmd': cmd, 'status': status,
+                    'account': account, 'model': model, 'prompt': prompt})
+with open(path, 'a') as f:
+    f.write(entry + '\n')
+try:
+    if os.path.getsize(path) > 524288:
+        with open(path) as f:
+            lines = [l for l in f if l.strip()]
+        with open(path, 'w') as f:
+            f.writelines(lines[-400:])
+except Exception:
+    pass
+PY
 }
 
 # Run agy with quota-aware account rotation. Returns 0 on first success.
@@ -436,6 +453,33 @@ SYS
     fi
 
     echo; echo "Done. Edit CLAUDE_AGY_SYSTEM.md, then run: agykit doctor"
+}
+
+cmd_log() {
+    local n="${1:-20}"
+    local path="$HOME/.gemini/agykit-ops.log"
+    [ -f "$path" ] || { echo "No ops log at $path."; return 0; }
+    python3 - "$path" "$n" <<'PY'
+import json, sys
+from collections import deque
+path, n = sys.argv[1], int(sys.argv[2])
+with open(path, errors='replace') as f:
+    window = deque(f, maxlen=n)
+for line in window:
+    line = line.strip()
+    if not line:
+        continue
+    try:
+        e = json.loads(line)
+        ts   = e.get('ts', '')[-8:] or '?'
+        cmd  = e.get('cmd', '?')[:12].ljust(12)
+        st   = e.get('status', '?')[:16].ljust(16)
+        acct = (e.get('account', '') or '-').split('@')[0][:15].ljust(15)
+        mdl  = (e.get('model', '') or '-')[:12]
+        print(f"{ts}  {cmd}  {st}  {acct}  {mdl}")
+    except json.JSONDecodeError:
+        pass
+PY
 }
 
 cmd_status() {
@@ -675,6 +719,7 @@ agykit — portable Antigravity (agy) CLI manager
   agykit doctor --fix            Auto-fix resolvable issues
   agykit init                    Interactive project setup (.agykit.conf + system context)
   agykit status                  One-line: active account | model | quota summary
+  agykit log [N]                 Show last N ops log entries (default: 20)
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
@@ -697,6 +742,7 @@ case "${1:-}" in
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
     status)        cmd_status ;;
+    log)           cmd_log "${2:-}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;

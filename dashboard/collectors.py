@@ -1046,11 +1046,13 @@ def ops_log(*, log_path: str | None = None, limit: int = 50) -> dict:
 
     Each entry: {ts, cmd, status, account, model, prompt}
     """
+    from collections import deque
     path = os.path.expanduser(log_path or _OPS_LOG_DEFAULT)
     if not os.path.isfile(path):
         return {"entries": [], "total": 0, "warning": f"Ops log not found: {path}"}
-    entries = []
+    total = 0
     skipped = 0
+    window: deque = deque(maxlen=limit)
     try:
         with open(path, errors="replace") as f:
             for line in f:
@@ -1058,13 +1060,13 @@ def ops_log(*, log_path: str | None = None, limit: int = 50) -> dict:
                 if not line:
                     continue
                 try:
-                    entries.append(json.loads(line))
+                    window.append(json.loads(line))
+                    total += 1
                 except json.JSONDecodeError:
                     skipped += 1
     except Exception as e:
         return {"entries": [], "total": 0, "warning": str(e)}
-    total = len(entries)
-    result = {"entries": entries[-limit:], "total": total}
+    result = {"entries": list(window), "total": total}
     if skipped:
         result["warning"] = f"Skipped {skipped} malformed lines"
     return result
