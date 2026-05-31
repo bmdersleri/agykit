@@ -1147,4 +1147,36 @@
             color: var(--warning);
             margin-top: 0.5rem;
         }
-    
+
+        /* ── Ops Log Widget ── */
+        .ops-log-body {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .ops-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.2rem;
+        }
+
+        .ops-row {
+            display: grid;
+            grid-template-columns: 4.5rem 1fr 2.8rem 4rem 3.5rem;
+            gap: 0.4rem;
+            align-items: center;
+            padding: 0.3rem 0.5rem;
+            border-radius: 6px;
+            background: var(--bg);
+            border: 1px solid var(--border);
+        }
+
+        .ops-ts { color: var(--muted); font-size: 0.68rem; white-space: nowrap; }
+        .ops-cmd { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 0.7rem; }
+        .ops-status { font-size: 0.62rem; font-weight: 700; text-align: center; padding: 0.1rem 0.25rem; border-radius: 4px; }
+        .ops-ok { color: var(--success); background: color-mix(in srgb, var(--success) 15%, transparent); }
+        .ops-err { color: var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); }
+        .ops-acct { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; }
+        .ops-model { color: var(--accent); font-size: 0.68rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+        .ops-total-note { font-size: 0.68rem; color: var(--muted); text-align: right; margin-top: 0.4rem; }

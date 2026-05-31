@@ -119,7 +119,7 @@
 
         <!-- 5. Bilgi Panelleri -->
         <section class="info-section">
-            <div class="info-grid info-grid-single">
+            <div class="info-grid">
                 <!-- Son agy Oturumu -->
                 <div class="info-card" id="lastSessionCard">
                     <div class="info-card-title-group">
@@ -131,6 +131,16 @@
                             <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Kayıt</div></div>
                             <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Süre</div></div>
                         </div>
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+                <!-- İşlem Günlüğü -->
+                <div class="info-card" id="opsLogCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">İşlem Günlüğü</h3>
+                        <button class="btn" onclick="loadOpsLog()">↻ Yenile</button>
+                    </div>
+                    <div id="opsLogBody" class="ops-log-body">
                         <div class="sl-unavail">Yükleniyor…</div>
                     </div>
                 </div>

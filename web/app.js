@@ -941,6 +941,43 @@
             return fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null}));
         }
 
+        function loadOpsLog() {
+            const el = document.getElementById('opsLogBody');
+            fetch('/api/ops-log').then(r => r.json()).then(data => {
+                if (!data.entries || data.entries.length === 0) {
+                    el.innerHTML = `<div class="sl-unavail">${data.warning || 'Henüz işlem kaydı yok.'}</div>`;
+                    return;
+                }
+                const rows = data.entries.slice().reverse().map(e => {
+                    const ts = fmtTime(e.ts);
+                    const statusClass = e.status === 'ok' ? 'ops-ok' : 'ops-err';
+                    const statusText = e.status === 'ok' ? 'OK' : 'HATA';
+                    const cmd = (e.cmd || '').replace(/^agykit\s+/, '').slice(0, 28);
+                    const acct = (e.account || '').split('@')[0].slice(0, 12);
+                    const model = shortenModelName(e.model || '');
+                    return `
+                        <div class="ops-row">
+                            <span class="ops-ts">${ts}</span>
+                            <span class="ops-cmd" title="${(e.cmd || '').replace(/"/g, '&quot;')}">${cmd}</span>
+                            <span class="ops-status ${statusClass}">${statusText}</span>
+                            <span class="ops-acct" title="${e.account || ''}">${acct}</span>
+                            <span class="ops-model">${model}</span>
+                        </div>
+                    `;
+                }).join('');
+                let html = `<div class="ops-list">${rows}</div>`;
+                if (data.total > data.entries.length) {
+                    html += `<div class="ops-total-note">Toplam ${data.total} — son ${data.entries.length} gösteriliyor</div>`;
+                }
+                if (data.warning) {
+                    html += `<div class="warning-text-small">⚠ ${data.warning}</div>`;
+                }
+                el.innerHTML = html;
+            }).catch(() => {
+                el.innerHTML = '<div class="sl-unavail">İşlem günlüğü yüklenemedi.</div>';
+            });
+        }
+
         // Footer timestamp
         // Doldurma loadData() tamamlandığında yapılır.
 
@@ -950,6 +987,7 @@
         loadQuota();
         loadStatusline();
         loadLastSession();
+        loadOpsLog();
 
         // SSE connection — statusline updates on every event; heavy rebuilds throttled
         const HEAVY_REFRESH_INTERVAL_MS = 60_000; // quota grid + charts max once/min via SSE
@@ -974,6 +1012,7 @@
                     loadClaudeQuota();
                     loadQuota();
                     loadLastSession();
+                    loadOpsLog();
                 }
             };
             es.onerror = function() {
