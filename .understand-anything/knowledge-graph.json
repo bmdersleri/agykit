@@ -1,0 +1,1685 @@
+{
+  "version": "1.0.0",
+  "project": {
+    "name": "agykit",
+    "languages": [
+      "bash",
+      "python",
+      "javascript",
+      "html",
+      "css",
+      "markdown"
+    ],
+    "frameworks": [
+      "pytest",
+      "Chart.js"
+    ],
+    "description": "Portable Antigravity (agy) CLI manager — multi-account rotation, quota-aware model selection, model ladder escalation (Flash→Pro→Opus), live usage dashboard. Zero pip dependencies.",
+    "analyzedAt": "2026-05-31T12:41:32.859Z",
+    "gitCommitHash": "06c638e39e8e9b8bc47eb159897af0ab5b09704a"
+  },
+  "nodes": [
+    {
+      "id": "file:agykit",
+      "type": "file",
+      "name": "agykit",
+      "filePath": "agykit",
+      "summary": "Main CLI bash script. Implements all agykit commands: account rotation, quota-aware run, model ladder escalation (Flash→Pro→Opus), dashboard launch, doctor check, and project init.",
+      "tags": [
+        "cli",
+        "bash",
+        "entry-point",
+        "account-management",
+        "quota"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:dashboard/collectors.py",
+      "type": "file",
+      "name": "collectors.py",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Data collection layer. Reads ~/.claude stats, agy quota files, statusline JSON, session brain transcripts, and OAuth tokens. Provides all data functions consumed by the dashboard server.",
+      "tags": [
+        "data-collection",
+        "python",
+        "agy",
+        "claude",
+        "oauth"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:dashboard/server.py",
+      "type": "file",
+      "name": "server.py",
+      "filePath": "dashboard/server.py",
+      "summary": "stdlib HTTP/SSE server for the dashboard. DashboardHandler routes GET requests to /api/* endpoints and serves static web files. Imports collectors dynamically to enable hot-reload.",
+      "tags": [
+        "http-server",
+        "python",
+        "sse",
+        "api",
+        "dashboard"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/quota.py",
+      "type": "file",
+      "name": "quota.py",
+      "filePath": "dashboard/quota.py",
+      "summary": "Standalone quota CLI (agykit quota). Fetches live quota data via agy subprocess, caches results, renders ANSI table or one-line status for terminal output.",
+      "tags": [
+        "quota",
+        "cli",
+        "python",
+        "ansi",
+        "cache"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:dashboard/__init__.py",
+      "type": "file",
+      "name": "__init__.py",
+      "filePath": "dashboard/__init__.py",
+      "summary": "Python package marker for the dashboard module.",
+      "tags": [
+        "python",
+        "package"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:conftest.py",
+      "type": "file",
+      "name": "conftest.py",
+      "filePath": "conftest.py",
+      "summary": "pytest conftest — adds project root to sys.path so dashboard imports resolve correctly in tests.",
+      "tags": [
+        "pytest",
+        "test-config",
+        "python"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:web/app.js",
+      "type": "file",
+      "name": "app.js",
+      "filePath": "web/app.js",
+      "summary": "Dashboard frontend. Vanilla JS: fetches /api/* endpoints, renders Chart.js charts for token usage, displays quota cards, statusline, ops log, model quota, and connects SSE for live updates.",
+      "tags": [
+        "frontend",
+        "javascript",
+        "chart.js",
+        "sse",
+        "dashboard"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "file:web/index.html",
+      "type": "file",
+      "name": "index.html",
+      "filePath": "web/index.html",
+      "summary": "Dashboard HTML shell. Loads Chart.js from CDN, links app.js and style.css, defines the page layout sections.",
+      "tags": [
+        "html",
+        "frontend",
+        "dashboard"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:web/style.css",
+      "type": "file",
+      "name": "style.css",
+      "filePath": "web/style.css",
+      "summary": "Dashboard CSS. Implements light/dark theme, quota card layout, gear animation, chart containers, and responsive styles.",
+      "tags": [
+        "css",
+        "frontend",
+        "theme",
+        "dark-mode"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:install.sh",
+      "type": "file",
+      "name": "install.sh",
+      "filePath": "install.sh",
+      "summary": "Installer script. Checks dependencies (agy, python3, jq, python-keyring), symlinks agykit to ~/.local/bin, optionally saves initial account snapshot.",
+      "tags": [
+        "installer",
+        "bash",
+        "setup"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:uninstall.sh",
+      "type": "file",
+      "name": "uninstall.sh",
+      "filePath": "uninstall.sh",
+      "summary": "Uninstaller script. Removes symlink from ~/.local/bin, keeps account snapshots and project configs.",
+      "tags": [
+        "uninstaller",
+        "bash",
+        "setup"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/run.sh",
+      "type": "file",
+      "name": "run.sh",
+      "filePath": "tests/run.sh",
+      "summary": "Test runner script. Runs both bash safety tests and python pytest suite.",
+      "tags": [
+        "test",
+        "bash",
+        "runner"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_collectors.py",
+      "type": "file",
+      "name": "test_collectors.py",
+      "filePath": "tests/test_collectors.py",
+      "summary": "Unit tests for collectors.py: validates claude_series, agy_series bucket logic, apply_range filtering.",
+      "tags": [
+        "test",
+        "python",
+        "unit-test"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_server.py",
+      "type": "file",
+      "name": "test_server.py",
+      "filePath": "tests/test_server.py",
+      "summary": "Integration tests for server.py: boots real ThreadingHTTPServer on random port, validates /api/data, /api/bad-source 400, index HTML serve, 404, and SSE first line.",
+      "tags": [
+        "test",
+        "python",
+        "integration-test",
+        "http"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "file:tests/test_do_escalate.sh",
+      "type": "file",
+      "name": "test_do_escalate.sh",
+      "filePath": "tests/test_do_escalate.sh",
+      "summary": "Bash tests for do-escalate command: model ladder logic, quota-skipping, verify error propagation.",
+      "tags": [
+        "test",
+        "bash",
+        "do-escalate"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "file:tests/test_git_safety.sh",
+      "type": "file",
+      "name": "test_git_safety.sh",
+      "filePath": "tests/test_git_safety.sh",
+      "summary": "Bash tests for git safety directives in agykit: ensures git commands are blocked when lock directive is active.",
+      "tags": [
+        "test",
+        "bash",
+        "git-safety"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:.agykit.conf",
+      "type": "config",
+      "name": ".agykit.conf",
+      "filePath": ".agykit.conf",
+      "summary": "Per-project agykit configuration: verify command, source directory, terse level. Created by agykit init, gitignored.",
+      "tags": [
+        "config",
+        "project-config"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:agykit.conf.example",
+      "type": "config",
+      "name": "agykit.conf.example",
+      "filePath": "agykit.conf.example",
+      "summary": "Example configuration file documenting all .agykit.conf settings.",
+      "tags": [
+        "config",
+        "example",
+        "documentation"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:dashboard/fixtures/stats-cache.json",
+      "type": "config",
+      "name": "stats-cache.json (fixture)",
+      "filePath": "dashboard/fixtures/stats-cache.json",
+      "summary": "Test fixture: minimal stats-cache JSON used by server/collector tests.",
+      "tags": [
+        "fixture",
+        "test-data",
+        "json"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:examples/agy-account-snapshot.json.example",
+      "type": "config",
+      "name": "agy-account-snapshot.json.example",
+      "filePath": "examples/agy-account-snapshot.json.example",
+      "summary": "Example account snapshot schema (~/.antigravitycli/accounts/<email>.json).",
+      "tags": [
+        "example",
+        "schema",
+        "account"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:examples/agy-quota-cache.json.example",
+      "type": "config",
+      "name": "agy-quota-cache.json.example",
+      "filePath": "examples/agy-quota-cache.json.example",
+      "summary": "Example quota cache schema. Documents quota data structure from agy /usage.",
+      "tags": [
+        "example",
+        "schema",
+        "quota"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:examples/agy-settings.json.example",
+      "type": "config",
+      "name": "agy-settings.json.example",
+      "filePath": "examples/agy-settings.json.example",
+      "summary": "Example agy settings JSON (~/.antigravitycli/settings.json).",
+      "tags": [
+        "example",
+        "schema",
+        "settings"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:examples/agy-statusline-latest.json.example",
+      "type": "config",
+      "name": "agy-statusline-latest.json.example",
+      "filePath": "examples/agy-statusline-latest.json.example",
+      "summary": "Example statusline snapshot JSON documenting the statusline data format.",
+      "tags": [
+        "example",
+        "schema",
+        "statusline"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:examples/claude-credentials.json.example",
+      "type": "config",
+      "name": "claude-credentials.json.example",
+      "filePath": "examples/claude-credentials.json.example",
+      "summary": "Example Claude OAuth credentials file (~/.claude/credentials.json).",
+      "tags": [
+        "example",
+        "schema",
+        "oauth",
+        "credentials"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "config:examples/claude-stats-cache.json.example",
+      "type": "config",
+      "name": "claude-stats-cache.json.example",
+      "filePath": "examples/claude-stats-cache.json.example",
+      "summary": "Example Claude stats-cache JSON documenting session token usage schema.",
+      "tags": [
+        "example",
+        "schema",
+        "claude",
+        "usage"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:README.md",
+      "type": "document",
+      "name": "README.md",
+      "filePath": "README.md",
+      "summary": "Main project documentation: install instructions, command reference, dashboard overview, project setup guide.",
+      "tags": [
+        "docs",
+        "readme",
+        "getting-started"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:CLAUDE.md",
+      "type": "document",
+      "name": "CLAUDE.md",
+      "filePath": "CLAUDE.md",
+      "summary": "Claude Code context file for the agykit project: key constraints (zero pip deps, stdlib only), test commands, file map.",
+      "tags": [
+        "docs",
+        "claude-context",
+        "constraints"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:CLAUDE_AGY_SYSTEM.md",
+      "type": "document",
+      "name": "CLAUDE_AGY_SYSTEM.md",
+      "filePath": "CLAUDE_AGY_SYSTEM.md",
+      "summary": "System context template injected into agy/Claude when delegating tasks via agykit do-escalate.",
+      "tags": [
+        "docs",
+        "system-prompt",
+        "delegation"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:docs/plans/2026-05-30-quota-dashboard.md",
+      "type": "document",
+      "name": "2026-05-30-quota-dashboard.md",
+      "filePath": "docs/plans/2026-05-30-quota-dashboard.md",
+      "summary": "Implementation plan for the quota dashboard feature (May 2026).",
+      "tags": [
+        "docs",
+        "plan",
+        "dashboard",
+        "quota"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:docs/specs/2026-05-30-quota-dashboard-design.md",
+      "type": "document",
+      "name": "2026-05-30-quota-dashboard-design.md",
+      "filePath": "docs/specs/2026-05-30-quota-dashboard-design.md",
+      "summary": "Design spec for the quota dashboard: UI layout, data sources, API endpoints.",
+      "tags": [
+        "docs",
+        "spec",
+        "dashboard",
+        "design"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "document:skills/agykit.md",
+      "type": "document",
+      "name": "agykit.md (skill)",
+      "filePath": "skills/agykit.md",
+      "summary": "Claude Code skill file: teaches Claude how to use agykit commands from within Claude Code sessions.",
+      "tags": [
+        "docs",
+        "skill",
+        "claude-code"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:agykit:cmd_run",
+      "type": "function",
+      "name": "cmd_run",
+      "filePath": "agykit",
+      "summary": "Quota-aware run: sorts accounts by available quota, skips exhausted ones, calls agy with the prompt.",
+      "tags": [
+        "quota",
+        "account-rotation",
+        "run"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:agykit:cmd_do_escalate",
+      "type": "function",
+      "name": "cmd_do_escalate",
+      "filePath": "agykit",
+      "summary": "Model ladder escalation: tries Flash→Pro→Opus in sequence, passes verify error forward to next model.",
+      "tags": [
+        "escalation",
+        "model-ladder",
+        "verify"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:agykit:cmd_dash",
+      "type": "function",
+      "name": "cmd_dash",
+      "filePath": "agykit",
+      "summary": "Launches the Python dashboard server and opens browser to localhost:8787.",
+      "tags": [
+        "dashboard",
+        "launch"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:agykit:cmd_quota",
+      "type": "function",
+      "name": "cmd_quota",
+      "filePath": "agykit",
+      "summary": "Delegates to dashboard/quota.py for quota display (table or status line).",
+      "tags": [
+        "quota",
+        "cli"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:agykit:cmd_init",
+      "type": "function",
+      "name": "cmd_init",
+      "filePath": "agykit",
+      "summary": "Interactive project setup: detects project type, prompts for config, writes .agykit.conf and CLAUDE_AGY_SYSTEM.md.",
+      "tags": [
+        "init",
+        "setup",
+        "project-config"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:agykit:cmd_doctor",
+      "type": "function",
+      "name": "cmd_doctor",
+      "filePath": "agykit",
+      "summary": "Dependency and health checker. Verifies agy, python3, jq, tmux, keyring, and data files.",
+      "tags": [
+        "doctor",
+        "health-check",
+        "diagnostics"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:agykit:_accounts_sorted_by_quota",
+      "type": "function",
+      "name": "_accounts_sorted_by_quota",
+      "filePath": "agykit",
+      "summary": "Reads account snapshots, sorts by remaining quota descending, filters exhausted accounts.",
+      "tags": [
+        "account-management",
+        "quota-sort"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:agykit:_snapshot",
+      "type": "function",
+      "name": "_snapshot",
+      "filePath": "agykit",
+      "summary": "Saves current agy OAuth credentials to ~/.antigravitycli/accounts/<email>.json.",
+      "tags": [
+        "account-management",
+        "snapshot",
+        "oauth"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:agykit:_ops_log",
+      "type": "function",
+      "name": "_ops_log",
+      "filePath": "agykit",
+      "summary": "Appends operation result entries (timestamp, command, status, model) to the ops log file.",
+      "tags": [
+        "logging",
+        "ops-log"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/collectors.py:claude_series",
+      "type": "function",
+      "name": "claude_series",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Reads ~/.claude/stats-cache.json and returns daily token usage time series for Claude Code.",
+      "tags": [
+        "claude",
+        "usage",
+        "time-series"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/collectors.py:agy_series",
+      "type": "function",
+      "name": "agy_series",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Reads agy brain transcript files and returns daily token usage time series for agy.",
+      "tags": [
+        "agy",
+        "usage",
+        "time-series",
+        "brain"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/collectors.py:agy_quota_status",
+      "type": "function",
+      "name": "agy_quota_status",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Reads quota cache files for all accounts and returns per-account model quota status.",
+      "tags": [
+        "quota",
+        "account",
+        "status"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/collectors.py:agy_statusline_snapshot",
+      "type": "function",
+      "name": "agy_statusline_snapshot",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Reads the latest agy statusline JSON snapshot from ~/.antigravitycli/statusline-latest.json.",
+      "tags": [
+        "statusline",
+        "snapshot"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/collectors.py:agy_last_session",
+      "type": "function",
+      "name": "agy_last_session",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Reads the most recent brain session transcript to extract last session summary stats.",
+      "tags": [
+        "session",
+        "brain",
+        "summary"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/collectors.py:claude_quota",
+      "type": "function",
+      "name": "claude_quota",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Fetches Claude Code quota via Anthropic OAuth API (session 5h + weekly tiers).",
+      "tags": [
+        "claude",
+        "quota",
+        "oauth",
+        "api"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/collectors.py:agy_model_quota",
+      "type": "function",
+      "name": "agy_model_quota",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Captures per-model quota by running agy /usage in a tmux pane and parsing output.",
+      "tags": [
+        "agy",
+        "model-quota",
+        "tmux"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:dashboard/collectors.py:agy_active_account",
+      "type": "function",
+      "name": "agy_active_account",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Returns the currently active agy account info including email and Google profile photo URL.",
+      "tags": [
+        "account",
+        "active",
+        "google"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/collectors.py:ops_log",
+      "type": "function",
+      "name": "ops_log",
+      "filePath": "dashboard/collectors.py",
+      "summary": "Reads the ops log file and returns recent operation entries for dashboard display.",
+      "tags": [
+        "ops-log",
+        "logging"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "class:dashboard/server.py:DashboardHandler",
+      "type": "class",
+      "name": "DashboardHandler",
+      "filePath": "dashboard/server.py",
+      "summary": "HTTP request handler. Routes GET /api/* to data functions, serves static web files, and handles SSE stream at /events.",
+      "tags": [
+        "http",
+        "routing",
+        "sse",
+        "api"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/server.py:main",
+      "type": "function",
+      "name": "main",
+      "filePath": "dashboard/server.py",
+      "summary": "Entry point for the dashboard server. Binds to 127.0.0.1:8787 and starts ThreadingHTTPServer.",
+      "tags": [
+        "server",
+        "entry-point"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/quota.py:fetch_live",
+      "type": "function",
+      "name": "fetch_live",
+      "filePath": "dashboard/quota.py",
+      "summary": "Runs agy /usage via subprocess and parses quota data.",
+      "tags": [
+        "quota",
+        "agy",
+        "subprocess"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/quota.py:render_table",
+      "type": "function",
+      "name": "render_table",
+      "filePath": "dashboard/quota.py",
+      "summary": "Renders ANSI-colored quota table for terminal output.",
+      "tags": [
+        "quota",
+        "ansi",
+        "terminal"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:dashboard/quota.py:render_status",
+      "type": "function",
+      "name": "render_status",
+      "filePath": "dashboard/quota.py",
+      "summary": "Renders one-line quota status summary for statusline/scripts.",
+      "tags": [
+        "quota",
+        "statusline"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:web/app.js:loadData",
+      "type": "function",
+      "name": "loadData",
+      "filePath": "web/app.js",
+      "summary": "Fetches /api/data for token usage charts (claude or agy source, configurable range).",
+      "tags": [
+        "data-fetch",
+        "charts"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:web/app.js:loadQuota",
+      "type": "function",
+      "name": "loadQuota",
+      "filePath": "web/app.js",
+      "summary": "Fetches /api/quota and renders per-account quota cards with progress bars.",
+      "tags": [
+        "quota",
+        "cards",
+        "ui"
+      ],
+      "complexity": "complex"
+    },
+    {
+      "id": "function:web/app.js:loadClaudeQuota",
+      "type": "function",
+      "name": "loadClaudeQuota",
+      "filePath": "web/app.js",
+      "summary": "Fetches /api/claude-quota and renders Claude Code session+weekly quota display.",
+      "tags": [
+        "claude",
+        "quota",
+        "ui"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:web/app.js:loadStatusline",
+      "type": "function",
+      "name": "loadStatusline",
+      "filePath": "web/app.js",
+      "summary": "Fetches /api/statusline and renders the agy statusline snapshot widget.",
+      "tags": [
+        "statusline",
+        "ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:web/app.js:loadLastSession",
+      "type": "function",
+      "name": "loadLastSession",
+      "filePath": "web/app.js",
+      "summary": "Fetches /api/last-session and renders session summary stats.",
+      "tags": [
+        "session",
+        "ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:web/app.js:loadModelQuota",
+      "type": "function",
+      "name": "loadModelQuota",
+      "filePath": "web/app.js",
+      "summary": "Fetches /api/agy-model-quota and renders per-model quota progress bars.",
+      "tags": [
+        "model-quota",
+        "ui"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:web/app.js:loadOpsLog",
+      "type": "function",
+      "name": "loadOpsLog",
+      "filePath": "web/app.js",
+      "summary": "Fetches /api/ops-log and renders recent operation log entries.",
+      "tags": [
+        "ops-log",
+        "ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:web/app.js:connectSSE",
+      "type": "function",
+      "name": "connectSSE",
+      "filePath": "web/app.js",
+      "summary": "Opens SSE connection to /events for live dashboard updates.",
+      "tags": [
+        "sse",
+        "live-updates"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:web/app.js:renderCharts",
+      "type": "function",
+      "name": "renderCharts",
+      "filePath": "web/app.js",
+      "summary": "Orchestrates Chart.js chart rendering for token usage timeseries.",
+      "tags": [
+        "charts",
+        "chart.js"
+      ],
+      "complexity": "moderate"
+    },
+    {
+      "id": "function:web/app.js:gearStatusHTML",
+      "type": "function",
+      "name": "gearStatusHTML",
+      "filePath": "web/app.js",
+      "summary": "Renders animated SVG gear icon for active operation status display.",
+      "tags": [
+        "svg",
+        "animation",
+        "ui"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:web/app.js:applyTheme",
+      "type": "function",
+      "name": "applyTheme",
+      "filePath": "web/app.js",
+      "summary": "Applies light/dark theme to the dashboard, updates Chart.js defaults.",
+      "tags": [
+        "theme",
+        "dark-mode",
+        "chart.js"
+      ],
+      "complexity": "simple"
+    },
+    {
+      "id": "function:dashboard/quota.py:main",
+      "type": "function",
+      "name": "main",
+      "filePath": "dashboard/quota.py",
+      "summary": "Entry point for the quota CLI. Parses args (--refresh, --json, --status) and dispatches to render_table or render_status.",
+      "tags": [
+        "quota",
+        "cli",
+        "entry-point"
+      ],
+      "complexity": "simple"
+    }
+  ],
+  "edges": [
+    {
+      "source": "file:dashboard/server.py",
+      "target": "file:dashboard/collectors.py",
+      "type": "imports",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:tests/test_server.py",
+      "target": "file:dashboard/server.py",
+      "type": "imports",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:tests/test_collectors.py",
+      "target": "file:dashboard/collectors.py",
+      "type": "imports",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/index.html",
+      "target": "file:web/app.js",
+      "type": "imports",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/index.html",
+      "target": "file:web/style.css",
+      "type": "imports",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:conftest.py",
+      "target": "file:dashboard/__init__.py",
+      "type": "imports",
+      "weight": 0.7,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:cmd_run",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:cmd_do_escalate",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:cmd_dash",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:cmd_quota",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:cmd_init",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:cmd_doctor",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:_accounts_sorted_by_quota",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:_snapshot",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "function:agykit:_ops_log",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:claude_series",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:agy_series",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:agy_quota_status",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:agy_statusline_snapshot",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:agy_last_session",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:claude_quota",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:agy_model_quota",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:agy_active_account",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "function:dashboard/collectors.py:ops_log",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/server.py",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/server.py",
+      "target": "function:dashboard/server.py:main",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/quota.py",
+      "target": "function:dashboard/quota.py:fetch_live",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/quota.py",
+      "target": "function:dashboard/quota.py:render_table",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/quota.py",
+      "target": "function:dashboard/quota.py:render_status",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:loadData",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:loadQuota",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:loadClaudeQuota",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:loadStatusline",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:loadLastSession",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:loadModelQuota",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:loadOpsLog",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:connectSSE",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:renderCharts",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:gearStatusHTML",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "file:web/app.js",
+      "target": "function:web/app.js:applyTheme",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    },
+    {
+      "source": "function:agykit:cmd_dash",
+      "target": "function:dashboard/server.py:main",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:agykit:cmd_quota",
+      "target": "function:dashboard/quota.py:main",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:agykit:cmd_run",
+      "target": "function:agykit:_accounts_sorted_by_quota",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:agykit:cmd_do_escalate",
+      "target": "function:agykit:_accounts_sorted_by_quota",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:agykit:cmd_do_escalate",
+      "target": "function:agykit:_ops_log",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:agykit:cmd_run",
+      "target": "function:agykit:_ops_log",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:claude_series",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:agy_series",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:agy_quota_status",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:agy_statusline_snapshot",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:agy_last_session",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:claude_quota",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:agy_model_quota",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:agy_active_account",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "class:dashboard/server.py:DashboardHandler",
+      "target": "function:dashboard/collectors.py:ops_log",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:loadData",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:loadQuota",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:loadClaudeQuota",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:loadStatusline",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:loadLastSession",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:loadModelQuota",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:loadOpsLog",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "function:web/app.js:connectSSE",
+      "target": "class:dashboard/server.py:DashboardHandler",
+      "type": "calls",
+      "weight": 0.8,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/collectors.py",
+      "target": "file:tests/test_collectors.py",
+      "type": "tested_by",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/server.py",
+      "target": "file:tests/test_server.py",
+      "type": "tested_by",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "file:tests/test_do_escalate.sh",
+      "type": "tested_by",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:agykit",
+      "target": "file:tests/test_git_safety.sh",
+      "type": "tested_by",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:.agykit.conf",
+      "target": "file:agykit",
+      "type": "configures",
+      "weight": 0.6,
+      "direction": "forward"
+    },
+    {
+      "source": "config:agykit.conf.example",
+      "target": "config:.agykit.conf",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:README.md",
+      "target": "file:agykit",
+      "type": "documents",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE.md",
+      "target": "file:agykit",
+      "type": "documents",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:CLAUDE_AGY_SYSTEM.md",
+      "target": "function:agykit:cmd_do_escalate",
+      "type": "documents",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:skills/agykit.md",
+      "target": "file:agykit",
+      "type": "documents",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:docs/plans/2026-05-30-quota-dashboard.md",
+      "target": "file:dashboard/server.py",
+      "type": "documents",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "document:docs/specs/2026-05-30-quota-dashboard-design.md",
+      "target": "file:dashboard/server.py",
+      "type": "documents",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:examples/agy-quota-cache.json.example",
+      "target": "function:dashboard/collectors.py:agy_quota_status",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:examples/agy-statusline-latest.json.example",
+      "target": "function:dashboard/collectors.py:agy_statusline_snapshot",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:examples/claude-stats-cache.json.example",
+      "target": "function:dashboard/collectors.py:claude_series",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:examples/agy-account-snapshot.json.example",
+      "target": "function:agykit:_snapshot",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:dashboard/fixtures/stats-cache.json",
+      "target": "file:tests/test_server.py",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "config:dashboard/fixtures/stats-cache.json",
+      "target": "file:tests/test_collectors.py",
+      "type": "related",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:install.sh",
+      "target": "file:agykit",
+      "type": "deploys",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:tests/run.sh",
+      "target": "file:tests/test_collectors.py",
+      "type": "triggers",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:tests/run.sh",
+      "target": "file:tests/test_server.py",
+      "type": "triggers",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:tests/run.sh",
+      "target": "file:tests/test_do_escalate.sh",
+      "type": "triggers",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:tests/run.sh",
+      "target": "file:tests/test_git_safety.sh",
+      "type": "triggers",
+      "weight": 0.5,
+      "direction": "forward"
+    },
+    {
+      "source": "file:dashboard/quota.py",
+      "target": "function:dashboard/quota.py:main",
+      "type": "contains",
+      "weight": 1,
+      "direction": "forward"
+    }
+  ],
+  "layers": [
+    {
+      "id": "layer:cli-core",
+      "name": "CLI Core",
+      "description": "Main agykit bash script and all user-facing commands: account rotation, quota-aware run, model ladder escalation, doctor, and project init.",
+      "nodeIds": [
+        "file:agykit",
+        "function:agykit:cmd_run",
+        "function:agykit:cmd_do_escalate",
+        "function:agykit:cmd_dash",
+        "function:agykit:cmd_quota",
+        "function:agykit:cmd_init",
+        "function:agykit:cmd_doctor",
+        "function:agykit:_accounts_sorted_by_quota",
+        "function:agykit:_snapshot",
+        "function:agykit:_ops_log"
+      ]
+    },
+    {
+      "id": "layer:dashboard-backend",
+      "name": "Dashboard Backend",
+      "description": "Python stdlib HTTP/SSE server and data collection layer. server.py routes API requests; collectors.py reads ~/.claude, ~/.antigravitycli, and agy data sources.",
+      "nodeIds": [
+        "file:dashboard/server.py",
+        "file:dashboard/collectors.py",
+        "file:dashboard/__init__.py",
+        "class:dashboard/server.py:DashboardHandler",
+        "function:dashboard/server.py:main",
+        "function:dashboard/collectors.py:claude_series",
+        "function:dashboard/collectors.py:agy_series",
+        "function:dashboard/collectors.py:agy_quota_status",
+        "function:dashboard/collectors.py:agy_statusline_snapshot",
+        "function:dashboard/collectors.py:agy_last_session",
+        "function:dashboard/collectors.py:claude_quota",
+        "function:dashboard/collectors.py:agy_model_quota",
+        "function:dashboard/collectors.py:agy_active_account",
+        "function:dashboard/collectors.py:ops_log"
+      ]
+    },
+    {
+      "id": "layer:quota-cli",
+      "name": "Quota CLI",
+      "description": "Standalone quota subcommand (agykit quota). Fetches live quota via agy subprocess, caches results, renders ANSI table or one-line status.",
+      "nodeIds": [
+        "file:dashboard/quota.py",
+        "function:dashboard/quota.py:fetch_live",
+        "function:dashboard/quota.py:render_table",
+        "function:dashboard/quota.py:render_status",
+        "function:dashboard/quota.py:main"
+      ]
+    },
+    {
+      "id": "layer:dashboard-frontend",
+      "name": "Dashboard Frontend",
+      "description": "Vanilla JS/HTML/CSS web UI served by the dashboard server. Fetches /api/* endpoints, renders Chart.js charts, quota cards, SSE live updates.",
+      "nodeIds": [
+        "file:web/app.js",
+        "file:web/index.html",
+        "file:web/style.css",
+        "function:web/app.js:loadData",
+        "function:web/app.js:loadQuota",
+        "function:web/app.js:loadClaudeQuota",
+        "function:web/app.js:loadStatusline",
+        "function:web/app.js:loadLastSession",
+        "function:web/app.js:loadModelQuota",
+        "function:web/app.js:loadOpsLog",
+        "function:web/app.js:connectSSE",
+        "function:web/app.js:renderCharts",
+        "function:web/app.js:gearStatusHTML",
+        "function:web/app.js:applyTheme"
+      ]
+    },
+    {
+      "id": "layer:tests",
+      "name": "Tests",
+      "description": "Python pytest and bash test suites. Covers collectors data functions, server HTTP/SSE endpoints, do-escalate model ladder, and git safety directives.",
+      "nodeIds": [
+        "file:tests/run.sh",
+        "file:tests/test_collectors.py",
+        "file:tests/test_server.py",
+        "file:tests/test_do_escalate.sh",
+        "file:tests/test_git_safety.sh",
+        "file:conftest.py"
+      ]
+    },
+    {
+      "id": "layer:setup-config",
+      "name": "Setup & Config",
+      "description": "Install/uninstall scripts, project config files, and JSON example files documenting the data schemas consumed by collectors.",
+      "nodeIds": [
+        "file:install.sh",
+        "file:uninstall.sh",
+        "config:.agykit.conf",
+        "config:agykit.conf.example",
+        "config:dashboard/fixtures/stats-cache.json",
+        "config:examples/agy-account-snapshot.json.example",
+        "config:examples/agy-quota-cache.json.example",
+        "config:examples/agy-settings.json.example",
+        "config:examples/agy-statusline-latest.json.example",
+        "config:examples/claude-credentials.json.example",
+        "config:examples/claude-stats-cache.json.example"
+      ]
+    },
+    {
+      "id": "layer:documentation",
+      "name": "Documentation",
+      "description": "Project docs, Claude context files, design specs, and the agykit Claude Code skill.",
+      "nodeIds": [
+        "document:README.md",
+        "document:CLAUDE.md",
+        "document:CLAUDE_AGY_SYSTEM.md",
+        "document:docs/plans/2026-05-30-quota-dashboard.md",
+        "document:docs/specs/2026-05-30-quota-dashboard-design.md",
+        "document:skills/agykit.md"
+      ]
+    }
+  ],
+  "tour": [
+    {
+      "order": 1,
+      "title": "What is agykit?",
+      "description": "Start with the README — agykit wraps the agy CLI to add multi-account rotation, quota-aware scheduling, and a live usage dashboard. No dependencies beyond Python 3 stdlib.",
+      "nodeIds": [
+        "document:README.md"
+      ]
+    },
+    {
+      "order": 2,
+      "title": "CLI Entry Point",
+      "description": "The `agykit` bash script is the entire CLI. It uses a `cmd_*` function dispatch pattern — each subcommand is a bash function. This is where all user-facing commands live.",
+      "nodeIds": [
+        "file:agykit",
+        "function:agykit:cmd_run",
+        "function:agykit:cmd_do_escalate"
+      ]
+    },
+    {
+      "order": 3,
+      "title": "Account Rotation & Quota Sorting",
+      "description": "`_accounts_sorted_by_quota` reads saved account snapshots and sorts them by remaining quota. `cmd_run` uses this to skip exhausted accounts automatically.",
+      "nodeIds": [
+        "function:agykit:_accounts_sorted_by_quota",
+        "function:agykit:_snapshot",
+        "config:examples/agy-account-snapshot.json.example"
+      ]
+    },
+    {
+      "order": 4,
+      "title": "Model Ladder Escalation",
+      "description": "`cmd_do_escalate` implements the Flash→Pro→Opus escalation loop. It runs the verify command after each attempt and escalates only when the verify error is passed forward.",
+      "nodeIds": [
+        "function:agykit:cmd_do_escalate",
+        "document:CLAUDE_AGY_SYSTEM.md"
+      ]
+    },
+    {
+      "order": 5,
+      "title": "Dashboard Backend: Server + Collectors",
+      "description": "`server.py` is a stdlib ThreadingHTTPServer. `DashboardHandler` routes /api/* requests to `collectors.py` functions. Collectors read ~/.claude stats, agy brain transcripts, and OAuth tokens.",
+      "nodeIds": [
+        "file:dashboard/server.py",
+        "class:dashboard/server.py:DashboardHandler",
+        "file:dashboard/collectors.py",
+        "function:dashboard/collectors.py:claude_series",
+        "function:dashboard/collectors.py:agy_quota_status"
+      ]
+    },
+    {
+      "order": 6,
+      "title": "Dashboard Frontend",
+      "description": "Vanilla JS in app.js fetches /api/* endpoints and renders Chart.js charts. `connectSSE` opens a live event stream. `loadQuota` renders per-account quota cards. No frameworks — pure browser APIs.",
+      "nodeIds": [
+        "file:web/app.js",
+        "file:web/index.html",
+        "function:web/app.js:loadQuota",
+        "function:web/app.js:connectSSE",
+        "function:web/app.js:renderCharts"
+      ]
+    },
+    {
+      "order": 7,
+      "title": "Test Suite",
+      "description": "Two test suites: Python pytest (test_collectors.py, test_server.py) and bash scripts (test_do_escalate.sh, test_git_safety.sh). Run both with `tests/run.sh`.",
+      "nodeIds": [
+        "file:tests/run.sh",
+        "file:tests/test_server.py",
+        "file:tests/test_collectors.py",
+        "file:tests/test_do_escalate.sh"
+      ]
+    }
+  ]
+}
