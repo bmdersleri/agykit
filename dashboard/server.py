@@ -93,6 +93,16 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     pass
             self.serve_json(collectors.ops_log(limit=limit))
+        elif path == "/api/rtk-stats":
+            self.serve_json(collectors.rtk_stats())
+        elif path == "/api/cc-activity":
+            limit = 20
+            if "limit=" in parsed.query:
+                try:
+                    limit = int(parsed.query.split("limit=")[1].split("&")[0])
+                except ValueError:
+                    pass
+            self.serve_json(collectors.cc_activity(limit=limit))
         elif path == "/events":
             self.serve_events()
         else:

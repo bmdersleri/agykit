@@ -3,6 +3,8 @@ import json
 import glob
 import datetime
 import re
+import subprocess
+import time as _time
 
 
 def _apply_range(labels: list[str], range_key: str) -> list[str]:
@@ -1038,6 +1040,72 @@ def _fetch_quota_reset_times() -> dict | None:
         return None
 
 
+_ROW_RE = re.compile(
+    r"^\s*(\d+)\.\s+(.+?)\s{2,}(\d+)\s+([\d.]+[KMkm]?)\s+([\d.]+)%"
+)
+
+
+def _parse_suffix(s: str) -> int:
+    s = s.strip()
+    if s.endswith("M") or s.endswith("m"):
+        return int(float(s[:-1]) * 1_000_000)
+    if s.endswith("K") or s.endswith("k"):
+        return int(float(s[:-1]) * 1_000)
+    return int(float(s))
+
+
+def rtk_stats() -> dict:
+    _EMPTY = {
+        "total_commands": 0,
+        "tokens_saved": 0,
+        "efficiency_pct": 0.0,
+        "top_commands": [],
+        "warning": None,
+    }
+
+    try:
+        proc = subprocess.run(
+            ["rtk", "gain"], capture_output=True, text=True, timeout=5
+        )
+        out = proc.stdout
+    except Exception as e:
+        result = {**_EMPTY, "warning": str(e)}
+        return result
+
+    total_commands = 0
+    tokens_saved = 0
+    efficiency_pct = 0.0
+    top_commands = []
+
+    for line in out.splitlines():
+        m = re.search(r"Total commands:\s+([\d,]+)", line)
+        if m:
+            total_commands = int(m.group(1).replace(",", ""))
+
+        m = re.search(r"Tokens saved:\s+([\d.]+[KMkm]?)\s+\(([\d.]+)%\)", line)
+        if m:
+            tokens_saved = _parse_suffix(m.group(1))
+            efficiency_pct = float(m.group(2))
+
+        m = _ROW_RE.match(line)
+        if m:
+            top_commands.append({
+                "rank": int(m.group(1)),
+                "cmd": m.group(2).strip(),
+                "count": int(m.group(3)),
+                "saved": _parse_suffix(m.group(4)),
+                "avg_pct": float(m.group(5)),
+            })
+
+    return {
+        "total_commands": total_commands,
+        "tokens_saved": tokens_saved,
+        "efficiency_pct": efficiency_pct,
+        "top_commands": top_commands,
+        "warning": None,
+    }
+
+
 _OPS_LOG_DEFAULT = "~/.gemini/agykit-ops.log"
 
 
@@ -1070,3 +1138,63 @@ def ops_log(*, log_path: str | None = None, limit: int = 50) -> dict:
     if skipped:
         result["warning"] = f"Skipped {skipped} malformed lines"
     return result
+
+
+def cc_activity(limit: int = 20, *, history_path: str | None = None, stats_path: str | None = None) -> dict:
+    if history_path is None:
+        history_path = os.environ.get("AGYKIT_DASH_HISTORY") or os.path.expanduser("~/.claude/history.jsonl")
+    if stats_path is None:
+        stats_path = os.environ.get("AGYKIT_DASH_STATS") or os.path.expanduser("~/.claude/stats-cache.json")
+
+    # Read history.jsonl (tail last `limit` lines)
+    recent_prompts: list[dict] = []
+    if os.path.isfile(history_path):
+        from collections import deque
+        window: deque = deque(maxlen=limit)
+        try:
+            with open(history_path, encoding="utf-8", errors="replace") as f:
+                for line in f:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    try:
+                        entry = json.loads(line)
+                        window.append(entry)
+                    except json.JSONDecodeError:
+                        pass
+            for entry in window:
+                project_path = entry.get("project", "")
+                recent_prompts.append({
+                    "display": entry.get("display", ""),
+                    "timestamp": entry.get("timestamp", 0),
+                    "project": os.path.basename(project_path) if project_path else "",
+                    "session_id": entry.get("sessionId", ""),
+                })
+            recent_prompts.sort(key=lambda x: x["timestamp"], reverse=True)
+        except Exception:
+            pass
+
+    # Read stats-cache.json — most recent dailyActivity entry
+    latest_stats: dict = {"available": False, "date": "", "messages": 0, "sessions": 0, "tool_calls": 0}
+    if os.path.isfile(stats_path):
+        try:
+            with open(stats_path, encoding="utf-8") as f:
+                data = json.load(f)
+            activity = data.get("dailyActivity", [])
+            if activity:
+                latest = max(activity, key=lambda x: x.get("date", ""))
+                latest_stats = {
+                    "available": True,
+                    "date": latest.get("date", ""),
+                    "messages": latest.get("messageCount", 0),
+                    "sessions": latest.get("sessionCount", 0),
+                    "tool_calls": latest.get("toolCallCount", 0),
+                }
+        except Exception:
+            pass
+
+    return {
+        "recent_prompts": recent_prompts,
+        "latest_stats": latest_stats,
+        "warning": None,
+    }

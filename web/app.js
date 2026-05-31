@@ -978,6 +978,81 @@
             });
         }
 
+        function fmtTokens(n) {
+            if (n >= 1_000_000) return (n / 1_000_000).toFixed(1) + 'M';
+            if (n >= 1_000) return Math.round(n / 1_000) + 'K';
+            return String(n);
+        }
+
+        function timeAgo(tsMs) {
+            const diffS = Math.floor((Date.now() - tsMs) / 1000);
+            if (diffS < 60) return 'az önce';
+            if (diffS < 3600) return Math.floor(diffS / 60) + 'dk';
+            if (diffS < 86400) return Math.floor(diffS / 3600) + 'sa';
+            return new Date(tsMs).toLocaleDateString('tr-TR', {day:'2-digit', month:'2-digit'});
+        }
+
+        function loadRtkStats() {
+            const el = document.getElementById('rtkStatsBody');
+            fetch('/api/rtk-stats').then(r => r.json()).then(data => {
+                if (data.warning && !data.tokens_saved) {
+                    el.innerHTML = `<div class="sl-unavail">⚠ ${data.warning}</div>`;
+                    return;
+                }
+                const top3 = (data.top_commands || []).slice(0, 3).map(c =>
+                    `<div class="rtk-cmd-row">
+                        <span class="rtk-cmd-name" title="${c.cmd}">${c.cmd.slice(0, 20)}</span>
+                        <span class="rtk-cmd-count">${c.count}</span>
+                        <span class="rtk-cmd-pct">${c.avg_pct.toFixed(0)}%</span>
+                    </div>`
+                ).join('');
+                const effW = Math.min(100, data.efficiency_pct || 0);
+                el.innerHTML = `
+                    <div class="rtk-big-number">${fmtTokens(data.tokens_saved || 0)}</div>
+                    <div class="rtk-sub">token tasarruf · ${data.total_commands || 0} komut</div>
+                    <div class="eff-bar-track"><div class="eff-bar" style="width:${effW}%"></div></div>
+                    <div class="rtk-eff-label">%${(data.efficiency_pct || 0).toFixed(1)} verimlilik</div>
+                    <div class="rtk-cmd-table">${top3}</div>
+                `;
+            }).catch(() => {
+                el.innerHTML = '<div class="sl-unavail">RTK verisi alınamadı.</div>';
+            });
+        }
+
+        function loadCcActivity() {
+            const el = document.getElementById('ccActivityBody');
+            fetch('/api/cc-activity').then(r => r.json()).then(data => {
+                let html = '';
+                const ls = data.latest_stats || {};
+                if (ls.available) {
+                    html += `<div class="cc-stat-chips">
+                        <div class="cc-stat-chip"><span class="cc-stat-val">${ls.messages}</span><span class="cc-stat-lbl">mesaj</span></div>
+                        <div class="cc-stat-chip"><span class="cc-stat-val">${ls.tool_calls}</span><span class="cc-stat-lbl">araç</span></div>
+                        <div class="cc-stat-chip"><span class="cc-stat-val">${ls.sessions}</span><span class="cc-stat-lbl">oturum</span></div>
+                    </div>
+                    <div class="cc-date-label">${ls.date}</div>`;
+                }
+                const prompts = (data.recent_prompts || []).slice(0, 10);
+                if (prompts.length === 0) {
+                    html += '<div class="sl-unavail">Geçmiş bulunamadı.</div>';
+                } else {
+                    html += prompts.map(p => {
+                        const txt = (p.display || '').slice(0, 60);
+                        const proj = p.project || '';
+                        const ago = timeAgo(p.timestamp);
+                        return `<div class="cc-prompt-row">
+                            <span class="cc-ago">${ago}</span>
+                            ${proj ? `<span class="cc-project-chip">${proj}</span>` : ''}
+                            <span class="cc-prompt-text" title="${(p.display||'').replace(/"/g,'&quot;')}">${txt}</span>
+                        </div>`;
+                    }).join('');
+                }
+                el.innerHTML = html;
+            }).catch(() => {
+                el.innerHTML = '<div class="sl-unavail">CC aktivitesi alınamadı.</div>';
+            });
+        }
+
         // Footer timestamp
         // Doldurma loadData() tamamlandığında yapılır.
 
@@ -988,6 +1063,9 @@
         loadStatusline();
         loadLastSession();
         loadOpsLog();
+        loadRtkStats();
+        loadCcActivity();
+        setInterval(loadRtkStats, 60_000);
 
         // SSE connection — statusline updates on every event; heavy rebuilds throttled
         const HEAVY_REFRESH_INTERVAL_MS = 60_000; // quota grid + charts max once/min via SSE
@@ -1013,6 +1091,7 @@
                     loadQuota();
                     loadLastSession();
                     loadOpsLog();
+                    loadCcActivity();
                 }
             };
             es.onerror = function() {

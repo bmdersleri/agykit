@@ -96,3 +96,50 @@ def test_events_first_line():
         assert r.fp.readline().startswith(b"data:")
     finally:
         srv.shutdown()
+
+
+# ---------------------------------------------------------------------------
+# new widget endpoints
+# ---------------------------------------------------------------------------
+
+class _FakeProc:
+    stdout = (
+        "Total commands:    1\n"
+        "Tokens saved:      0K (0.0%)\n"
+        "Efficiency meter: ░ 0.0%\n"
+    )
+    returncode = 0
+
+
+def test_api_rtk_stats(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.subprocess.run",
+        lambda *a, **kw: _FakeProc(),
+    )
+    srv = _boot()
+    try:
+        r = _get(srv.server_address[1], "/api/rtk-stats")
+        assert r.status == 200
+        data = json.loads(r.read())
+        assert "tokens_saved" in data
+        assert "efficiency_pct" in data
+        assert "top_commands" in data
+    finally:
+        srv.shutdown()
+
+
+def test_api_cc_activity(monkeypatch, tmp_path):
+    hist = tmp_path / "history.jsonl"
+    hist.write_text(
+        '{"display": "test", "timestamp": 1000, "project": "/p/q", "sessionId": "s"}\n'
+    )
+    monkeypatch.setenv("AGYKIT_DASH_HISTORY", str(hist))
+    srv = _boot()
+    try:
+        r = _get(srv.server_address[1], "/api/cc-activity")
+        assert r.status == 200
+        data = json.loads(r.read())
+        assert "recent_prompts" in data
+        assert "latest_stats" in data
+    finally:
+        srv.shutdown()
