@@ -399,9 +399,10 @@
         function loadQuota() {
             Promise.all([
                 fetch('/api/quota').then(r => r.json()),
-                fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null}))
-            ]).then(([data, activeData]) => {
-                const activeEmail = activeData.email || null;
+                fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null})),
+                fetch('/api/statusline').then(r => r.json()).catch(() => ({email: null}))
+            ]).then(([data, activeData, slData]) => {
+                const activeEmail = activeData.email || slData.email || null;
                 quotaGrid.innerHTML = '';
                 
                 for (const k of Object.keys(qcCountdowns)) {
@@ -549,8 +550,8 @@
 
                 if (activeEmail) {
                     loadModelQuota();
-                    loadStatusline();
                 }
+                loadStatusline();
 
                 if (data.warning) {
                     showWarning(data.warning);
