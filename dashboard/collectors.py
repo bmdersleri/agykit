@@ -1036,3 +1036,35 @@ def _fetch_quota_reset_times() -> dict | None:
         }
     except Exception:
         return None
+
+
+_OPS_LOG_DEFAULT = "~/.gemini/agykit-ops.log"
+
+
+def ops_log(*, log_path: str | None = None, limit: int = 50) -> dict:
+    """Return last N entries from the agykit operations log (~/.gemini/agykit-ops.log).
+
+    Each entry: {ts, cmd, status, account, model, prompt}
+    """
+    path = os.path.expanduser(log_path or _OPS_LOG_DEFAULT)
+    if not os.path.isfile(path):
+        return {"entries": [], "total": 0, "warning": f"Ops log not found: {path}"}
+    entries = []
+    skipped = 0
+    try:
+        with open(path, errors="replace") as f:
+            for line in f:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entries.append(json.loads(line))
+                except json.JSONDecodeError:
+                    skipped += 1
+    except Exception as e:
+        return {"entries": [], "total": 0, "warning": str(e)}
+    total = len(entries)
+    result = {"entries": entries[-limit:], "total": total}
+    if skipped:
+        result["warning"] = f"Skipped {skipped} malformed lines"
+    return result

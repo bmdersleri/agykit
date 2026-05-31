@@ -85,6 +85,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         elif path == "/api/agy-model-quota":
             force = "refresh" in parsed.query
             self.serve_json(collectors.agy_model_quota_cached(force=force))
+        elif path == "/api/ops-log":
+            limit = 50
+            if "limit=" in parsed.query:
+                try:
+                    limit = int(parsed.query.split("limit=")[1].split("&")[0])
+                except ValueError:
+                    pass
+            self.serve_json(collectors.ops_log(limit=limit))
         elif path == "/events":
             self.serve_events()
         else:

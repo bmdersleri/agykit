@@ -283,6 +283,15 @@ PY
     fi
 }
 
+# Append a single JSON line to ~/.gemini/agykit-ops.log
+_ops_log() {
+    local cmd="$1" status="$2" account="${3:-}" model="${4:-}" prompt_preview="${5:-}"
+    local ts; ts=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+    printf '{"ts":"%s","cmd":"%s","status":"%s","account":"%s","model":"%s","prompt":"%s"}\n' \
+        "$ts" "$cmd" "$status" "$account" "$model" "$prompt_preview" \
+        >> "$HOME/.gemini/agykit-ops.log"
+}
+
 # Run agy with quota-aware account rotation. Returns 0 on first success.
 # Accounts sorted by quota status: available first, exhausted last.
 cmd_run() {
@@ -294,10 +303,10 @@ cmd_run() {
         cmd_account_switch "$a" >/dev/null 2>&1 || continue
         echo "==> Trying account: $a"
         "$AGY_BIN" -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-        grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; continue; }
-        echo "==> Success on: $a"; return 0
+        grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; _ops_log "run" "quota-rotate" "$a" "" "${prompt:0:80}"; continue; }
+        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; return 0
     done
-    echo "==> ALL ACCOUNTS EXHAUSTED"; return 1
+    echo "==> ALL ACCOUNTS EXHAUSTED"; _ops_log "run" "exhausted" "" "" "${prompt:0:80}"; return 1
 }
 
 # Escalating do: model ladder on verify failure + quota rotation + git safety.
@@ -327,10 +336,10 @@ cmd_do_escalate() {
             cmd_account_switch "$a" >/dev/null 2>&1 || continue
             echo "==> $model @ $a"
             "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)${verify_ctx}TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-            grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; _rollback_to "$base" "$snap"; continue; }
+            grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; _ops_log "do-escalate" "quota-rotate" "$a" "$model" "${prompt:0:80}"; _rollback_to "$base" "$snap"; continue; }
             applied=1; break
         done
-        [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _rollback_to "$base" "$snap"; restore_model; exit 1; }
+        [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _ops_log "do-escalate" "exhausted" "" "$model" "${prompt:0:80}"; _rollback_to "$base" "$snap"; restore_model; exit 1; }
 
         # Undo any stray git writes agy made — agykit owns version control.
         _normalize_head "$base"
@@ -341,7 +350,7 @@ cmd_do_escalate() {
                 echo "==> agy changes (review before committing):"
                 git --no-pager diff --stat "$snap" 2>/dev/null || true
             fi
-            echo "==> SUCCESS with $model"; return 0
+            echo "==> SUCCESS with $model"; _ops_log "do-escalate" "success" "$a" "$model" "${prompt:0:80}"; return 0
         else
             local vout; vout=$(tail -30 /tmp/agykit-verify.log 2>/dev/null || echo "")
             [ -n "$vout" ] && verify_ctx="Previous attempt with model '$model' failed verification. Error:
@@ -349,10 +358,10 @@ ${vout}
 
 Fix the above issues, then complete the original task:
 "
-            echo "==> verify FAILED on $model — escalating"; _rollback_to "$base" "$snap"
+            echo "==> verify FAILED on $model — escalating"; _ops_log "do-escalate" "verify-failed" "$a" "$model" "${prompt:0:80}"; _rollback_to "$base" "$snap"
         fi
     done
-    echo "==> FAILED — all models exhausted"; restore_model; return 1
+    echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; restore_model; return 1
 }
 
 cmd_init() {
