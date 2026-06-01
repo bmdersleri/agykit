@@ -1245,6 +1245,78 @@
             });
         }
 
+        // ── Job Analytics Card ──
+        function loadJobAnalytics() {
+            const el = document.getElementById('jobAnalyticsBody');
+            if (!el) return;
+            fetch('/api/job-stats').then(r => r.json()).then(d => {
+                if (d.total === 0) {
+                    el.innerHTML = '<div class="sl-unavail">Henüz job verisi yok.</div>';
+                    return;
+                }
+
+                const rate = d.success_rate_24h;
+                const avgDur = d.avg_duration_seconds != null ? fmtDur(Math.round(d.avg_duration_seconds)) : '—';
+                const errCats = Object.entries(d.error_breakdown || {}).sort((a, b) => b[1] - a[1]);
+                const maxErr = errCats.length ? errCats[0][1] : 1;
+
+                const rateColor = rate == null ? 'var(--muted)' : rate >= 80 ? 'var(--success)' : rate >= 50 ? 'var(--warning)' : 'var(--danger)';
+                const ratePct = rate != null ? rate + '%' : '—';
+
+                const dailyEntries = Object.entries(d.daily_counts || {}).sort();
+                const maxDaily = dailyEntries.length ? Math.max(...dailyEntries.map(e => e[1])) : 1;
+                const dailyBars = dailyEntries.map(([day, count]) => {
+                    const short = day.slice(5);
+                    const pct = Math.round(count / maxDaily * 100);
+                    return `<div class="ja-daily-row" title="${day}: ${count}">
+                        <span class="ja-daily-label">${short}</span>
+                        <div class="ja-daily-track"><div class="ja-daily-fill" style="width:${pct}%"></div></div>
+                        <span class="ja-daily-count">${count}</span>
+                    </div>`;
+                }).join('');
+
+                const errRows = errCats.map(([cat, count]) => {
+                    const pct = Math.round(count / maxErr * 100);
+                    return `<div class="ja-err-row">
+                        <span class="aj-error-cat aj-cat-${cat}">${cat}</span>
+                        <div class="ja-err-track"><div class="ja-err-fill" style="width:${pct}%"></div></div>
+                        <span class="ja-err-count">${count}</span>
+                    </div>`;
+                }).join('');
+
+                el.innerHTML = `
+                    <div class="ja-stats-grid">
+                        <div class="ja-stat-card">
+                            <div class="ja-stat-val" style="color:${rateColor}">${ratePct}</div>
+                            <div class="ja-stat-lbl">24s Başarı</div>
+                        </div>
+                        <div class="ja-stat-card">
+                            <div class="ja-stat-val">${avgDur}</div>
+                            <div class="ja-stat-lbl">Ort. Süre</div>
+                        </div>
+                        <div class="ja-stat-card">
+                            <div class="ja-stat-val">${d.total}</div>
+                            <div class="ja-stat-lbl">Toplam Job</div>
+                        </div>
+                        <div class="ja-stat-card">
+                            <div class="ja-stat-val">${d.last_24h.total}</div>
+                            <div class="ja-stat-lbl">24s Job</div>
+                        </div>
+                    </div>
+                    ${dailyBars ? `<div class="ja-section">
+                        <div class="ja-section-title">Günlük Job Sayısı (14g)</div>
+                        <div class="ja-daily-list">${dailyBars}</div>
+                    </div>` : ''}
+                    ${errRows ? `<div class="ja-section">
+                        <div class="ja-section-title">Hata Dağılımı</div>
+                        <div class="ja-err-list">${errRows}</div>
+                    </div>` : ''}
+                `;
+            }).catch(() => {
+                if (el) el.innerHTML = '<div class="sl-unavail">Job analitik yüklenemedi.</div>';
+            });
+        }
+
         // Footer timestamp
         // Doldurma loadData() tamamlandığında yapılır.
 
@@ -1270,9 +1342,11 @@
         loadLastSession();
         loadActivityFeed();
         loadActiveJob();
+        loadJobAnalytics();
         loadRtkStats();
         loadQuotaAlerts();
         setInterval(loadRtkStats, 60_000);
+        setInterval(loadJobAnalytics, 120_000);
 
         // SSE connection — typed events for selective refresh
         const HEAVY_REFRESH_INTERVAL_MS = 60_000;
@@ -1326,6 +1400,7 @@
                         loadLastSession();
                         loadActivityFeed();
                         loadActiveJob();
+                        loadJobAnalytics();
                         loadQuotaAlerts();
                     }
                 }

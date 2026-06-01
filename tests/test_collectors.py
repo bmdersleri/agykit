@@ -700,6 +700,66 @@ def test_job_event_schema_migration_idempotent(tmp_path, monkeypatch):
     assert "duration_seconds" in cols
 
 
+def test_job_stats_success_rate(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_stats
+    from datetime import datetime, timezone, timedelta
+    old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
+    jid1 = job_create("run", "a")
+    job_event(jid1, "job_succeeded", "succeeded", "done")
+    jid2 = job_create("run", "b")
+    job_event(jid2, "job_failed", "failed", "error", error="boom")
+    stats = job_stats()
+    assert stats["total"] >= 2
+    assert stats["success_rate_24h"] is not None
+    assert 0 <= stats["success_rate_24h"] <= 100
+
+
+def test_job_stats_avg_duration(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_stats
+    jid = job_create("run", "dur")
+    job_event(jid, "job_succeeded", "succeeded", "done")
+    stats = job_stats()
+    assert "avg_duration_seconds" in stats
+
+
+def test_job_stats_error_breakdown(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_stats
+    jid1 = job_create("run", "q")
+    job_event(jid1, "job_failed", "failed", "error", error="quota exceeded")
+    jid2 = job_create("run", "t")
+    job_event(jid2, "job_failed", "failed", "error", error="timed out")
+    stats = job_stats()
+    assert "error_breakdown" in stats
+    assert stats["error_breakdown"].get("quota", 0) >= 1
+
+
+def test_job_stats_daily_counts(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_stats
+    jid = job_create("run", "daily")
+    job_event(jid, "job_succeeded", "succeeded", "done")
+    stats = job_stats()
+    assert "daily_counts" in stats
+    assert isinstance(stats["daily_counts"], dict)
+
+
+def test_job_stats_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_stats
+    stats = job_stats()
+    assert stats["total"] == 0
+    assert stats["success_rate_24h"] is None
+    assert stats["avg_duration_seconds"] is None
+
+
 def test_job_events_ordering(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
     monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))

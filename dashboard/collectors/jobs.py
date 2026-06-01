@@ -394,24 +394,58 @@ def job_list(
 
 def job_stats() -> dict:
     conn = _get_db()
+    from datetime import datetime, timezone, timedelta
     try:
         _recover_stale_jobs(conn)
+        now = datetime.now(timezone.utc)
         total = conn.execute("SELECT COUNT(*) AS c FROM jobs").fetchone()["c"]
         by_status: dict[str, int] = {}
         for row in conn.execute("SELECT status, COUNT(*) AS c FROM jobs GROUP BY status").fetchall():
             by_status[row["status"]] = row["c"]
-        from datetime import datetime, timezone, timedelta
-        since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+
+        since_24h = (now - timedelta(hours=24)).isoformat()
         recent = conn.execute(
             "SELECT status, COUNT(*) AS c FROM jobs WHERE started_at >= ? GROUP BY status",
             (since_24h,),
         ).fetchall()
         recent_by_status = {r["status"]: r["c"] for r in recent}
         recent_total = sum(recent_by_status.values())
+
+        success_rate_24h = None
+        terminal_24h = recent_by_status.get("succeeded", 0) \
+            + recent_by_status.get("failed", 0) \
+            + recent_by_status.get("blocked", 0)
+        if terminal_24h > 0:
+            success_rate_24h = round(
+                recent_by_status.get("succeeded", 0) / terminal_24h * 100, 1
+            )
+
+        avg_dur_row = conn.execute(
+            "SELECT AVG(duration_seconds) AS ad FROM jobs WHERE duration_seconds IS NOT NULL"
+        ).fetchone()
+        avg_duration_seconds = round(avg_dur_row["ad"], 1) if avg_dur_row and avg_dur_row["ad"] else None
+
+        error_breakdown: dict[str, int] = {}
+        for row in conn.execute(
+            "SELECT error_category, COUNT(*) AS c FROM jobs WHERE error_category IS NOT NULL GROUP BY error_category"
+        ).fetchall():
+            error_breakdown[row["error_category"]] = row["c"]
+
+        since_14d = (now - timedelta(days=14)).isoformat()
+        daily = conn.execute(
+            "SELECT DATE(started_at) AS day, COUNT(*) AS c FROM jobs WHERE started_at >= ? GROUP BY day ORDER BY day",
+            (since_14d,),
+        ).fetchall()
+        daily_counts = {r["day"]: r["c"] for r in daily}
+
         return {
             "total": total,
             "by_status": by_status,
             "last_24h": {"total": recent_total, "by_status": recent_by_status},
+            "success_rate_24h": success_rate_24h,
+            "avg_duration_seconds": avg_duration_seconds,
+            "error_breakdown": error_breakdown,
+            "daily_counts": daily_counts,
         }
     finally:
         conn.close()

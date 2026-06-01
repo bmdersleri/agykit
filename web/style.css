@@ -1415,3 +1415,33 @@
         }
 
         .hidden { display: none; }
+
+        /* ── Job Analytics Card ── */
+        .job-analytics-body { display: flex; flex-direction: column; gap: 0.75rem; }
+        .ja-stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 0.5rem; }
+        .ja-stat-card {
+            background: var(--surface2); border: 1px solid var(--border);
+            border-radius: 8px; padding: 0.5rem; text-align: center;
+        }
+        .ja-stat-val { font-size: 1.1rem; font-weight: 700; color: var(--text); line-height: 1.2; }
+        .ja-stat-lbl { font-size: 0.6rem; color: var(--muted); text-transform: uppercase; font-weight: 600; margin-top: 0.15rem; }
+
+        .ja-section { margin-top: 0.25rem; }
+        .ja-section-title {
+            font-size: 0.68rem; font-weight: 700; text-transform: uppercase;
+            color: var(--muted); letter-spacing: 0.04em; margin-bottom: 0.35rem;
+        }
+        .ja-daily-list, .ja-err-list { display: flex; flex-direction: column; gap: 0.2rem; }
+
+        .ja-daily-row, .ja-err-row {
+            display: flex; align-items: center; gap: 0.35rem; font-size: 0.72rem;
+        }
+        .ja-daily-label { color: var(--muted); width: 3.2rem; flex-shrink: 0; font-family: monospace; font-size: 0.68rem; }
+        .ja-daily-track, .ja-err-track {
+            flex: 1; height: 6px; background: var(--surface2); border-radius: 3px; overflow: hidden;
+        }
+        .ja-daily-fill { height: 100%; background: var(--accent); border-radius: 3px; transition: width 0.3s; }
+        .ja-err-fill { height: 100%; background: var(--danger); border-radius: 3px; transition: width 0.3s; }
+        .ja-daily-count, .ja-err-count {
+            color: var(--text); font-weight: 600; width: 1.8rem; text-align: right; flex-shrink: 0;
+        }

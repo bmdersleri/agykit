@@ -441,11 +441,32 @@ cmd_do_escalate() {
         local applied=0
         for a in "${accts[@]}"; do
             cmd_account_switch "$a" >/dev/null 2>&1 || continue
-            echo "==> $model @ $a"
-            _job_op event "$job_id" "account_selected" "running" "$model @ $a" "$a" "$model"
-            "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)${verify_ctx}TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-            grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; _ops_log "do-escalate" "quota-rotate" "$a" "$model" "${prompt:0:80}"; _job_op event "$job_id" "quota_rotated" "rotating" "quota rotate $a" "$a" "$model" "Quota on $a at $model"; _rollback_to "$base" "$snap"; continue; }
-            applied=1; break
+            local agy_ok=0 agy_attempt=0
+            while [ $agy_attempt -le 2 ] && [ $agy_ok -eq 0 ]; do
+                [ $agy_attempt -gt 0 ] && {
+                    local w=$((5 * agy_attempt))
+                    echo "==> TRANSIENT ERROR — retry $agy_attempt/2 in ${w}s"
+                    sleep $w
+                }
+                echo "==> $model @ $a${agy_attempt:+" (attempt $((agy_attempt+1))/3)"}"
+                [ $agy_attempt -eq 0 ] && _job_op event "$job_id" "account_selected" "running" "$model @ $a" "$a" "$model"
+                "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)${verify_ctx}TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
+                agy_attempt=$((agy_attempt + 1))
+                grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && {
+                    echo "==> QUOTA on $a"; _ops_log "do-escalate" "quota-rotate" "$a" "$model" "${prompt:0:80}"
+                    _job_op event "$job_id" "quota_rotated" "rotating" "quota rotate $a" "$a" "$model" "Quota on $a at $model"
+                    _rollback_to "$base" "$snap"
+                    agy_ok=2; break
+                }
+                if [ $agy_attempt -le 2 ] && grep -qiE "ConnectionError|Connection refused|reset by peer|Name or service not known|timed ?out|DeadlineExceeded|UNAVAILABLE" /tmp/agykit-out.log; then
+                    _job_op event "$job_id" "job_retrying" "running" "retry $agy_attempt/2 $model @ $a" "$a" "$model" "Transient error, retry ${agy_attempt}/2"
+                    continue
+                fi
+                agy_ok=1
+            done
+            [ "$agy_ok" = "1" ] && { applied=1; break; }
+            [ "$agy_ok" = "2" ] && continue
+            echo "==> FAILED on $model @ $a (transient)"
         done
         [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _ops_log "do-escalate" "exhausted" "" "$model" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "accounts exhausted" "" "$model" "Accounts exhausted at $model"; _rollback_to "$base" "$snap"; restore_model; exit 1; }
 

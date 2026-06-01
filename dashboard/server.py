@@ -125,6 +125,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.serve_json(collectors.ops_log(limit=limit))
         elif path == "/api/rtk-stats":
             self.serve_json(collectors.rtk_stats())
+        elif path == "/api/job-stats":
+            self.serve_json(collectors.job_stats())
         elif path == "/api/cc-activity":
             limit = 20
             if "limit=" in parsed.query:
