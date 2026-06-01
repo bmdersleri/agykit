@@ -1208,7 +1208,8 @@
 
                 let eventsHtml = '';
                 (data.active.events || []).slice(-5).forEach(e => {
-                    const ts = (e.ts || '').slice(-8);
+                    const timePart = (e.ts || '').split('T')[1] || '';
+                    const ts = timePart.slice(0, 8);
                     const ev = e.event || '';
                     const msg = e.message || '';
                     eventsHtml += `<div class="aj-event-row">
