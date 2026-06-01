@@ -608,6 +608,98 @@ def test_job_event_with_error(tmp_path, monkeypatch):
     assert snap["ended_at"] is not None
 
 
+def test_job_event_duration_and_category(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+    import time
+    jid = job_create("run", "duration test")
+    time.sleep(0.05)
+    job_event(jid, "job_failed", "failed", "error", error="403 quota exceeded reached")
+    snap = job_snapshot(jid)
+    assert snap["duration_seconds"] is not None
+    assert snap["duration_seconds"] > 0
+    assert snap["error_category"] == "quota"
+    assert snap["error_detail"] == "403 quota exceeded reached"
+
+
+def test_job_event_duration_non_terminal(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+    jid = job_create("run", "no duration")
+    job_event(jid, "account_selected", "running", "trying", account="a@b.com")
+    snap = job_snapshot(jid)
+    assert snap["duration_seconds"] is None
+
+
+def test_job_event_error_detail_full(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+    long_error = "x" * 500
+    jid = job_create("run", "detail test")
+    job_event(jid, "job_failed", "failed", "error", error=long_error)
+    snap = job_snapshot(jid)
+    assert snap["error_detail"] == long_error
+
+
+def test_job_event_error_category_taxonomy(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot, _classify_error
+    assert _classify_error("RESOURCE_EXHAUSTED quota") == "quota"
+    assert _classify_error("request timed out") == "timeout"
+    assert _classify_error("Connection refused") == "network"
+    assert _classify_error("unauthorized token") == "auth"
+    assert _classify_error("VERIFICATION FAILED") == "verify"
+    assert _classify_error("some random error") is None
+    assert _classify_error(None) is None
+    assert _classify_error("") is None
+
+
+def test_job_event_category_integration(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+    cases = [
+        ("rate limit exceeded", "quota"),
+        ("timed out", "timeout"),
+        ("ConnectionError: reset by peer", "network"),
+        ("access_denied", "auth"),
+        ("verify failed", "verify"),
+    ]
+    for error_text, expected_cat in cases:
+        jid = job_create("run", f"cat-{expected_cat}")
+        job_event(jid, "job_failed", "failed", "error", error=error_text)
+        snap = job_snapshot(jid)
+        assert snap["error_category"] == expected_cat, f"Expected {expected_cat} for '{error_text}', got {snap['error_category']}"
+
+
+def test_job_event_schema_migration(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import _get_db
+    conn = _get_db()
+    cols = [row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
+    conn.close()
+    assert "duration_seconds" in cols
+    assert "error_detail" in cols
+    assert "error_category" in cols
+
+
+def test_job_event_schema_migration_idempotent(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import _get_db
+    conn1 = _get_db()
+    conn1.close()
+    conn2 = _get_db()
+    cols = [row[1] for row in conn2.execute("PRAGMA table_info(jobs)").fetchall()]
+    conn2.close()
+    assert "duration_seconds" in cols
+
+
 def test_job_events_ordering(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
     monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))

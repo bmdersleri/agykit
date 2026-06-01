@@ -1200,6 +1200,9 @@
                 const model = s.model || '—';
                 const prompt = (s.prompt || '').slice(0, 60);
                 const error = s.last_error || '';
+                const errorDetail = s.error_detail || '';
+                const errorCategory = s.error_category || '';
+                const duration = s.duration_seconds;
                 const badgeClass = 'aj-badge-' + status;
                 const badgeLabel = status.replace(/_/g, ' ');
 
@@ -1215,14 +1218,24 @@
                     </div>`;
                 });
 
+                const durHtml = duration != null ? fmtDur(Math.round(duration)) : '—';
+                const catHtml = errorCategory ? `<span class="aj-error-cat aj-cat-${errorCategory}">${errorCategory}</span>` : '';
+                const detailHtml = errorDetail
+                    ? `<tr><td class="aj-key">Error Detail</td>
+                       <td class="aj-val"><span class="aj-error-detail-toggle" onclick="this.nextElementSibling.classList.toggle('hidden');this.textContent=this.nextElementSibling.classList.contains('hidden')?'Göster':'Gizle'">Göster</span>
+                       <pre class="aj-error-detail-full hidden">${escapeHtml(errorDetail)}</pre></td></tr>`
+                    : '';
+
                 el.innerHTML = `
                     <table class="aj-table">
                         <tr><td class="aj-key">Status</td><td class="aj-val"><span class="aj-badge ${badgeClass}">${badgeLabel}</span></td></tr>
                         <tr><td class="aj-key">Stage</td><td class="aj-val">${escapeHtml(stage)}</td></tr>
                         <tr><td class="aj-key">Account</td><td class="aj-val">${escapeHtml(account)}</td></tr>
                         <tr><td class="aj-key">Model</td><td class="aj-val">${escapeHtml(model)}</td></tr>
+                        <tr><td class="aj-key">Duration</td><td class="aj-val">${durHtml}</td></tr>
                         <tr><td class="aj-key">Prompt</td><td class="aj-val" title="${escapeHtml(s.prompt || '')}">${escapeHtml(prompt)}${(s.prompt || '').length > 60 ? '…' : ''}</td></tr>
-                        ${error ? `<tr><td class="aj-key">Error</td><td class="aj-val" style="color:var(--danger)">${escapeHtml(error.slice(0, 100))}</td></tr>` : ''}
+                        ${error ? `<tr><td class="aj-key">Error</td><td class="aj-val" style="color:var(--danger)">${escapeHtml(error.slice(0, 100))} ${catHtml}</td></tr>` : ''}
+                        ${detailHtml}
                     </table>
                     <div style="margin-top:0.5rem;font-size:0.78rem;color:var(--muted);font-weight:600;">Son Olaylar</div>
                     ${eventsHtml || '<div style="font-size:0.78rem;color:var(--muted)">Olay yok.</div>'}

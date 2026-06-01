@@ -1,4 +1,5 @@
 import os
+import re
 import json
 import socket
 import sqlite3
@@ -20,6 +21,23 @@ _OLD_JSON_DIR = os.path.expanduser("~/.gemini/agykit-jobs")
 _JOB_SOCKET = os.path.expanduser("~/.gemini/agykit-jobs.sock")
 _ACTIVE_STATUSES = frozenset({"starting", "running", "verifying", "rotating", "rolling_back"})
 JOB_STALE_TIMEOUT = 300  # 5 minutes
+
+ERROR_CATEGORIES = {
+    "quota":   r"RESOURCE_EXHAUSTED|quota.*(?:reached|exceeded)|429.*quota|rate.*limit|403.*quota",
+    "timeout": r"timeout|timed ?out",
+    "network": r"ConnectionError|Connection refused|reset by peer|Name or service not known",
+    "auth":    r"unauthorized|invalid.*token|OAuth|permission.*denied|access_denied",
+    "verify":  r"verify.*fail|VERIFICATION FAILED",
+}
+
+
+def _classify_error(error_text: str | None) -> str | None:
+    if not error_text:
+        return None
+    for category, pattern in ERROR_CATEGORIES.items():
+        if re.search(pattern, error_text, re.IGNORECASE):
+            return category
+    return None
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -57,6 +75,21 @@ CREATE INDEX IF NOT EXISTS idx_jobs_started  ON jobs(started_at);
 """
 
 
+_PHASE3_COLUMNS = [
+    ("duration_seconds", "REAL"),
+    ("error_detail", "TEXT"),
+    ("error_category", "TEXT"),
+]
+
+
+def _migrate_schema(conn: sqlite3.Connection):
+    for col_name, col_type in _PHASE3_COLUMNS:
+        try:
+            conn.execute(f"ALTER TABLE jobs ADD COLUMN {col_name} {col_type}")
+        except sqlite3.OperationalError:
+            pass
+
+
 def _get_db() -> sqlite3.Connection:
     os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     first = not os.path.isfile(DB_PATH)
@@ -65,6 +98,7 @@ def _get_db() -> sqlite3.Connection:
     conn.executescript("PRAGMA journal_mode=WAL;")
     conn.execute("PRAGMA busy_timeout=5000")
     conn.executescript(_SCHEMA_SQL)
+    _migrate_schema(conn)
     if first and os.path.isdir(_OLD_JSON_DIR):
         _migrate_from_json(conn)
     return conn
@@ -200,15 +234,36 @@ def job_event(job_id: str, event_type: str, status: str, stage: str,
             (job_id, ts, event_type, status, stage, account, model, message, error),
         )
         ended_at = ts if status in ("succeeded", "failed", "blocked") else None
+        duration_seconds = None
+        error_category = None
+        if ended_at:
+            row = conn.execute(
+                "SELECT started_at FROM jobs WHERE job_id=?", (job_id,)
+            ).fetchone()
+            if row and row["started_at"]:
+                try:
+                    started = datetime.fromisoformat(row["started_at"])
+                    if started.tzinfo is None:
+                        started = started.replace(tzinfo=timezone.utc)
+                    duration_seconds = (
+                        datetime.now(timezone.utc) - started
+                    ).total_seconds()
+                except Exception:
+                    pass
+            error_category = _classify_error(error)
         conn.execute(
             """UPDATE jobs SET
                status=?, stage=?, updated_at=?,
                account=COALESCE(?, account),
                model=COALESCE(?, model),
                last_error=COALESCE(?, last_error),
-               ended_at=COALESCE(?, ended_at)
+               ended_at=COALESCE(?, ended_at),
+               duration_seconds=COALESCE(?, duration_seconds),
+               error_detail=COALESCE(?, error_detail),
+               error_category=COALESCE(?, error_category)
                WHERE job_id=?""",
-            (status, stage, ts, account, model, error, ended_at, job_id),
+            (status, stage, ts, account, model, error, ended_at,
+             duration_seconds, error, error_category, job_id),
         )
         conn.commit()
     except Exception:

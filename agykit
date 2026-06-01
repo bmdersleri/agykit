@@ -469,7 +469,7 @@ ${vout}
 Fix the above issues, then complete the original task:
 "
             echo "==> verify FAILED on $model — escalating"; _ops_log "do-escalate" "verify-failed" "$a" "$model" "${prompt:0:80}"
-            _job_op event "$job_id" "verify_failed" "rolling_back" "verify failed $model" "$a" "$model" "" "${vout:0:200}"
+            _job_op event "$job_id" "verify_failed" "rolling_back" "verify failed $model" "$a" "$model" "" "$vout"
             _job_op event "$job_id" "rollback_started" "rolling_back" "rollback $model" "" "$model" "Rolling back after verify failure on $model"
             _rollback_to "$base" "$snap"
         fi

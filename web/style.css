@@ -1369,3 +1369,49 @@
         .cc-stat-val { font-size: 1rem; font-weight: 700; color: var(--text); line-height: 1.2; }
         .cc-stat-lbl { font-size: 0.62rem; color: var(--muted); }
         .cc-date-label { font-size: 0.65rem; color: var(--muted); margin-bottom: 0.25rem; }
+
+        /* ── Job Error Category Badges ── */
+        .aj-error-cat {
+            display: inline-block;
+            font-size: 0.6rem;
+            font-weight: 700;
+            padding: 0.1rem 0.35rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+            margin-left: 0.35rem;
+            vertical-align: middle;
+        }
+        .aj-cat-quota  { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+        .aj-cat-timeout { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .aj-cat-network { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+        .aj-cat-auth   { background: rgba(56, 189, 248, 0.2); color: #38bdf8; }
+        .aj-cat-verify { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+
+        .aj-error-detail-toggle {
+            color: var(--accent);
+            font-size: 0.7rem;
+            font-weight: 600;
+            cursor: pointer;
+            text-decoration: underline;
+            text-decoration-style: dotted;
+        }
+        .aj-error-detail-toggle:hover {
+            text-decoration-style: solid;
+        }
+
+        .aj-error-detail-full {
+            font-size: 0.72rem;
+            background: var(--surface2);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem;
+            margin-top: 0.25rem;
+            max-height: 200px;
+            overflow-y: auto;
+            white-space: pre-wrap;
+            word-break: break-word;
+            font-family: monospace;
+            line-height: 1.4;
+        }
+
+        .hidden { display: none; }
