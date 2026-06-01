@@ -12,11 +12,17 @@ fails, and rolls back git changes on failure.
 | Code implementation (needs verify) | `agykit do-escalate "prompt"` |
 | Quick state check | `agykit status` |
 | Quota details | `agykit quota --status` |
+| Codex account info | `agykit codex` |
+| RTK token savings | `agykit rtk` |
 | First-time project setup | `agykit init` |
 | Troubleshoot setup | `agykit doctor` |
 | List recent jobs | `agykit jobs [N]` |
+| Filter jobs | `agykit jobs --status failed --since 24h` |
+| Job statistics | `agykit stats` |
 | Live-stream a running job | `agykit watch <job-id>` |
 | View job event history | `agykit job-log <job-id>` |
+| Cancel a job | `agykit cancel <job-id>` |
+| Prune old jobs | `agykit prune --older-than 7d` |
 
 **Rule:** Use `do-escalate` whenever the task produces code that must be
 verified. Use `run` for everything else. Never use plain `agy` directly --

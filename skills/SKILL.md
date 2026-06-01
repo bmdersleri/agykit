@@ -19,7 +19,7 @@ cd /home/haytek/projects/agykit && ./install.sh
 | `agykit whoami` | Show active Google account |
 | `agykit models` | List available model+effort combos |
 | `agykit model [name]` | Show or set active model |
-| `agykit status` | One-line status: email, model, quota, active job |
+| `agykit status` | One-line status: email, model, quota, codex, rtk, active job |
 | `agykit account-list` | List saved account snapshots |
 | `agykit account-save` | Snapshot current keyring login |
 | `agykit account-add` | Add new account (guided) |
@@ -27,9 +27,11 @@ cd /home/haytek/projects/agykit && ./install.sh
 | `agykit switch <email>` | Switch to saved account |
 | `agykit run "prompt"` | Quota-aware run with account rotation |
 | `agykit do-escalate "prompt"` | Model ladder on verify fail |
+| `agykit codex [--json\|--status]` | Show Codex account/plan/usage info |
+| `agykit rtk [--json]` | Show RTK token savings statistics |
 | `agykit log [n]` | Show last n ops log entries (default: 20) |
 | `agykit doctor [--fix]` | Check/fix dependencies and agy state |
-| `agykit init` | Scaffold `.agykit.conf` + `CLAUDE_AGY_SYSTEM.md` |
+| `agykit init` | Scaffold `.agykit.conf` + agent-aware system file |
 
 ## Job Observability
 
@@ -41,7 +43,7 @@ Jobs are persisted to SQLite (WAL mode) with real-time events via Unix socket.
 | `agykit stats` | Job statistics (total, by status, last 24h) |
 | `agykit watch <job-id>` | Live job watch (TUI via Textual if available, terminal fallback) |
 | `agykit tail` | Tail events from the most recent active job |
-| `agykit cancel <job-id> | --all` | Cancel running jobs |
+| `agykit cancel <job-id> \| --all` | Cancel running jobs |
 | `agykit prune [--older-than=N[s\|m\|h\|d]] [--status=] [--dry-run] [--all]` | Housekeeping — remove old jobs |
 | `agykit job-log <job-id>` | Full event log for a specific job |
 
@@ -52,7 +54,16 @@ Jobs are persisted to SQLite (WAL mode) with real-time events via Unix socket.
 | `agykit dash [--host=] [--port=]` | Launch web dashboard (localhost, stdlib HTTP/SSE) |
 | `agykit quota [--status] [--cache]` | Show/manage quota cache |
 
-Dashboard collectors: agy model quota (tmux), job status, Codex account/usage stats.
+Dashboard collectors: agy model quota (tmux), job status, Codex account/usage stats,
+Claude Code quota, RTK token savings, activity feed.
+Dashboard uses SSE typed events — only affected cards refresh on data change.
+
+## Agent Detection
+
+`agykit` auto-detects the running agent (Codex, Claude Code, OpenCode) and
+selects the correct system context file (`CODEX_AGY_SYSTEM.md`,
+`CLAUDE_AGY_SYSTEM.md`, or `OPENCODE_AGY_SYSTEM.md`). Set `AGYKIT_SYSTEM`
+explicitly to override.
 
 ## Notifications
 

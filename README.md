@@ -57,12 +57,27 @@ agykit account-list        # verify all accounts are registered
 
 With 3+ accounts you can sustain long coding sessions without manual token juggling.
 
-### Install Claude Code skill (optional)
+### Install agent skills (auto on `./install.sh`)
 
-Installs a skill file so Claude Code knows agykit's commands and patterns:
+The installer detects which coding agents you use and installs the matching skill files:
+
+| Agent | Skill file | Install path |
+|-------|-----------|-------------|
+| Claude Code | `skills/agykit.md` | `~/.claude/skills/agykit.md` |
+| Codex | `skills/codex.md` | `~/.codex/skills/agykit.md` |
+| OpenCode | `skills/SKILL.md` | `~/.agents/skills/agykit/SKILL.md` |
+
+Manual install:
 
 ```bash
+# Claude Code
 cp "$(dirname $(which agykit))/../skills/agykit.md" ~/.claude/skills/agykit.md
+
+# Codex
+cp "$(dirname $(which agykit))/../skills/codex.md" ~/.codex/skills/agykit.md
+
+# OpenCode
+cp "$(dirname $(which agykit))/../skills/SKILL.md" ~/.agents/skills/agykit/SKILL.md
 ```
 
 ### Verify installation
@@ -144,11 +159,25 @@ agykit dash [--port N]         Open the usage dashboard (localhost:8787)
 agykit quota [--refresh]       Show per-model quota table (5min cache)
 agykit quota --json            Machine-readable JSON (pipe to scripts)
 agykit quota --status          One-line summary for statusline/scripts
-agykit init                    Interactive project setup in current directory
+agykit codex                   Show Codex account & usage information
+agykit codex --json            Machine-readable Codex JSON output
+agykit codex --status          One-line Codex summary for statusline
+agykit rtk                     Show RTK token savings statistics
+agykit rtk --json              Machine-readable RTK JSON output
+agykit init                    Interactive project setup (agent-aware system file)
 agykit doctor                  Check installation and system file dependencies
 agykit doctor --fix            Auto-fix resolvable issues (quota cache, account snapshot)
+agykit log [N]                 Show last N ops log entries (default: 20)
 agykit jobs [N]                Show N most recent jobs (default: 20)
-agykit watch <job-id>          Live-stream a running job's status and events
+agykit jobs --status failed    Filter jobs by status
+agykit jobs --since 24h        Filter jobs by time range
+agykit jobs --json             Machine-readable JSON job output
+agykit stats                   Job statistics (total, by status, last 24h)
+agykit watch <job-id>          Live-stream a running job (TUI or terminal)
+agykit tail                    Live-tail all job events (socket)
+agykit cancel <job-id>         Cancel a running/starting job
+agykit cancel --all            Cancel all in-progress jobs
+agykit prune [--older-than N]  Remove old jobs (N=seconds, or 7d/30d)
 agykit job-log <job-id>        Show full event history for a specific job
 ```
 
@@ -160,8 +189,16 @@ Live localhost web dashboard at `http://127.0.0.1:8787` (light/dark theme):
 
 - **agy Account Quota** — per-account cards with Gmail profile photo, model quota bars (from `agy /usage` via tmux), reset times, exhaustion status and countdown
 - **Claude Code Quota** — session (5h) + weekly tiers via Anthropic OAuth API
+- **Codex Kullanımı** — sessions, prompts, tokens, recent prompt history
+- **Codex Hesap** — account email, plan type, subscription, current model, thread/token totals
 - **Usage Charts** — daily token consumption and model distribution (Chart.js)
 - **agy Status** — statusline snapshot + last session summary
+- **RTK Tasarruf** — token savings statistics from rtk gain
+- **Aktif Job** — current running job status, stage, account, model, recent events
+- **Aktivite Akışı** — combined feed of recent agy and Claude Code activity
+
+Dashboard uses **SSE typed events** — when data changes (quota refresh, new job event,
+Codex activity), only the affected card refreshes instead of a full page reload.
 
 Requires `tmux` for model quota capture. First load takes ~30s; results cached for 5 minutes.
 
@@ -177,9 +214,17 @@ snapshots (`<job_id>.json`) and append-only event logs (`<job_id>.events.jsonl`)
 
 ```bash
 agykit jobs                  # list recent jobs with status, stage, age
-agykit watch <job-id>        # live-stream: clears screen, updates every 2s
+agykit jobs --status failed  # filter by status
+agykit jobs --since 24h      # filter by time range
+agykit jobs --json           # machine-readable output
+agykit stats                 # job statistics summary
+agykit watch <job-id>        # live-stream (TUI via Textual, polling fallback)
+agykit tail                  # live-tail all job events (socket)
+agykit cancel <job-id>       # cancel a running job
+agykit cancel --all          # cancel all in-progress jobs
+agykit prune [--older-than N] # remove old jobs (--dry-run to preview)
 agykit job-log <job-id>      # full event history for one job
-agykit status                # includes active job info when a job is running
+agykit status                # includes active job + codex + rtk info
 ```
 
 ### Dashboard card
@@ -288,27 +333,27 @@ Avoid vague prompts like "improve the dashboard" — agy will not know where to 
 
 ## Using agykit from Codex
 
-Codex reads the repository-local `AGENTS.md` file for project rules. It captures
-the same hard constraints as the Claude context: stdlib-only Python, vanilla
-frontend assets, localhost-only dashboard services, scoped edits, and the full
-verify command.
+Codex uses the same `agykit` CLI directly (no `!` prefix needed — Codex runs
+shell commands naturally). The `install.sh` installs `skills/codex.md` to
+`~/.codex/skills/agykit.md` automatically when Codex is detected.
 
 Typical Codex loop:
 
 ```bash
-codex
-# Ask Codex to inspect files, implement the change, then run:
-#   python3 -m pytest tests -q
-#   bash tests/run.sh
+# In Codex conversation:
+agykit status
+agykit run "explain the quota detection logic"
+agykit do-escalate "add retry to agy_quota_status in dashboard/collectors/agy.py"
 ```
 
-For delegated agy work from a shell, keep using the same project config:
+`agykit init` auto-detects Codex and creates `CODEX_AGY_SYSTEM.md` instead of
+`CLAUDE_AGY_SYSTEM.md`. Set `AGYKIT_SYSTEM` explicitly to override.
 
-```bash
-AGYKIT_VERIFY="python3 -m pytest tests -q && bash tests/run.sh"
-AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
-AGYKIT_FLAGS="--add-dir $PWD/dashboard --dangerously-skip-permissions"
-```
+## Using agykit from OpenCode
+
+OpenCode loads the skill from `skills/SKILL.md` (installed automatically to
+`~/.agents/skills/agykit/SKILL.md` by `install.sh`). All commands work the same
+way — use `agykit run` for analysis and `agykit do-escalate` for code tasks.
 
 ### How `do-escalate` escalation works
 
@@ -361,7 +406,7 @@ Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AGYKIT_VERIFY` | Command run after a code task (needed for `do-escalate`) | — |
-| `AGYKIT_SYSTEM` | Path to system-context file injected into prompts | — |
+| `AGYKIT_SYSTEM` | Path to system-context file injected into prompts | Agent-detected: `CLAUDE_AGY_SYSTEM.md`, `CODEX_AGY_SYSTEM.md`, or `OPENCODE_AGY_SYSTEM.md` |
 | `AGYKIT_FLAGS` | Extra agy flags | `--dangerously-skip-permissions` |
 | `AGYKIT_TIMEOUT` | agy print timeout | `15m` |
 | `AGYKIT_TERSE` | Terse output level: `0`/`lite`/`full`/`ultra` | `ultra` |
