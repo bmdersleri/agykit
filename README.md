@@ -234,6 +234,30 @@ A good prompt has four elements:
 
 Avoid vague prompts like "improve the dashboard" — agy will not know where to look and may touch unrelated files.
 
+## Using agykit from Codex
+
+Codex reads the repository-local `AGENTS.md` file for project rules. It captures
+the same hard constraints as the Claude context: stdlib-only Python, vanilla
+frontend assets, localhost-only dashboard services, scoped edits, and the full
+verify command.
+
+Typical Codex loop:
+
+```bash
+codex
+# Ask Codex to inspect files, implement the change, then run:
+#   python3 -m pytest tests -q
+#   bash tests/run.sh
+```
+
+For delegated agy work from a shell, keep using the same project config:
+
+```bash
+AGYKIT_VERIFY="python3 -m pytest tests -q && bash tests/run.sh"
+AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
+AGYKIT_FLAGS="--add-dir $PWD/dashboard --dangerously-skip-permissions"
+```
+
 ### How `do-escalate` escalation works
 
 ```

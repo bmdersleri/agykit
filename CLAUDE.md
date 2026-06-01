@@ -25,7 +25,7 @@ bash tests/run.sh                # bash güvenlik süitleri
 
 - `agykit` — tek bash betiği, ana CLI
 - `dashboard/server.py` — Python stdlib HTTP/SSE sunucusu
-- `dashboard/collectors.py` — veri toplayıcılar (agy snapshot, statusline)
+- `dashboard/collectors/` — veri toplayıcılar (agy snapshot, statusline, quota, activity)
 - `web/app.js` — dashboard frontend JS
 - `web/style.css` — dashboard stilleri
 - `CLAUDE_AGY_SYSTEM.md` — agy delege kuralları (agy için, Claude için değil)

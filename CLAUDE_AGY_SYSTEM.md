@@ -1,7 +1,8 @@
 # agykit Project Context
 
 Portable Antigravity (agy) CLI manager. Core is a single bash script `agykit`.
-Now adding a usage **dashboard** under `dashboard/` (Python 3 stdlib only).
+Includes a usage **dashboard** under `dashboard/` (Python 3 stdlib only) and
+vanilla frontend assets under `web/`.
 
 ## Hard constraints (NON-NEGOTIABLE)
 - **Zero pip dependencies.** Python 3 standard library ONLY (http.server, json,
@@ -20,5 +21,6 @@ Bir görev agykit (do-escalate/run) ile sana devredildiğinde:
 - Tautolojik/boş test yazma. Yeni test eklemen gerekmiyor — testler hazır.
 - git komutu ÇALIŞTIRMA (commit/reset/rebase/push/stash). Değişiklikleri çalışma ağacında bırak.
 - Yalnızca implementation dosyalarını oluştur/düzenle:
-  `dashboard/collectors.py`, `dashboard/server.py`, `dashboard/index.html`, `agykit` (bash wiring), `README.md`.
+  `dashboard/collectors/`, `dashboard/server.py`, `dashboard/quota.py`,
+  `dashboard/alerts.py`, `web/`, `agykit` (bash wiring), `README.md`.
 - Terse yanıtla.
