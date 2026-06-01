@@ -3,7 +3,17 @@ import json
 import socket
 import sqlite3
 import uuid
+import sys
 from datetime import datetime, timezone
+
+# Lazy import: avoid circular dep when jobd.py loads this module
+def _ensure_daemon():
+    try:
+        from dashboard.jobd import ensure_daemon
+        # Don't check return value — best-effort start
+        ensure_daemon()
+    except Exception:
+        pass
 
 DB_PATH = os.path.expanduser("~/.gemini/agykit-jobs.db")
 _OLD_JSON_DIR = os.path.expanduser("~/.gemini/agykit-jobs")
@@ -130,7 +140,15 @@ def _migrate_from_json(conn: sqlite3.Connection):
 
 def _notify_socket(event_dict: dict):
     if not os.path.exists(_JOB_SOCKET):
-        return
+        _ensure_daemon()
+        # Wait briefly for daemon to bind
+        for _ in range(5):
+            if os.path.exists(_JOB_SOCKET):
+                break
+            import time
+            time.sleep(0.3)
+        else:
+            return
     try:
         s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         s.settimeout(1.0)

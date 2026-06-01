@@ -355,6 +355,7 @@ cmd_run() {
     mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
     [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
     mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
+    _job_ensure_daemon
     local job_id; job_id=$(_job_op create "run" "$prompt")
     _CURRENT_JOB_ID="$job_id"
     _job_cleanup() {
@@ -392,6 +393,7 @@ cmd_do_escalate() {
     _in_git || echo "==> ⚠ not a git repo — rollback safety disabled"
 
     local verify_ctx=""
+    _job_ensure_daemon
     local job_id; job_id=$(_job_op create "do-escalate" "$prompt")
     _CURRENT_JOB_ID="$job_id"
     _job_cleanup() {
@@ -605,6 +607,22 @@ _cmd_job_repo() {
     local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
     local repo; repo="$(cd "$(dirname "$self")" && pwd)"
     echo "$repo"
+}
+
+# Ensure the background daemon is running. Silently starts it if needed.
+_job_ensure_daemon() {
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 -c "
+import sys
+sys.path.insert(0, '$repo')
+from dashboard.jobd import ensure_daemon
+ensure_daemon()
+" 2>/dev/null || true
+}
+
+cmd_jobd() {
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 -m dashboard.jobd "${@:-status}"
 }
 
 cmd_jobs() {
@@ -1361,6 +1379,9 @@ agykit — portable Antigravity (agy) CLI manager
   agykit prune --dry-run         Show what would be removed without deleting
   agykit prune --all             Remove all jobs
   agykit job-log <job-id>        Show all events for a specific job
+  agykit jobd start              Start background event daemon
+  agykit jobd stop               Stop background event daemon
+  agykit jobd status             Check daemon status
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
@@ -1392,6 +1413,7 @@ case "${1:-}" in
     cancel)        cmd_job_cancel "${2:-}" ;;
     prune)         cmd_job_prune "${@:2}" ;;
     job-log)       cmd_job_log "${2:-}" ;;
+    jobd)          cmd_jobd "${@:2}" ;;
     rtk)           cmd_rtk "${@:2}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;
