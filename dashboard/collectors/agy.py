@@ -15,7 +15,7 @@ _EMAIL_RE = re.compile(r"email=([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}
 _QUOTA_WINDOW_SECONDS = 4 * 3600
 
 _BRAIN_DIR_DEFAULT = "~/.gemini/antigravity-cli/brain"
-_STATUSLINE_JSON = "~/.gemini/antigravity-cli/statusline.json"
+_STATUSLINE_JSON = "~/.gemini/antigravity-cli/statusline-latest.json"
 
 _MODEL_DISPLAY = {
     "gemini-2.5-flash":      "Gemini 2.5 Flash",
@@ -36,6 +36,8 @@ _CLIENT_SEC = "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"  # from agy binary
 _QUOTA_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
 _QUOTA_CACHE_TTL = 300  # 5 minutes
 _PLANS_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/account-plans.json")
+_PROFILES_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/account-profiles.json")
+_ACCOUNTS_DIR = "~/.gemini/accounts"
 
 
 def agy_series(range_key: str = "all", *, brain_dir: str | None = None) -> dict:
@@ -242,6 +244,51 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
             "session_count": sessions.get(email, 0),
             "exhaustion_count": exhaustions.get(email, 0),
         })
+
+    accounts_dir = os.path.expanduser(_ACCOUNTS_DIR)
+    snapshot_emails = {
+        os.path.basename(f).replace(".json", "")
+        for f in glob.glob(os.path.join(accounts_dir, "*.json"))
+    }
+    known_emails = {a["email"] for a in accounts}
+    for email in sorted(snapshot_emails - known_emails):
+        accounts.append({
+            "email": email,
+            "status": "available",
+            "last_exhausted_at": None,
+            "resets_at": None,
+            "resets_in_seconds": 0,
+            "elapsed_seconds": 0,
+            "session_count": sessions.get(email, 0),
+            "exhaustion_count": exhaustions.get(email, 0),
+        })
+
+    if snapshot_emails:
+        accounts = [a for a in accounts if a["email"] in snapshot_emails]
+
+    profiles = _load_profiles_cache()
+    for acct in accounts:
+        acct["picture"] = None
+        acct["name"] = ""
+        cached_profile = profiles.get(acct["email"], {})
+        if cached_profile:
+            acct["picture"] = cached_profile.get("picture")
+            acct["name"] = cached_profile.get("name", "")
+        acct_file = os.path.join(accounts_dir, acct["email"] + ".json")
+        if os.path.isfile(acct_file):
+            try:
+                refresh_token = json.load(open(acct_file))["token"]["refresh_token"]
+                info = _google_userinfo(_refresh_access_token(refresh_token))
+                acct["picture"] = info.get("picture")
+                acct["name"] = info.get("name", "")
+                _save_profile(acct["email"], acct["name"], acct["picture"])
+            except Exception as e:
+                acct["_avatar_err"] = str(e)[:80]
+
+    plans = _load_plans_cache()
+    for acct in accounts:
+        plan = plans.get(acct["email"], "")
+        acct["is_pro"] = "Google AI Pro" in plan or "Pro Plus" in plan
 
     return {
         "accounts": accounts,
@@ -579,6 +626,24 @@ def _save_plan(email: str, plan: str) -> None:
         plans = _load_plans_cache()
         plans[email] = plan
         json.dump(plans, open(_PLANS_CACHE, "w"), ensure_ascii=False, indent=2)
+    except Exception:
+        pass
+
+
+def _load_profiles_cache() -> dict:
+    try:
+        return json.load(open(_PROFILES_CACHE))
+    except Exception:
+        return {}
+
+
+def _save_profile(email: str, name: str | None, picture: str | None) -> None:
+    if not email or not (name or picture):
+        return
+    try:
+        profiles = _load_profiles_cache()
+        profiles[email] = {"name": name or "", "picture": picture}
+        json.dump(profiles, open(_PROFILES_CACHE, "w"), ensure_ascii=False, indent=2)
     except Exception:
         pass
 

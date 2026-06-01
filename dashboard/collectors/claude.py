@@ -22,6 +22,17 @@ _QUOTA_LABELS = {
 }
 
 
+def _normalize_utilization_pct(value) -> float:
+    """Normalize Claude usage utilization to a 0-100 percentage."""
+    try:
+        util = float(value or 0.0)
+    except (TypeError, ValueError):
+        util = 0.0
+    if util <= 1:
+        util *= 100
+    return max(0.0, min(100.0, util))
+
+
 def claude_series(range_key: str = "all", *, stats_path: str | None = None) -> dict:
     if stats_path is None:
         stats_path = os.path.expanduser("~/.claude/stats-cache.json")
@@ -149,7 +160,7 @@ def claude_quota(*, creds_path: str | None = None) -> dict:
         entry = data.get(key)
         if entry is None:
             continue
-        util = entry.get("utilization") or 0.0
+        util_pct = _normalize_utilization_pct(entry.get("utilization"))
         resets_raw = entry.get("resets_at")
         resets_in = 0
         resets_at_str = None
@@ -163,8 +174,8 @@ def claude_quota(*, creds_path: str | None = None) -> dict:
         quotas.append({
             "key": key,
             "label": label,
-            "utilization": round(util * 100, 1),
-            "pct_remaining": round((1 - util) * 100, 1),
+            "utilization": round(util_pct, 1),
+            "pct_remaining": round(100 - util_pct, 1),
             "resets_at": resets_at_str,
             "resets_in_seconds": resets_in,
         })

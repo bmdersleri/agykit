@@ -403,6 +403,13 @@
                 fetch('/api/statusline').then(r => r.json()).catch(() => ({email: null}))
             ]).then(([data, activeData, slData]) => {
                 const activeEmail = activeData.email || slData.email || null;
+                const activeWorking = !!(
+                    slData.available
+                    && slData.email
+                    && slData.email === activeEmail
+                    && !['idle', ''].includes(String(slData.agent_state || '').toLowerCase())
+                    && Number(slData.age_seconds || 0) <= 300
+                );
                 quotaGrid.innerHTML = '';
                 
                 for (const k of Object.keys(qcCountdowns)) {
@@ -424,6 +431,7 @@
                 sorted.forEach((acct, i) => {
                     const exhausted = acct.status === 'exhausted';
                     const isActive = acct.email === activeEmail;
+                    const isWorking = isActive && activeWorking && !exhausted;
                     const handle = acct.email.split('@')[0];
                     const domain = '@' + (acct.email.split('@')[1] || '');
                     const qid = `qc${i}`;
@@ -473,6 +481,14 @@
                                 windowSecs: total
                             };
                         }, 0);
+                    } else if (isWorking) {
+                        statusHtml = `
+                            <div class="available-container working-container">
+                                ${gearStatusHTML('active', 'Çalışıyor')}
+                                <div class="working-model">${slData.model || 'agy aktif'}</div>
+                                ${acct.last_exhausted_at ? `<div class="last-violation">Son ihlal: ${acct.last_exhausted_at}</div>` : ''}
+                            </div>
+                        `;
                     } else {
                         statusHtml = `
                             <div class="available-container">

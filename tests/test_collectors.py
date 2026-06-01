@@ -4,6 +4,7 @@ import sqlite3
 
 
 from dashboard import collectors
+import dashboard.collectors.agy as agy_collectors
 
 FIX = os.path.join(
     os.path.dirname(__file__), "..", "dashboard", "fixtures", "stats-cache.json"
@@ -31,6 +32,58 @@ def test_claude_series_missing_file():
     assert s["warning"]
 
 
+def test_claude_quota_normalizes_fraction_utilization(monkeypatch, tmp_path):
+    creds = tmp_path / "creds.json"
+    creds.write_text(json.dumps({"claudeAiOauth": {"accessToken": "tok"}}))
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"five_hour": {"utilization": 0.64}}).encode()
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *a, **kw: _Resp(),
+    )
+
+    result = collectors.claude_quota(creds_path=str(creds))
+    quota = result["quotas"][0]
+
+    assert quota["utilization"] == 64
+    assert quota["pct_remaining"] == 36
+
+
+def test_claude_quota_normalizes_percent_utilization(monkeypatch, tmp_path):
+    creds = tmp_path / "creds.json"
+    creds.write_text(json.dumps({"claudeAiOauth": {"accessToken": "tok"}}))
+
+    class _Resp:
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *args):
+            return False
+
+        def read(self):
+            return json.dumps({"five_hour": {"utilization": 100}}).encode()
+
+    monkeypatch.setattr(
+        "urllib.request.urlopen",
+        lambda *a, **kw: _Resp(),
+    )
+
+    result = collectors.claude_quota(creds_path=str(creds))
+    quota = result["quotas"][0]
+
+    assert quota["utilization"] == 100
+    assert quota["pct_remaining"] == 0
+
+
 def test_agy_series_buckets_and_skips():
     s = collectors.agy_series("all", brain_dir=FIXBRAIN)
     assert s["labels"] == ["2026-05-28", "2026-05-29"]
@@ -44,6 +97,95 @@ def test_agy_series_missing_dir():
     s = collectors.agy_series("all", brain_dir="/no/such/brain")
     assert s["labels"] == []
     assert s["warning"]
+
+
+def test_agy_quota_status_enriches_saved_accounts(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    accounts_dir = home / ".gemini" / "accounts"
+    accounts_dir.mkdir(parents=True)
+    (accounts_dir / "pro@example.com.json").write_text(
+        json.dumps({"token": {"refresh_token": "rt-pro"}})
+    )
+    (accounts_dir / "free@example.com.json").write_text(
+        json.dumps({"token": {"refresh_token": "rt-free"}})
+    )
+    log_dir = tmp_path / "log"
+    log_dir.mkdir()
+    (log_dir / "cli-20260601_120000.log").write_text(
+        "I0601 12:00:00.000000 email=pro@example.com\n"
+        "E0601 12:00:01.000000 RESOURCE_EXHAUSTED Resets in 1h\n"
+    )
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        agy_collectors,
+        "_refresh_access_token",
+        lambda refresh_token: "access-" + refresh_token,
+    )
+    monkeypatch.setattr(
+        agy_collectors,
+        "_google_userinfo",
+        lambda access_token: {
+            "name": access_token,
+            "picture": "https://example.com/" + access_token + ".png",
+        },
+    )
+    monkeypatch.setattr(
+        agy_collectors,
+        "_load_plans_cache",
+        lambda: {"pro@example.com": "Google AI Pro"},
+    )
+    monkeypatch.setattr(agy_collectors, "_save_profile", lambda email, name, picture: None)
+
+    result = collectors.agy_quota_status(log_dir=str(log_dir))
+    by_email = {a["email"]: a for a in result["accounts"]}
+
+    assert set(by_email) == {"pro@example.com", "free@example.com"}
+    assert by_email["pro@example.com"]["is_pro"] is True
+    assert by_email["free@example.com"]["is_pro"] is False
+    assert by_email["pro@example.com"]["picture"].endswith("access-rt-pro.png")
+    assert by_email["free@example.com"]["picture"].endswith("access-rt-free.png")
+    assert by_email["free@example.com"]["status"] == "available"
+
+
+def test_agy_quota_status_uses_cached_profile_on_userinfo_failure(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    accounts_dir = home / ".gemini" / "accounts"
+    accounts_dir.mkdir(parents=True)
+    (accounts_dir / "cached@example.com.json").write_text(
+        json.dumps({"token": {"refresh_token": "rt"}})
+    )
+    log_dir = tmp_path / "log"
+    log_dir.mkdir()
+    (log_dir / "cli-20260601_120000.log").write_text(
+        "I0601 12:00:00.000000 email=cached@example.com\n"
+        "E0601 12:00:01.000000 RESOURCE_EXHAUSTED Resets in 1h\n"
+    )
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        agy_collectors,
+        "_load_profiles_cache",
+        lambda: {
+            "cached@example.com": {
+                "name": "Cached User",
+                "picture": "https://example.com/cached.png",
+            }
+        },
+    )
+    monkeypatch.setattr(
+        agy_collectors,
+        "_refresh_access_token",
+        lambda refresh_token: (_ for _ in ()).throw(OSError("offline")),
+    )
+    monkeypatch.setattr(agy_collectors, "_load_plans_cache", lambda: {})
+
+    result = collectors.agy_quota_status(log_dir=str(log_dir))
+    acct = result["accounts"][0]
+
+    assert acct["name"] == "Cached User"
+    assert acct["picture"] == "https://example.com/cached.png"
+    assert acct["_avatar_err"] == "offline"
 
 
 def test_apply_range_7d():

@@ -13,6 +13,8 @@ from .agy import (
     _google_userinfo,
     _load_plans_cache,
     _save_plan,
+    _load_profiles_cache,
+    _save_profile,
     _fetch_quota_reset_times,
 )
 from .claude import (
@@ -40,6 +42,8 @@ __all__ = [
     "_google_userinfo",
     "_load_plans_cache",
     "_save_plan",
+    "_load_profiles_cache",
+    "_save_profile",
     "_fetch_quota_reset_times",
     "claude_series",
     "claude_quota",
