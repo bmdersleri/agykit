@@ -1,0 +1,8 @@
+{
+  "name": "agykit-opencode-plugin",
+  "version": "0.1.0",
+  "description": "agykit plugin for opencode — quota-aware agy delegation with account rotation",
+  "type": "module",
+  "main": "plugin.js",
+  "private": true
+}

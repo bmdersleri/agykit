@@ -61,11 +61,11 @@ With 3+ accounts you can sustain long coding sessions without manual token juggl
 
 The installer detects which coding agents you use and installs the matching skill files:
 
-| Agent | Skill file | Install path |
-|-------|-----------|-------------|
+| Agent | Files | Install path |
+|-------|-------|-------------|
 | Claude Code | `skills/agykit.md` | `~/.claude/skills/agykit.md` |
 | Codex | `skills/codex.md` | `~/.codex/skills/agykit.md` |
-| OpenCode | `skills/SKILL.md` | `~/.agents/skills/agykit/SKILL.md` |
+| OpenCode | `skills/SKILL.md`, `.opencode/plugins/agykit/`, `.opencode/commands/agykit.md` | `~/.agents/skills/agykit/`, `~/.config/opencode/plugins/agykit/` |
 
 Manual install:
 
@@ -76,8 +76,11 @@ cp "$(dirname $(which agykit))/../skills/agykit.md" ~/.claude/skills/agykit.md
 # Codex
 cp "$(dirname $(which agykit))/../skills/codex.md" ~/.codex/skills/agykit.md
 
-# OpenCode
+# OpenCode (skill + plugin)
 cp "$(dirname $(which agykit))/../skills/SKILL.md" ~/.agents/skills/agykit/SKILL.md
+mkdir -p ~/.config/opencode/plugins/agykit
+cp "$(dirname $(which agykit))/../.opencode/plugins/agykit/plugin.js" ~/.config/opencode/plugins/agykit/
+cp "$(dirname $(which agykit))/../.opencode/plugins/agykit/package.json" ~/.config/opencode/plugins/agykit/
 ```
 
 ### Verify installation
@@ -352,8 +355,32 @@ agykit do-escalate "add retry to agy_quota_status in dashboard/collectors/agy.py
 ## Using agykit from OpenCode
 
 OpenCode loads the skill from `skills/SKILL.md` (installed automatically to
-`~/.agents/skills/agykit/SKILL.md` by `install.sh`). All commands work the same
-way — use `agykit run` for analysis and `agykit do-escalate` for code tasks.
+`~/.agents/skills/agykit/SKILL.md` by `install.sh`).
+
+The installer also copies the **agykit plugin** to
+`~/.config/opencode/plugins/agykit/` — this auto-loads a custom `agykit` tool
+and lifecycle hooks (quota error detection, agent registration). A slash command
+at `.opencode/commands/agykit.md` gives you `/agykit` in the prompt bar.
+
+### OpenCode subagent config
+
+Add these to `opencode.json` under `agent` for dedicated agykit subagents:
+
+```json
+"agykit-run": {
+  "description": "Run a prompt through agykit with quota-aware account rotation",
+  "mode": "subagent",
+  "model": "9router/zekiler-bedava"
+},
+"agykit-escalate": {
+  "description": "Escalate a code task through agykit (Flash → Pro → Opus) with verify",
+  "mode": "subagent",
+  "model": "cc/claude-sonnet-4-6"
+}
+```
+
+All commands work the same way — use `agykit run` for analysis and
+`agykit do-escalate` for code tasks.
 
 ### How `do-escalate` escalation works
 
@@ -406,7 +433,7 @@ Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 | Variable | Description | Default |
 |----------|-------------|---------|
 | `AGYKIT_VERIFY` | Command run after a code task (needed for `do-escalate`) | — |
-| `AGYKIT_SYSTEM` | Path to system-context file injected into prompts | Agent-detected: `CLAUDE_AGY_SYSTEM.md`, `CODEX_AGY_SYSTEM.md`, or `OPENCODE_AGY_SYSTEM.md` |
+| `AGYKIT_SYSTEM` | Path to system-context file injected into prompts | Agent-detected: `CLAUDE_AGY_SYSTEM.md`, `CODEX_AGY_SYSTEM.md`, or `OPENCODE_AGY_SYSTEM.md` (also reads `.opencode/commands/agykit.md`) |
 | `AGYKIT_FLAGS` | Extra agy flags | `--dangerously-skip-permissions` |
 | `AGYKIT_TIMEOUT` | agy print timeout | `15m` |
 | `AGYKIT_TERSE` | Terse output level: `0`/`lite`/`full`/`ultra` | `ultra` |

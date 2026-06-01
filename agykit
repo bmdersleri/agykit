@@ -451,7 +451,7 @@ _detect_agent() {
         echo "codex"
     elif [ -n "${CLAUDE_CODE:-}" ] || [ -d "$HOME/.claude/skills" ]; then
         echo "claude"
-    elif [ -n "${OPENCODE:-}" ] || [ -d "$HOME/.config/opencode" ]; then
+    elif [ -n "${OPENCODE:-}" ] || [ -f "$HOME/.config/opencode/opencode.json" ] || [ -d "$HOME/.config/opencode" ]; then
         echo "opencode"
     else
         echo "unknown"
@@ -547,6 +547,28 @@ SYS
         echo "  ✓ $sys_file (edit to describe your project)"
     else
         echo "  ✓ $sys_file already exists"
+    fi
+
+    # OpenCode: scaffold .opencode/commands/agykit.md
+    if [ "$agent" = "opencode" ] && [ ! -f ".opencode/commands/agykit.md" ]; then
+        mkdir -p .opencode/commands
+        if [ ! -f ".opencode/commands/agykit.md" ]; then
+            cat > .opencode/commands/agykit.md <<CMD
+---
+description: Run a prompt through agykit with quota-aware account rotation
+---
+
+# agykit
+
+Delegates a prompt to agy via agykit. Handles account rotation and model escalation.
+
+\`\`\`bash
+agykit run "explain this code"
+agykit do-escalate "implement this feature"
+\`\`\`
+CMD
+            echo "  ✓ .opencode/commands/agykit.md"
+        fi
     fi
 
     echo; echo "Done. Edit $sys_file, then run: agykit doctor"

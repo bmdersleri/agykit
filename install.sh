@@ -44,6 +44,17 @@ if [ -d "$HOME/.agents/skills" ]; then
     echo "Installed: opencode skill -> $AGENTS_SKILL_DIR/SKILL.md"
 fi
 
+# OpenCode plugin (auto-loaded from ~/.config/opencode/plugins/)
+if [ -d "$HOME/.config/opencode/plugins" ]; then
+    PLUGIN_DIR="$HOME/.config/opencode/plugins/agykit"
+    mkdir -p "$PLUGIN_DIR"
+    cp "$SRC_DIR/.opencode/plugins/agykit/package.json" "$PLUGIN_DIR/package.json" 2>/dev/null || true
+    cp "$SRC_DIR/.opencode/plugins/agykit/plugin.js" "$PLUGIN_DIR/plugin.js" 2>/dev/null || true
+    if [ -f "$PLUGIN_DIR/plugin.js" ]; then
+        echo "Installed: opencode plugin -> $PLUGIN_DIR"
+    fi
+fi
+
 # Codex
 if [ -d "$HOME/.codex/skills" ]; then
     cp "$SRC_DIR/skills/codex.md" "$HOME/.codex/skills/agykit.md"

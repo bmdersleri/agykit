@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "agent": {
+    "agykit-run": {
+      "description": "Delegate a prompt to agy via agykit (quota-aware, account rotation)",
+      "mode": "subagent",
+      "model": "9router/zekiler-bedava",
+      "prompt": "You are an agy coding agent invoked via agykit. Follow these rules strictly:\n- Read the requested files, implement the change, run AGYKIT_VERIFY\n- Never run git commands — leave changes in the working tree\n- Do not delete or weaken tests\n- Only edit files explicitly listed in the prompt\n- Return a summary of what was changed and whether verify passed"
+    },
+    "agykit-escalate": {
+      "description": "Delegate a code task with model escalation (Flash -> Pro -> Opus)",
+      "mode": "subagent",
+      "model": "cc/claude-sonnet-4-6",
+      "prompt": "You are an expert coding agent. Implement the requested change precisely.\n- Run the verify command after implementation\n- If verify fails, fix the issue and retry (up to 3 attempts)\n- Never run git commands\n- Never delete or weaken tests\n- Only edit the files listed in the prompt"
+    }
+  }
+}

@@ -58,6 +58,29 @@ Dashboard collectors: agy model quota (tmux), job status, Codex account/usage st
 Claude Code quota, RTK token savings, activity feed.
 Dashboard uses SSE typed events — only affected cards refresh on data change.
 
+## OpenCode Integration
+
+The installer copies:
+- **Skill** → `~/.agents/skills/agykit/SKILL.md` (auto-loaded from `~/.agents/skills/`)
+- **Plugin** → `~/.config/opencode/plugins/agykit/plugin.js` (auto-loaded from `plugins/`)
+- **Command** → `.opencode/commands/agykit.md` (slash command `/agykit`)
+
+The plugin registers a custom `agykit` tool and lifecycle hooks. OpenCode
+subagents can be added to `opencode.json`:
+
+```json
+"agykit-run": {
+  "description": "Run a prompt through agykit with quota-aware account rotation",
+  "mode": "subagent",
+  "model": "9router/zekiler-bedava"
+},
+"agykit-escalate": {
+  "description": "Escalate a code task through agykit (Flash → Pro → Opus) with verify",
+  "mode": "subagent",
+  "model": "cc/claude-sonnet-4-6"
+}
+```
+
 ## Agent Detection
 
 `agykit` auto-detects the running agent (Codex, Claude Code, OpenCode) and
