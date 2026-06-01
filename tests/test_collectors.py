@@ -1,7 +1,6 @@
 import json
 import os
 
-import pytest
 
 from dashboard import collectors
 
@@ -90,7 +89,7 @@ class _FakeProc:
 
 def test_rtk_stats_parse(monkeypatch):
     monkeypatch.setattr(
-        "dashboard.collectors.subprocess.run",
+        "dashboard.collectors.rtk.subprocess.run",
         lambda *a, **kw: _FakeProc(_RTK_SAMPLE),
     )
     s = collectors.rtk_stats()
@@ -107,7 +106,7 @@ def test_rtk_stats_parse(monkeypatch):
 
 def test_rtk_stats_subprocess_failure(monkeypatch):
     monkeypatch.setattr(
-        "dashboard.collectors.subprocess.run",
+        "dashboard.collectors.rtk.subprocess.run",
         lambda *a, **kw: (_ for _ in ()).throw(OSError("rtk not found")),
     )
     s = collectors.rtk_stats()

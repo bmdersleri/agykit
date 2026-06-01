@@ -113,7 +113,7 @@ class _FakeProc:
 
 def test_api_rtk_stats(monkeypatch):
     monkeypatch.setattr(
-        "dashboard.collectors.subprocess.run",
+        "dashboard.collectors.rtk.subprocess.run",
         lambda *a, **kw: _FakeProc(),
     )
     srv = _boot()

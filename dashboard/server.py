@@ -9,10 +9,9 @@ _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
 # Invalidate any stale cached import before loading
-if "dashboard.collectors" in sys.modules:
-    del sys.modules["dashboard.collectors"]
-if "dashboard" in sys.modules:
-    del sys.modules["dashboard"]
+for _k in list(sys.modules):
+    if _k == "dashboard" or _k.startswith("dashboard.collectors"):
+        del sys.modules[_k]
 from dashboard import collectors  # noqa: E402
 
 
