@@ -203,6 +203,25 @@ def job_event(job_id: str, event_type: str, status: str, stage: str,
         "account": account, "model": model,
         "message": message, "error": error,
     })
+    if status in ("succeeded", "failed", "blocked"):
+        try:
+            from dashboard.notify import notify as _notify
+            cmd = ""
+            conn2 = _get_db()
+            try:
+                row = conn2.execute(
+                    "SELECT command FROM jobs WHERE job_id=?", (job_id,)
+                ).fetchone()
+                if row:
+                    cmd = row["command"]
+            finally:
+                conn2.close()
+            summary = f"agykit job `{job_id[:12]}` *{status}* — {cmd[:60]}"
+            if status == "failed":
+                summary += f" | error: {message[:100]}" if message else " | error"
+            _notify(job_id, status, summary)
+        except Exception:
+            pass
 
 
 def job_snapshot(job_id: str) -> dict | None:
