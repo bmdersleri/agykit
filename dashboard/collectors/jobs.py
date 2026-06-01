@@ -58,6 +58,7 @@ CREATE INDEX IF NOT EXISTS idx_jobs_started  ON jobs(started_at);
 
 
 def _get_db() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     first = not os.path.isfile(DB_PATH)
     conn = sqlite3.connect(DB_PATH, timeout=5)
     conn.row_factory = sqlite3.Row

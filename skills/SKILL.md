@@ -1,6 +1,6 @@
 ---
 name: agykit
-description: Use when user asks to run agy commands, manage Google accounts, switch models, quota rotation, or interact with Antigravity CLI. Keywords: agykit, agy, antigravity, account switch, model switch, do-escalate.
+description: "Use when user asks to run agy commands, manage Google accounts, switch models, quota rotation, or interact with Antigravity CLI. Keywords: agykit, agy, antigravity, account switch, model switch, do-escalate."
 ---
 
 # agykit — Antigravity CLI Manager

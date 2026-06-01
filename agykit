@@ -348,12 +348,36 @@ elif op == "cancel":
 PY
 }
 
+# Check for active jobs before starting a new one.
+# Returns 0 if safe to start, 1 if active jobs exist.
+_can_start_job() {
+    local force=0; [ "${1:-}" = "--force" ] && force=1
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 -c "
+import sys
+sys.path.insert(0, '$repo')
+from dashboard.collectors.jobs import job_list, _ACTIVE_STATUSES
+active = [j for j in job_list(limit=50) if j.get('status') in _ACTIVE_STATUSES]
+if active:
+    print(f'WARNING: {len(active)} job(s) still active:', file=sys.stderr)
+    for j in active:
+        print(f'  {j[\"job_id\"]}  {j.get(\"command\",\"\")}', file=sys.stderr)
+    sys.exit(1)
+" 2>&1 || [ "$force" -eq 1 ] || { echo "Use --force to start anyway."; return 1; }
+    return 0
+}
+
 # Run agy with quota-aware account rotation. Returns 0 on first success.
 # Accounts sorted by quota status: available first, exhausted last.
 cmd_run() {
-    local prompt="$1"
+    local prompt="" force=0; local args=("$@")
+    for a in "${args[@]}"; do
+        if [ "$a" = "--force" ]; then force=1; else prompt="$a"; fi
+    done
+    [ -z "$prompt" ] && { echo "Usage: agykit run [--force] <prompt>"; exit 1; }
     mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
     [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
+    _can_start_job "$([ "$force" -eq 1 ] && echo "--force")" || exit 1
     mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
     _job_ensure_daemon
     local job_id; job_id=$(_job_op create "run" "$prompt")
@@ -381,8 +405,13 @@ cmd_run() {
 # A non-destructive snapshot lets us roll back ONLY agy's changes on failure,
 # and _normalize_head neutralizes any commit/reset agy makes on its own.
 cmd_do_escalate() {
-    local prompt="$1"
+    local prompt="" force=0; local args=("$@")
+    for a in "${args[@]}"; do
+        if [ "$a" = "--force" ]; then force=1; else prompt="$a"; fi
+    done
+    [ -z "$prompt" ] && { echo "Usage: agykit do-escalate [--force] <prompt>"; exit 1; }
     [ -z "$VERIFY_CMD" ] && { echo "AGYKIT_VERIFY not set — escalate needs a verify command"; exit 1; }
+    _can_start_job "$([ "$force" -eq 1 ] && echo "--force")" || exit 1
     local orig; orig=$(python3 -c "import json;print(json.load(open('$AGY_SETTINGS')).get('model',''))")
     mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
     [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
@@ -1350,8 +1379,8 @@ agykit — portable Antigravity (agy) CLI manager
   agykit account-add             Guided: launch agy → login → snapshot
   agykit account-remove <email>  Remove a saved account snapshot
   agykit switch <email>          Switch to a saved account
-  agykit run "prompt"            Quota-aware run (rotate accounts)
-  agykit do-escalate "prompt"    Model ladder on verify fail (needs AGYKIT_VERIFY)
+  agykit run [--force] "prompt"  Quota-aware run (--force bypasses concurrency guard)
+  agykit do-escalate [--force] "prompt"  Model ladder on verify fail (needs AGYKIT_VERIFY)
   agykit dash [--port N]          Open the usage dashboard (localhost)
   agykit codex [--json|--status]  Show Codex account/usage information
   agykit quota [--refresh]        Show model quota table (cached 5min)
@@ -1399,8 +1428,8 @@ case "${1:-}" in
     account-add)    cmd_account_add ;;
     account-remove) cmd_account_remove "${2:-}" ;;
     switch)        cmd_account_switch "${2:-}" ;;
-    run)           cmd_run "${2:-}" ;;
-    do-escalate)   cmd_do_escalate "${2:-}" ;;
+    run)           cmd_run "${@:2}" ;;
+    do-escalate)   cmd_do_escalate "${@:2}" ;;
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
     codex)         cmd_codex "${@:2}" ;;

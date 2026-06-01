@@ -55,6 +55,7 @@ _ACTIVE_STATUSES = frozenset(
 
 
 def _get_db() -> sqlite3.Connection:
+    os.makedirs(os.path.dirname(DB_PATH), exist_ok=True)
     conn = sqlite3.connect(DB_PATH, timeout=5)
     conn.row_factory = sqlite3.Row
     conn.executescript("PRAGMA journal_mode=WAL;")
@@ -127,30 +128,58 @@ class JobDaemon:
     def _recover_stale_jobs(self):
         conn = _get_db()
         try:
-            cutoff = (
-                datetime.now(timezone.utc) - timedelta(seconds=STALE_TIMEOUT)
-            ).isoformat()
-            rows = conn.execute(
+            now = datetime.now(timezone.utc)
+            now_iso = now.isoformat()
+
+            stale_cutoff = (now - timedelta(seconds=STALE_TIMEOUT)).isoformat()
+            stale_rows = conn.execute(
                 """SELECT job_id, command FROM jobs
                    WHERE status IN ('starting','running','verifying','rotating','rolling_back')
                    AND updated_at < ?""",
-                (cutoff,),
+                (stale_cutoff,),
             ).fetchall()
+
+            raw_timeout = os.environ.get("AGYKIT_JOB_TIMEOUT", "1800")
+            job_timeout = int(raw_timeout) if raw_timeout else 0
+            timed_out_rows = []
+            if job_timeout > 0:
+                timeout_cutoff = (now - timedelta(seconds=job_timeout)).isoformat()
+                timed_out_rows = conn.execute(
+                    """SELECT job_id, command FROM jobs
+                       WHERE status IN ('running','verifying','rotating','rolling_back')
+                       AND started_at < ?""",
+                    (timeout_cutoff,),
+                ).fetchall()
+
+            rows = stale_rows + [
+                r for r in timed_out_rows
+                if r["job_id"] not in {x["job_id"] for x in stale_rows}
+            ]
+
             if not rows:
                 return
-            now_iso = datetime.now(timezone.utc).isoformat()
             for row in rows:
                 jid = row["job_id"]
+                is_timeout = row["job_id"] in {x["job_id"] for x in timed_out_rows}
+                if is_timeout:
+                    event_type = "job_timed_out"
+                    stage = "timed_out"
+                    msg = f"Timed out after {job_timeout}s — cancelled by daemon"
+                else:
+                    event_type = "job_blocked"
+                    stage = "recovered"
+                    msg = f"Recovered by daemon — no activity for {STALE_TIMEOUT}s+"
                 conn.execute(
                     """INSERT INTO events
                        (job_id, ts, event, status, stage, message)
-                       VALUES (?, ?, 'job_blocked', 'blocked', 'recovered', ?)""",
-                    (jid, now_iso, f"Recovered by daemon — no activity for {STALE_TIMEOUT}s+"),
+                       VALUES (?, ?, ?, 'failed', ?, ?)""",
+                    (jid, now_iso, event_type, stage, msg),
                 )
                 conn.execute(
-                    """UPDATE jobs SET status='blocked', stage='recovered',
-                       updated_at=?, ended_at=? WHERE job_id=?""",
-                    (now_iso, now_iso, jid),
+                    """UPDATE jobs SET status='failed', stage=?,
+                       updated_at=?, ended_at=?, last_error=?
+                       WHERE job_id=?""",
+                    (stage, now_iso, now_iso, msg, jid),
                 )
             conn.commit()
         except Exception:
