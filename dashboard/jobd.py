@@ -9,10 +9,13 @@ import fcntl
 import sqlite3
 from datetime import datetime, timezone, timedelta
 
-DAEMON_DIR = os.path.expanduser("~/.gemini")
-PID_FILE = os.path.join(DAEMON_DIR, "agykit-jobd.pid")
-SOCK_PATH = os.path.expanduser("~/.gemini/agykit-jobs.sock")
-DB_PATH = os.path.expanduser("~/.gemini/agykit-jobs.db")
+from dashboard.state import resolve_job_state
+
+_STATE = resolve_job_state()
+DAEMON_DIR = _STATE["state_dir"]
+PID_FILE = _STATE["pid_file"]
+SOCK_PATH = _STATE["socket_path"]
+DB_PATH = _STATE["db_path"]
 HEARTBEAT_INTERVAL = 10
 STALE_TIMEOUT = 300
 

@@ -235,6 +235,8 @@ agykit status                # includes active job + codex + rtk info
 The dashboard shows an **Aktif Job** card with current status, stage, account,
 model, and the 5 most recent events. It auto-refreshes alongside the existing
 SSE refresh cycle.
+If `~/.gemini` is not writable in the current environment, agykit copies the
+job store to a writable temp directory and keeps using that automatically.
 
 ### Job lifecycle
 

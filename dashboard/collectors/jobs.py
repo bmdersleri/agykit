@@ -7,6 +7,8 @@ import uuid
 import sys
 from datetime import datetime, timezone
 
+from dashboard.state import resolve_job_state
+
 # Lazy import: avoid circular dep when jobd.py loads this module
 def _ensure_daemon():
     try:
@@ -16,9 +18,10 @@ def _ensure_daemon():
     except Exception:
         pass
 
-DB_PATH = os.path.expanduser("~/.gemini/agykit-jobs.db")
-_OLD_JSON_DIR = os.path.expanduser("~/.gemini/agykit-jobs")
-_JOB_SOCKET = os.path.expanduser("~/.gemini/agykit-jobs.sock")
+_STATE = resolve_job_state()
+DB_PATH = _STATE["db_path"]
+_OLD_JSON_DIR = _STATE["old_job_dir"]
+_JOB_SOCKET = _STATE["socket_path"]
 _ACTIVE_STATUSES = frozenset({"starting", "running", "verifying", "rotating", "rolling_back"})
 JOB_STALE_TIMEOUT = 300  # 5 minutes
 
