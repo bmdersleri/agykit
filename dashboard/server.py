@@ -120,6 +120,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     pass
             self.serve_json(collectors.cc_activity(limit=limit))
+        elif path == "/api/codex-status":
+            self.serve_json(collectors.codex_status())
         elif path == "/api/codex-usage":
             limit = 20
             if "limit=" in parsed.query:

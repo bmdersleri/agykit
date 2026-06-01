@@ -709,6 +709,40 @@
             });
         }
 
+        // ── Codex Hesap Durumu Kartı ──
+        const codexAccountBody = document.getElementById('codexAccountBody');
+
+        function loadCodexStatus() {
+            if (!codexAccountBody) return;
+            codexAccountBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
+            fetch('/api/codex-status').then(r => r.json()).then(data => {
+                if (!data.available) {
+                    codexAccountBody.innerHTML = `<div class="cq-unavail">${data.warning || 'Codex hesap verisi bulunamadı.'}</div>`;
+                    return;
+                }
+                const acct = data.account || {};
+                const model = data.current_model || '—';
+                const threads = data.thread_count || 0;
+                const tokens = fmtNum(data.total_tokens_used || 0);
+                const email = acct.email || '—';
+                const plan = acct.plan_type || '—';
+                const sub = acct.subscription_active_until ? fmtTime(acct.subscription_active_until) : '—';
+                codexAccountBody.innerHTML = `
+                    <table class="sl-table">
+                        <tr><td class="sl-key">E-posta</td><td class="sl-val">${escapeHtml(email)}</td></tr>
+                        <tr><td class="sl-key">Plan</td><td class="sl-val">${escapeHtml(plan)}</td></tr>
+                        <tr><td class="sl-key">Abonelik</td><td class="sl-val">${escapeHtml(sub)}</td></tr>
+                        <tr><td class="sl-key">Model</td><td class="sl-val">${escapeHtml(model)}</td></tr>
+                        <tr><td class="sl-key">Thread</td><td class="sl-val">${threads}</td></tr>
+                        <tr><td class="sl-key">Token</td><td class="sl-val">${tokens}</td></tr>
+                    </table>
+                    ${data.warning ? `<div class="codex-warning">${escapeHtml(data.warning)}</div>` : ''}
+                `;
+            }).catch(e => {
+                codexAccountBody.innerHTML = `<div class="cq-unavail">Yüklenemedi: ${escapeHtml(e)}</div>`;
+            });
+        }
+
         // ── agy Canlı Durum (aktif hesap kartına enjekte edilir) ──
         function loadStatusline() {
             const statuslineBody = document.getElementById('statuslineBody');
@@ -1217,6 +1251,7 @@
         loadData();
         loadClaudeQuota();
         loadCodexUsage();
+        loadCodexStatus();
         loadQuota();
         loadStatusline();
         loadLastSession();
@@ -1248,6 +1283,7 @@
                     loadData();
                     loadClaudeQuota();
                     loadCodexUsage();
+                    loadCodexStatus();
                     loadQuota();
                     loadLastSession();
                     loadActivityFeed();
