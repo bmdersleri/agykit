@@ -551,15 +551,89 @@ _cmd_job_repo() {
 
 cmd_jobs() {
     local repo; repo=$(_cmd_job_repo)
-    PYTHONPATH="$repo" python3 - "${1:-20}" <<'PY'
-import sys
+    PYTHONPATH="$repo" python3 - "$@" <<'PY'
+import sys, json
 sys.path.insert(0, '')
-from dashboard.collectors.jobs import job_list
-from datetime import datetime, timezone
-jobs = job_list(limit=int(sys.argv[1]))
+from dashboard.collectors.jobs import job_list, job_stats
+from datetime import datetime, timezone, timedelta
+
+args = sys.argv[1:]
+
+limit = 20
+status_f = None
+command_f = None
+account_f = None
+since_f = None
+until_f = None
+json_mode = False
+stats_mode = False
+
+i = 0
+while i < len(args):
+    a = args[i]
+    if a == "--json":
+        json_mode = True
+    elif a == "--stats":
+        stats_mode = True
+    elif a.startswith("--limit="):
+        limit = int(a.split("=", 1)[1])
+    elif a == "--limit" and i + 1 < len(args):
+        limit = int(args[i + 1]); i += 1
+    elif a.startswith("--status="):
+        status_f = a.split("=", 1)[1]
+    elif a == "--status" and i + 1 < len(args):
+        status_f = args[i + 1]; i += 1
+    elif a.startswith("--command="):
+        command_f = a.split("=", 1)[1]
+    elif a == "--command" and i + 1 < len(args):
+        command_f = args[i + 1]; i += 1
+    elif a.startswith("--account="):
+        account_f = a.split("=", 1)[1]
+    elif a == "--account" and i + 1 < len(args):
+        account_f = args[i + 1]; i += 1
+    elif a.startswith("--since="):
+        since_f = a.split("=", 1)[1]
+    elif a == "--since" and i + 1 < len(args):
+        since_f = args[i + 1]; i += 1
+    elif a.startswith("--until="):
+        until_f = a.split("=", 1)[1]
+    elif a == "--until" and i + 1 < len(args):
+        until_f = args[i + 1]; i += 1
+    else:
+        try:
+            limit = int(a)
+        except ValueError:
+            print(f"Unknown arg: {a}", file=sys.stderr)
+            raise SystemExit(1)
+    i += 1
+
+if stats_mode:
+    s = job_stats()
+    if json_mode:
+        print(json.dumps(s, indent=2))
+    else:
+        print(f"Jobs total: {s['total']}")
+        for st, cnt in sorted(s['by_status'].items()):
+            print(f"  {st}: {cnt}")
+        r = s['last_24h']
+        if r['total']:
+            detail = ", ".join(f"{cnt} {st}" for st, cnt in sorted(r['by_status'].items()))
+            print(f"\nLast 24h: {r['total']} jobs ({detail})")
+    raise SystemExit(0)
+
+jobs = job_list(
+    limit=limit, status=status_f, command=command_f,
+    account=account_f, since=since_f, until=until_f,
+)
+
+if json_mode:
+    print(json.dumps(jobs, indent=2, default=str))
+    raise SystemExit(0)
+
 if not jobs:
     print("No jobs found.")
     raise SystemExit(0)
+
 print(f"{'JOB ID':<28} {'CMD':<14} {'STATUS':<12} {'STAGE':<22} {'AGE'}")
 print("-" * 92)
 for j in jobs:
@@ -1081,8 +1155,14 @@ agykit — portable Antigravity (agy) CLI manager
   agykit doctor --fix            Auto-fix resolvable issues
   agykit init                    Interactive project setup (.agykit.conf + system context)
   agykit status                  One-line: active account | model | quota summary
+  agykit stats                   Job statistics (total, by status, last 24h)
   agykit log [N]                 Show last N ops log entries (default: 20)
   agykit jobs [N]                Show N most recent jobs (default: 20)
+  agykit jobs --status failed    Filter jobs by status
+  agykit jobs --command run      Filter jobs by command
+  agykit jobs --since 24h        Filter jobs by time range (ISO-8601)
+  agykit jobs --json             Machine-readable JSON output
+  agykit jobs --stats            Job statistics summary
   agykit watch <job-id>          Live-stream a job's status and events
   agykit tail                    Live-tail all job events (socket)
   agykit cancel <job-id>         Cancel a running/starting job
@@ -1114,6 +1194,7 @@ case "${1:-}" in
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
     status)        cmd_status ;;
+    stats)         cmd_jobs --stats ;;
     log)           cmd_log "${2:-}" ;;
     jobs)          cmd_jobs "${2:-}" ;;
     watch)         cmd_job_watch "${2:-}" ;;

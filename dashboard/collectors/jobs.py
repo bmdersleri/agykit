@@ -260,15 +260,66 @@ def _recover_stale_jobs(conn: sqlite3.Connection, force: bool = False):
         conn.commit()
 
 
-def job_list(limit: int = 20) -> list[dict]:
+def job_list(
+    limit: int = 20,
+    status: str | None = None,
+    command: str | None = None,
+    account: str | None = None,
+    since: str | None = None,
+    until: str | None = None,
+) -> list[dict]:
     conn = _get_db()
     try:
         _recover_stale_jobs(conn)
         _auto_prune_if_needed(conn)
-        rows = conn.execute(
-            "SELECT * FROM jobs ORDER BY started_at DESC LIMIT ?", (limit,)
-        ).fetchall()
+        wheres: list[str] = []
+        params: list = []
+        if status:
+            wheres.append("status = ?")
+            params.append(status)
+        if command:
+            wheres.append("command = ?")
+            params.append(command)
+        if account:
+            wheres.append("account = ?")
+            params.append(account)
+        if since:
+            wheres.append("started_at >= ?")
+            params.append(since)
+        if until:
+            wheres.append("started_at <= ?")
+            params.append(until)
+        where_clause = ""
+        if wheres:
+            where_clause = "WHERE " + " AND ".join(wheres)
+        sql = f"SELECT * FROM jobs {where_clause} ORDER BY started_at DESC LIMIT ?"
+        rows = conn.execute(sql, (*params, limit)).fetchall()
         return [dict(r) for r in rows]
+    finally:
+        conn.close()
+
+
+def job_stats() -> dict:
+    conn = _get_db()
+    try:
+        _recover_stale_jobs(conn)
+        total = conn.execute("SELECT COUNT(*) AS c FROM jobs").fetchone()["c"]
+        by_status: dict[str, int] = {}
+        for row in conn.execute("SELECT status, COUNT(*) AS c FROM jobs GROUP BY status").fetchall():
+            by_status[row["status"]] = row["c"]
+        from datetime import datetime, timezone, timedelta
+        since_24h = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
+        recent = conn.execute(
+            "SELECT status, COUNT(*) AS c FROM jobs WHERE started_at >= ? GROUP BY status",
+            (since_24h,),
+        ).fetchall()
+        recent_by_status = {r["status"]: r["c"] for r in recent}
+        recent_total = sum(recent_by_status.values())
+        return {
+            "total": total,
+            "by_status": by_status,
+            "last_24h": {"total": recent_total, "by_status": recent_by_status},
+        }
     finally:
         conn.close()
 

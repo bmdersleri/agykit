@@ -833,3 +833,42 @@ def test_job_prune_max_count(tmp_path, monkeypatch):
     job_prune(max_count=3, dry_run=False)
     jobs = job_list(limit=100)
     assert len(jobs) <= 3
+
+
+# ── Filter / stats tests ────────────────────────────────────────────────────
+
+def test_job_list_filter_status(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_list
+    jid1 = job_create("run", "a")
+    jid2 = job_create("run", "b")
+    job_event(jid1, "job_succeeded", "succeeded", "done")
+    succeeded = job_list(status="succeeded")
+    starting = job_list(status="starting")
+    assert any(j["job_id"] == jid1 for j in succeeded)
+    assert any(j["job_id"] == jid2 for j in starting)
+
+
+def test_job_list_filter_command(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_list
+    jid1 = job_create("run", "x")
+    jid2 = job_create("do-escalate", "y")
+    runs = job_list(command="run")
+    assert any(j["job_id"] == jid1 for j in runs)
+    assert not any(j["job_id"] == jid2 for j in runs)
+
+
+def test_job_stats_returns_summary(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_stats
+    for _ in range(3):
+        jid = job_create("run", "x")
+        job_event(jid, "job_succeeded", "succeeded", "done")
+    s = job_stats()
+    assert s["total"] >= 3
+    assert s["by_status"].get("succeeded", 0) >= 3
+    assert "last_24h" in s
