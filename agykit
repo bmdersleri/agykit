@@ -964,7 +964,10 @@ PY
     local codex_info
     codex_info=$(cmd_codex --status 2>/dev/null || echo "")
     [ -n "$codex_info" ] && codex_info=" | $codex_info"
-    echo "${email} | ${model} | ${quota}${job_info}${codex_info}"
+    local rtk_info
+    rtk_info=$(cmd_rtk --json 2>/dev/null | python3 -c "import json,sys; d=json.load(sys.stdin); print(f'rtk:{d[\"efficiency_pct\"]:.0f}%')" 2>/dev/null || echo "")
+    [ -n "$rtk_info" ] && rtk_info=" | $rtk_info"
+    echo "${email} | ${model} | ${quota}${job_info}${codex_info}${rtk_info}"
 }
 
 _quota_alert() {
@@ -1065,6 +1068,35 @@ if pj.get("sessions", 0) > 0:
 w = status.get("warning") or usage.get("warning")
 if w:
     print(f"\n  Warning: {w}")
+PY
+}
+
+cmd_rtk() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    local json_mode=0
+    for arg in "$@"; do [ "$arg" = "--json" ] && json_mode=1; done
+    PYTHONPATH="$repo" python3 - "$json_mode" <<'PY'
+import sys, json
+sys.path.insert(0, '')
+from dashboard.collectors.rtk import rtk_stats
+
+def _fmt(n):
+    if n >= 1_000_000: return f"{n/1_000_000:.1f}M"
+    if n >= 1_000: return f"{n/1_000:.0f}K"
+    return str(n)
+
+data = rtk_stats()
+if int(sys.argv[1]):
+    print(json.dumps(data, indent=2))
+elif data.get("warning"):
+    print(f"RTK: unavailable  [{data['warning']}]")
+else:
+    print(f"RTK Stats")
+    print(f"  Commands:     {data['total_commands']}")
+    print(f"  Tokens saved: {_fmt(data['tokens_saved'])} ({data['efficiency_pct']:.1f}%)")
+    if data["top_commands"]:
+        print(f"  Top: {data['top_commands'][0]['cmd']} saved {_fmt(data['top_commands'][0]['saved'])}")
 PY
 }
 
@@ -1280,6 +1312,7 @@ agykit — portable Antigravity (agy) CLI manager
   agykit quota [--refresh]        Show model quota table (cached 5min)
   agykit quota --json             Machine-readable JSON quota output
   agykit quota --status           One-line summary for scripts/statusline
+  agykit rtk                     Show RTK token savings statistics
   agykit doctor                  Check installation and system file dependencies
   agykit doctor --fix            Auto-fix resolvable issues
   agykit init                    Interactive project setup (.agykit.conf + system context)
@@ -1332,6 +1365,7 @@ case "${1:-}" in
     cancel)        cmd_job_cancel "${2:-}" ;;
     prune)         cmd_job_prune "${@:2}" ;;
     job-log)       cmd_job_log "${2:-}" ;;
+    rtk)           cmd_rtk "${@:2}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;
