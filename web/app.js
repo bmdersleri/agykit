@@ -1261,36 +1261,63 @@
         loadQuotaAlerts();
         setInterval(loadRtkStats, 60_000);
 
-        // SSE connection — statusline updates on every event; heavy rebuilds throttled
-        const HEAVY_REFRESH_INTERVAL_MS = 60_000; // quota grid + charts max once/min via SSE
+        // SSE connection — typed events for selective refresh
+        const HEAVY_REFRESH_INTERVAL_MS = 60_000;
         let lastHeavyRefresh = 0;
 
         function connectSSE() {
             const es = new EventSource('/events');
-            es.onmessage = function(ev) {
-                if (ev.data !== 'refresh') return;
 
-                liveDot.classList.remove('flash');
-                void liveDot.offsetWidth;
-                liveDot.classList.add('flash');
+            es.addEventListener('meta', function(ev) {
+                // connected
+            });
 
-                // Statusline is lightweight — always refresh (live session data)
+            function onEvent(eventType, fn) {
+                es.addEventListener(eventType, function(ev) {
+                    liveDot.classList.remove('flash');
+                    void liveDot.offsetWidth;
+                    liveDot.classList.add('flash');
+                    fn();
+                });
+            }
+
+            // Lightweight — refresh on every change
+            onEvent('statusline', loadStatusline);
+
+            // Medium weight — refresh on specific source changes
+            onEvent('claude', function() {
+                loadClaudeQuota();
+                loadData();
+                loadActivityFeed();
+            });
+            onEvent('codex', function() {
+                loadCodexUsage();
+                loadCodexStatus();
+            });
+            onEvent('quota', function() {
+                loadQuota();
                 loadStatusline();
+            });
 
-                const now = Date.now();
-                if (now - lastHeavyRefresh >= HEAVY_REFRESH_INTERVAL_MS) {
-                    lastHeavyRefresh = now;
-                    loadData();
-                    loadClaudeQuota();
-                    loadCodexUsage();
-                    loadCodexStatus();
-                    loadQuota();
-                    loadLastSession();
-                    loadActivityFeed();
-                    loadActiveJob();
-                    loadQuotaAlerts();
+            // Catch-all for unknown event types (throttled full refresh)
+            es.onmessage = function(ev) {
+                if (ev.data === 'refresh') {
+                    const now = Date.now();
+                    if (now - lastHeavyRefresh >= HEAVY_REFRESH_INTERVAL_MS) {
+                        lastHeavyRefresh = now;
+                        loadData();
+                        loadClaudeQuota();
+                        loadCodexUsage();
+                        loadCodexStatus();
+                        loadQuota();
+                        loadLastSession();
+                        loadActivityFeed();
+                        loadActiveJob();
+                        loadQuotaAlerts();
+                    }
                 }
             };
+
             es.onerror = function() {
                 es.close();
                 setTimeout(connectSSE, 5000);

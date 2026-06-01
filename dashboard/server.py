@@ -15,53 +15,66 @@ for _k in list(sys.modules):
 from dashboard import collectors  # noqa: E402
 
 
-def get_current_mtime_state():
-    stats_path = os.environ.get("AGYKIT_DASH_STATS") or os.path.expanduser(
-        "~/.claude/stats-cache.json"
-    )
-    brain_dir = os.environ.get("AGYKIT_DASH_BRAIN") or os.path.expanduser(
-        "~/.gemini/antigravity-cli/brain"
-    )
-    codex_home = os.environ.get("AGYKIT_DASH_CODEX_HOME") or os.path.expanduser(
-        "~/.codex"
-    )
-    codex_paths = [
-        os.environ.get("AGYKIT_DASH_CODEX_HISTORY")
-        or os.path.join(codex_home, "history.jsonl"),
-        os.environ.get("AGYKIT_DASH_CODEX_SESSION_INDEX")
-        or os.path.join(codex_home, "session_index.jsonl"),
-        os.environ.get("AGYKIT_DASH_CODEX_STATE")
-        or os.path.join(codex_home, "state_5.sqlite"),
-    ]
+def _get_mtime(path):
+    try:
+        return os.path.getmtime(path) if os.path.isfile(path) else 0.0
+    except Exception:
+        return 0.0
 
-    stats_mtime = 0.0
-    if os.path.isfile(stats_path):
-        try:
-            stats_mtime = os.path.getmtime(stats_path)
-        except Exception:
-            pass
 
-    newest_brain_mtime = 0.0
-    if os.path.isdir(brain_dir):
-        try:
-            pattern = os.path.join(
-                brain_dir, "*", ".system_generated", "logs", "transcript_full.jsonl"
-            )
-            files = glob.glob(pattern)
-            if files:
-                newest_brain_mtime = max(os.path.getmtime(f) for f in files)
-        except Exception:
-            pass
+def _newest_glob(pattern):
+    try:
+        files = glob.glob(pattern)
+        return max(os.path.getmtime(f) for f in files) if files else 0.0
+    except Exception:
+        return 0.0
 
-    newest_codex_mtime = 0.0
-    for path in codex_paths:
-        if os.path.isfile(path):
-            try:
-                newest_codex_mtime = max(newest_codex_mtime, os.path.getmtime(path))
-            except Exception:
-                pass
 
-    return stats_mtime, newest_brain_mtime, newest_codex_mtime
+_MTIME_CACHE = {}
+
+
+def _check_mtimes():
+    """Return dict of changed source types since last call."""
+    changes = {}
+    checks = {
+        "claude-stats": os.environ.get("AGYKIT_DASH_STATS")
+        or os.path.expanduser("~/.claude/stats-cache.json"),
+        "claude-brain": os.path.join(
+            os.environ.get("AGYKIT_DASH_BRAIN")
+            or os.path.expanduser("~/.gemini/antigravity-cli/brain"),
+            "*", ".system_generated", "logs", "transcript_full.jsonl",
+        ),
+        "codex-history": os.environ.get("AGYKIT_DASH_CODEX_HISTORY")
+        or os.path.expanduser("~/.codex/history.jsonl"),
+        "codex-sessions": os.environ.get("AGYKIT_DASH_CODEX_SESSION_INDEX")
+        or os.path.expanduser("~/.codex/session_index.jsonl"),
+        "codex-state": os.environ.get("AGYKIT_DASH_CODEX_STATE")
+        or os.path.expanduser("~/.codex/state_5.sqlite"),
+        "quota-cache": os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json"),
+        "statusline": os.path.expanduser("~/.gemini/antigravity-cli/statusline-latest.json"),
+    }
+    for key, path in checks.items():
+        if key.endswith("-brain"):
+            mtime = _newest_glob(path)
+        else:
+            mtime = _get_mtime(path)
+        prev = _MTIME_CACHE.get(key, 0.0)
+        if mtime > prev:
+            changes[key] = mtime
+        _MTIME_CACHE[key] = mtime
+
+    # Map source keys to event types
+    event_map = {}
+    for k in changes:
+        if k.startswith("claude-"):
+            event_map["claude"] = changes[k]
+        elif k.startswith("codex-"):
+            event_map["codex"] = changes[k]
+        elif k == "quota-cache":
+            event_map["quota"] = changes[k]
+        elif k == "statusline":
+            event_map["statusline"] = changes[k]
+    return event_map
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -251,6 +264,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
+    def _write_sse(self, event_type, data="refresh"):
+        try:
+            msg = f"event: {event_type}\ndata: {data}\n\n"
+            self.wfile.write(msg.encode())
+            self.wfile.flush()
+        except (BrokenPipeError, ConnectionResetError):
+            raise
+
     def serve_events(self):
         self.send_response(200)
         self.send_header("Content-Type", "text/event-stream")
@@ -258,23 +279,21 @@ class DashboardHandler(BaseHTTPRequestHandler):
         self.send_header("Connection", "keep-alive")
         self.end_headers()
 
-        try:
-            self.wfile.write(b"data: hello\n\n")
-            self.wfile.flush()
-        except (BrokenPipeError, ConnectionResetError):
-            return
-
-        last_state = get_current_mtime_state()
         import time
 
         try:
+            self._write_sse("meta", "connected")
+        except (BrokenPipeError, ConnectionResetError):
+            return
+
+        try:
             while True:
-                time.sleep(10)
-                current_state = get_current_mtime_state()
-                if current_state != last_state:
-                    self.wfile.write(b"data: refresh\n\n")
-                    self.wfile.flush()
-                    last_state = current_state
+                time.sleep(5)
+                changes = _check_mtimes()
+                if not changes:
+                    continue
+                for event_type in changes:
+                    self._write_sse(event_type)
         except (BrokenPipeError, ConnectionResetError):
             return
         except Exception:
