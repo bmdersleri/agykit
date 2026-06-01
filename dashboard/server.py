@@ -22,6 +22,17 @@ def get_current_mtime_state():
     brain_dir = os.environ.get("AGYKIT_DASH_BRAIN") or os.path.expanduser(
         "~/.gemini/antigravity-cli/brain"
     )
+    codex_home = os.environ.get("AGYKIT_DASH_CODEX_HOME") or os.path.expanduser(
+        "~/.codex"
+    )
+    codex_paths = [
+        os.environ.get("AGYKIT_DASH_CODEX_HISTORY")
+        or os.path.join(codex_home, "history.jsonl"),
+        os.environ.get("AGYKIT_DASH_CODEX_SESSION_INDEX")
+        or os.path.join(codex_home, "session_index.jsonl"),
+        os.environ.get("AGYKIT_DASH_CODEX_STATE")
+        or os.path.join(codex_home, "state_5.sqlite"),
+    ]
 
     stats_mtime = 0.0
     if os.path.isfile(stats_path):
@@ -42,7 +53,15 @@ def get_current_mtime_state():
         except Exception:
             pass
 
-    return stats_mtime, newest_brain_mtime
+    newest_codex_mtime = 0.0
+    for path in codex_paths:
+        if os.path.isfile(path):
+            try:
+                newest_codex_mtime = max(newest_codex_mtime, os.path.getmtime(path))
+            except Exception:
+                pass
+
+    return stats_mtime, newest_brain_mtime, newest_codex_mtime
 
 
 class DashboardHandler(BaseHTTPRequestHandler):
@@ -101,6 +120,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     pass
             self.serve_json(collectors.cc_activity(limit=limit))
+        elif path == "/api/codex-usage":
+            limit = 20
+            if "limit=" in parsed.query:
+                try:
+                    limit = int(parsed.query.split("limit=")[1].split("&")[0])
+                except ValueError:
+                    pass
+            self.serve_json(collectors.codex_usage(limit=limit))
         elif path == "/api/activity-feed":
             limit = 25
             if "limit=" in parsed.query:

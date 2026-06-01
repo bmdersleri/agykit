@@ -1,5 +1,6 @@
 import json
 import os
+import sqlite3
 
 
 from dashboard import collectors
@@ -161,6 +162,95 @@ def test_cc_activity_latest_stats(tmp_path):
     assert s["latest_stats"]["available"] is True
     assert s["latest_stats"]["date"]
     assert s["latest_stats"]["messages"] > 0
+
+
+# ---------------------------------------------------------------------------
+# codex_usage
+# ---------------------------------------------------------------------------
+
+
+def _make_codex_state(tmp_path, rows):
+    db = tmp_path / "state_5.sqlite"
+    con = sqlite3.connect(db)
+    con.execute(
+        """
+        CREATE TABLE threads (
+            id TEXT,
+            title TEXT,
+            cwd TEXT,
+            tokens_used INTEGER,
+            model TEXT,
+            updated_at INTEGER,
+            archived INTEGER
+        )
+        """
+    )
+    con.executemany(
+        """
+        INSERT INTO threads
+        (id, title, cwd, tokens_used, model, updated_at, archived)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        rows,
+    )
+    con.commit()
+    con.close()
+    return str(db)
+
+
+def test_codex_usage_parse(tmp_path):
+    project = tmp_path / "agykit"
+    project.mkdir()
+    other = tmp_path / "other"
+    other.mkdir()
+    history = tmp_path / "history.jsonl"
+    history.write_text(
+        json.dumps({"session_id": "s1", "ts": 1780299000, "text": "first"}) + "\n"
+        + json.dumps({"session_id": "s2", "ts": 1780299100, "text": "second"}) + "\n"
+    )
+    session_index = tmp_path / "session_index.jsonl"
+    session_index.write_text(
+        json.dumps({
+            "id": "s2",
+            "thread_name": "Second",
+            "updated_at": "2026-06-01T07:31:40Z",
+        }) + "\n"
+    )
+    state = _make_codex_state(tmp_path, [
+        ("s1", "First", str(project), 1000, "gpt-5.5", 1780299000, 0),
+        ("s2", "Second", str(other), 2000, "gpt-5.5", 1780299100, 0),
+        ("old", "Archived", str(project), 9999, "gpt-5.5", 1, 1),
+    ])
+
+    s = collectors.codex_usage(
+        history_path=str(history),
+        session_index_path=str(session_index),
+        state_path=state,
+        project_path=str(project),
+    )
+
+    assert s["available"] is True
+    assert s["summary"]["sessions"] == 2
+    assert s["summary"]["prompts"] == 2
+    assert s["summary"]["tokens_used"] == 3000
+    assert s["summary"]["models"] == ["gpt-5.5"]
+    assert s["current_project"]["sessions"] == 1
+    assert s["current_project"]["tokens_used"] == 1000
+    assert s["recent_prompts"][0]["text"] == "second"
+    assert s["recent_threads"][0]["title"] == "Second"
+
+
+def test_codex_usage_missing_files(tmp_path):
+    s = collectors.codex_usage(
+        history_path=str(tmp_path / "no-history.jsonl"),
+        session_index_path=str(tmp_path / "no-index.jsonl"),
+        state_path=str(tmp_path / "no-state.sqlite"),
+        project_path=str(tmp_path),
+    )
+    assert s["available"] is False
+    assert s["recent_prompts"] == []
+    assert s["summary"]["sessions"] == 0
+    assert s["warning"]
 
 
 # ── activity_feed tests ──────────────────────────────────────────────────────

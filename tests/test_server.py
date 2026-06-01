@@ -1,6 +1,7 @@
 import http.client
 import json
 import os
+import sqlite3
 import threading
 
 import pytest
@@ -141,6 +142,58 @@ def test_api_cc_activity(monkeypatch, tmp_path):
         data = json.loads(r.read())
         assert "recent_prompts" in data
         assert "latest_stats" in data
+    finally:
+        srv.shutdown()
+
+
+def test_api_codex_usage(monkeypatch, tmp_path):
+    hist = tmp_path / "history.jsonl"
+    hist.write_text(
+        '{"session_id": "s", "ts": 1780299000, "text": "codex prompt"}\n'
+    )
+    idx = tmp_path / "session_index.jsonl"
+    idx.write_text(
+        '{"id": "s", "thread_name": "Codex", "updated_at": "2026-06-01T07:30:00Z"}\n'
+    )
+    db = tmp_path / "state_5.sqlite"
+    con = sqlite3.connect(db)
+    con.execute(
+        """
+        CREATE TABLE threads (
+            id TEXT,
+            title TEXT,
+            cwd TEXT,
+            tokens_used INTEGER,
+            model TEXT,
+            updated_at INTEGER,
+            archived INTEGER
+        )
+        """
+    )
+    con.execute(
+        """
+        INSERT INTO threads
+        (id, title, cwd, tokens_used, model, updated_at, archived)
+        VALUES (?, ?, ?, ?, ?, ?, ?)
+        """,
+        ("s", "Codex", os.getcwd(), 1234, "gpt-5.5", 1780299000, 0),
+    )
+    con.commit()
+    con.close()
+    monkeypatch.setenv("AGYKIT_DASH_CODEX_HISTORY", str(hist))
+    monkeypatch.setenv("AGYKIT_DASH_CODEX_SESSION_INDEX", str(idx))
+    monkeypatch.setenv("AGYKIT_DASH_CODEX_STATE", str(db))
+    monkeypatch.setenv("AGYKIT_DASH_CODEX_PROJECT", os.getcwd())
+
+    srv = _boot()
+    try:
+        r = _get(srv.server_address[1], "/api/codex-usage")
+        assert r.status == 200
+        data = json.loads(r.read())
+        assert data["available"] is True
+        assert "summary" in data
+        assert "recent_prompts" in data
+        assert data["summary"]["tokens_used"] == 1234
     finally:
         srv.shutdown()
 

@@ -21,6 +21,7 @@ from .claude import (
     cc_activity,
     activity_feed,
 )
+from .codex import codex_usage
 from .rtk import rtk_stats, _parse_suffix, _ROW_RE
 from .ops import ops_log
 
@@ -44,6 +45,7 @@ __all__ = [
     "claude_quota",
     "cc_activity",
     "activity_feed",
+    "codex_usage",
     "rtk_stats",
     "_parse_suffix",
     "_ROW_RE",

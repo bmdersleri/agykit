@@ -632,6 +632,67 @@
             });
         }
 
+        // ── Codex Kullanımı Paneli ──
+        const codexUsageBody = document.getElementById('codexUsageBody');
+
+        function fmtNum(n) {
+            const v = Number(n || 0);
+            if (v >= 1_000_000) return (v / 1_000_000).toFixed(1).replace('.0', '') + 'M';
+            if (v >= 1_000) return Math.round(v / 1_000) + 'k';
+            return String(v);
+        }
+
+        function escapeHtml(s) {
+            return String(s || '')
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;')
+                .replace(/'/g, '&#39;');
+        }
+
+        function loadCodexUsage() {
+            if (!codexUsageBody) return;
+            codexUsageBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
+            fetch('/api/codex-usage').then(r => r.json()).then(data => {
+                if (!data.available) {
+                    codexUsageBody.innerHTML = `<div class="cq-unavail">${data.warning || 'Codex kullanım verisi bulunamadı.'}</div>`;
+                    return;
+                }
+
+                const s = data.summary || {};
+                const p = data.current_project || {};
+                const models = (s.models || []).slice(0, 3).map(escapeHtml).join(', ') || '—';
+                const prompts = (data.recent_prompts || []).slice(0, 3);
+                const promptHtml = prompts.length
+                    ? prompts.map(item => `
+                        <div class="codex-prompt-row">
+                            <span class="codex-prompt-time">${escapeHtml(item.display_time)}</span>
+                            <span class="codex-prompt-text">${escapeHtml(item.text)}</span>
+                        </div>
+                    `).join('')
+                    : '<div class="cq-unavail codex-empty">Son prompt yok.</div>';
+
+                codexUsageBody.innerHTML = `
+                    <div class="codex-stat-grid">
+                        <div class="cc-stat-chip"><span class="cc-stat-val">${fmtNum(s.sessions)}</span><span class="cc-stat-lbl">oturum</span></div>
+                        <div class="cc-stat-chip"><span class="cc-stat-val">${fmtNum(s.prompts)}</span><span class="cc-stat-lbl">prompt</span></div>
+                        <div class="cc-stat-chip"><span class="cc-stat-val">${fmtNum(s.tokens_used)}</span><span class="cc-stat-lbl">token</span></div>
+                        <div class="cc-stat-chip"><span class="cc-stat-val">${fmtNum(p.sessions)}</span><span class="cc-stat-lbl">${escapeHtml(p.name || 'proje')}</span></div>
+                    </div>
+                    <div class="codex-meta-row">
+                        <span>Model: <b>${models}</b></span>
+                        <span>Son aktivite: <b>${escapeHtml(s.last_activity || '—')}</b></span>
+                        <span>Bu proje token: <b>${fmtNum(p.tokens_used)}</b></span>
+                    </div>
+                    <div class="codex-recent-list">${promptHtml}</div>
+                    ${data.warning ? `<div class="codex-warning">${escapeHtml(data.warning)}</div>` : ''}
+                `;
+            }).catch(e => {
+                codexUsageBody.innerHTML = `<div class="cq-unavail">Yüklenemedi: ${escapeHtml(e)}</div>`;
+            });
+        }
+
         // ── agy Canlı Durum (aktif hesap kartına enjekte edilir) ──
         function loadStatusline() {
             const statuslineBody = document.getElementById('statuslineBody');
@@ -1091,6 +1152,7 @@
         // Initial Load
         loadData();
         loadClaudeQuota();
+        loadCodexUsage();
         loadQuota();
         loadStatusline();
         loadLastSession();
@@ -1120,6 +1182,7 @@
                     lastHeavyRefresh = now;
                     loadData();
                     loadClaudeQuota();
+                    loadCodexUsage();
                     loadQuota();
                     loadLastSession();
                     loadActivityFeed();

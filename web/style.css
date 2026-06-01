@@ -713,6 +713,19 @@
             .cq-pct-remaining, .cq-reset-time {
                 text-align: left !important;
             }
+            .codex-stat-grid {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+            .codex-prompt-row {
+                grid-template-columns: 1fr;
+                gap: 0.2rem;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .codex-stat-grid {
+                grid-template-columns: 1fr;
+            }
         }
 
         .cq-tier-name {
@@ -754,6 +767,73 @@
             font-size: 0.85rem;
             text-align: center;
             padding: 1.5rem 0;
+        }
+
+        .codex-card {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .codex-stat-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .codex-meta-row {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.25rem;
+            color: var(--muted);
+            font-size: 0.8rem;
+            padding-bottom: 0.85rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .codex-meta-row b {
+            color: var(--text);
+            font-weight: 700;
+        }
+
+        .codex-recent-list {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            margin-top: 0.85rem;
+        }
+
+        .codex-prompt-row {
+            display: grid;
+            grid-template-columns: 8.5rem minmax(0, 1fr);
+            gap: 0.75rem;
+            align-items: center;
+            font-size: 0.78rem;
+            color: var(--text);
+        }
+
+        .codex-prompt-time {
+            color: var(--muted);
+            white-space: nowrap;
+        }
+
+        .codex-prompt-text {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+            min-width: 0;
+        }
+
+        .codex-warning {
+            margin-top: 0.85rem;
+            color: var(--warning);
+            font-size: 0.75rem;
+        }
+
+        .codex-empty {
+            padding: 0.25rem 0;
+            text-align: left;
         }
 
         /* ── 4. Kullanım Grafikleri ── */
