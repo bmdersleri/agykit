@@ -1,0 +1,24 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      AGYKIT_CI: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install tools
+        run: pip install ruff pytest
+      - name: Lint
+        run: ruff check dashboard tests
+      - name: Python tests
+        run: python3 -m pytest tests -q
+      - name: Bash tests
+        run: bash tests/run.sh

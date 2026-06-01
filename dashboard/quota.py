@@ -9,19 +9,29 @@ Usage:
 
 Cache: ~/.gemini/antigravity-cli/quota-cache.json (5min TTL)
 """
-import argparse, datetime, json, os, re, subprocess, sys, time
+import argparse
+import json
+import os
+import sys
+import time
 
 CACHE_FILE = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
 CACHE_TTL  = 300  # seconds
 
 # ── ANSI helpers ─────────────────────────────────────────────────────────────
 def col(c, s): return f"\033[{c}m{s}\033[0m"
-GREEN  = lambda s: col(92, s)
-YELLOW = lambda s: col(93, s)
-RED    = lambda s: col(91, s)
-CYAN   = lambda s: col(96, s)
-DIM    = lambda s: col(2,  s)
-BOLD   = lambda s: col(1,  s)
+def GREEN(s):
+    return col(92, s)
+def YELLOW(s):
+    return col(93, s)
+def RED(s):
+    return col(91, s)
+def CYAN(s):
+    return col(96, s)
+def DIM(s):
+    return col(2,  s)
+def BOLD(s):
+    return col(1,  s)
 
 # ── Cache ────────────────────────────────────────────────────────────────────
 def load_cache():
@@ -50,9 +60,12 @@ def fetch_live():
 BAR_FULL = 20
 
 def pct_color(pct):
-    if pct is None: return DIM
-    if pct >= 60: return GREEN
-    if pct >= 25: return YELLOW
+    if pct is None:
+        return DIM
+    if pct >= 60:
+        return GREEN
+    if pct >= 25:
+        return YELLOW
     return RED
 
 def render_table(data, cache_age=None):

@@ -700,7 +700,6 @@ def _google_userinfo(access_token: str) -> dict:
 
 def agy_active_account() -> dict:
     """Return active agy account info (email, name, picture) via Google userinfo."""
-    import urllib.request, urllib.error
     try:
         import keyring
         v = keyring.get_password("gemini", "antigravity")
@@ -737,7 +736,8 @@ _CLIENT_SEC = "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"  # from agy binary
 
 
 def _refresh_access_token(refresh_token: str) -> str:
-    import urllib.request, urllib.parse
+    import urllib.request
+    import urllib.parse
     body = urllib.parse.urlencode({
         "client_id":     _CLIENT_ID,
         "client_secret": _CLIENT_SEC,
@@ -832,7 +832,8 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
                      "bar_blocks"}], "account": str, "plan": str,
          "warning": str|None, "captured_at": str}
     """
-    import subprocess, time
+    import subprocess
+    import time
 
     def run(*cmd):
         return subprocess.run(list(cmd), capture_output=True, text=True)
@@ -874,9 +875,11 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
     statusline = run("tmux", "capture-pane", "-t", session, "-p").stdout
     account, plan = None, None
     m = re.search(r'([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})', statusline)
-    if m: account = m.group(1)
+    if m:
+        account = m.group(1)
     m = re.search(r'Google AI Pro|standard-tier|Pro Plus|Free', statusline)
-    if m: plan = m.group(0)
+    if m:
+        plan = m.group(0)
 
     # Send /usage command
     run("tmux", "send-keys", "-t", session, "/usage", "Enter")
@@ -900,9 +903,9 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
 
     # Parse model rows — scan every line, collect next pct + status after each model name
     MODEL_RE = re.compile(r'^(Gemini|Claude|GPT|Llama|Mistral|Qwen|Deepseek|Grok)')
-    lines = [l.strip() for l in raw.splitlines() if l.strip()]
+    raw_lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
     models = []
-    for i, line in enumerate(lines):
+    for i, line in enumerate(raw_lines):
         if not MODEL_RE.match(line):
             continue
         model_name = line
@@ -911,16 +914,16 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
         status = "available"
         refreshes_in = None
         # Scan up to 3 lines ahead (bar line + status line)
-        for l in lines[i + 1 : i + 4]:
-            if MODEL_RE.match(l):
+        for ln in raw_lines[i + 1 : i + 4]:
+            if MODEL_RE.match(ln):
                 break  # hit next model — stop
-            m2 = re.search(r'(\d+)%', l)
+            m2 = re.search(r'(\d+)%', ln)
             if m2:
                 pct = int(m2.group(1))
-                bar_blocks = l.count('█')
-            if 'Quota available' in l or 'quota available' in l.lower():
+                bar_blocks = ln.count('█')
+            if 'Quota available' in ln or 'quota available' in ln.lower():
                 status = "available"
-            m3 = re.search(r'Refreshes? in (.+)', l)
+            m3 = re.search(r'Refreshes? in (.+)', ln)
             if m3:
                 refreshes_in = m3.group(1).strip()
                 status = "limited"
@@ -973,7 +976,6 @@ def agy_model_quota_cached(*, force: bool = False) -> dict:
     Cache path: ~/.gemini/antigravity-cli/quota-cache.json
     TTL: 300s (5 minutes). Pass force=True to bypass cache.
     """
-    import time as _time
 
     if not force and os.path.isfile(_QUOTA_CACHE):
         try:

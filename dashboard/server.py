@@ -9,12 +9,11 @@ _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
 # Invalidate any stale cached import before loading
-import importlib
 if "dashboard.collectors" in sys.modules:
     del sys.modules["dashboard.collectors"]
 if "dashboard" in sys.modules:
     del sys.modules["dashboard"]
-from dashboard import collectors
+from dashboard import collectors  # noqa: E402
 
 
 def get_current_mtime_state():
