@@ -993,6 +993,78 @@
             color: var(--text);
         }
 
+        .active-job-body {
+            flex: 1;
+            overflow-y: auto;
+            min-height: 0;
+        }
+
+        .aj-table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+
+        .aj-table td {
+            padding: 0.35rem 0.5rem;
+            font-size: 0.82rem;
+            vertical-align: top;
+        }
+
+        .aj-table td.aj-key {
+            color: var(--muted);
+            white-space: nowrap;
+            width: 1px;
+            padding-right: 1rem;
+        }
+
+        .aj-table td.aj-val {
+            color: var(--text);
+            font-weight: 500;
+        }
+
+        .aj-event-row {
+            font-size: 0.78rem;
+            padding: 0.2rem 0.5rem;
+            border-bottom: 1px solid var(--border);
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        .aj-event-ts {
+            color: var(--muted);
+            white-space: nowrap;
+            font-family: monospace;
+        }
+
+        .aj-event-type {
+            color: var(--accent);
+            white-space: nowrap;
+            min-width: 12ch;
+        }
+
+        .aj-event-msg {
+            color: var(--text);
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+
+        .aj-badge {
+            display: inline-block;
+            font-size: 0.7rem;
+            font-weight: 600;
+            padding: 0.15rem 0.5rem;
+            border-radius: 4px;
+            text-transform: uppercase;
+        }
+
+        .aj-badge-running { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .aj-badge-verifying { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+        .aj-badge-succeeded { background: rgba(16, 185, 129, 0.2); color: #10b981; }
+        .aj-badge-failed { background: rgba(239, 68, 68, 0.2); color: #ef4444; }
+        .aj-badge-rotating { background: rgba(139, 92, 246, 0.2); color: #a78bfa; }
+        .aj-badge-rolling_back { background: rgba(245, 158, 11, 0.2); color: #f59e0b; }
+
         .sl-table {
             width: 100%;
             border-collapse: collapse;

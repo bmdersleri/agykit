@@ -500,3 +500,102 @@ def test_activity_feed_ts_epoch_zero_fallback(tmp_path):
     assert events[-1]["prompt"] == "bad"
     assert events[-1]["ts_epoch"] == 0
     assert events[0]["prompt"] == "good"
+
+
+# ── Job state tests ─────────────────────────────────────────────────────────
+
+def test_job_create_and_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_create, job_snapshot
+    jid = job_create("test-cmd", "test prompt")
+    assert jid
+    assert "T" in jid
+    snap = job_snapshot(jid)
+    assert snap is not None
+    assert snap["job_id"] == jid
+    assert snap["command"] == "test-cmd"
+    assert snap["status"] == "starting"
+    assert snap["prompt"] == "test prompt"
+    assert snap["started_at"] is not None
+
+
+def test_job_event_updates_snapshot(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+    jid = job_create("run", "hello")
+    job_event(jid, "account_selected", "running", "trying a@b.com", account="a@b.com")
+    snap = job_snapshot(jid)
+    assert snap["status"] == "running"
+    assert snap["stage"] == "trying a@b.com"
+    assert snap["account"] == "a@b.com"
+
+
+def test_job_event_with_error(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+    jid = job_create("run", "hello")
+    job_event(jid, "job_failed", "failed", "error", error="Something broke")
+    snap = job_snapshot(jid)
+    assert snap["status"] == "failed"
+    assert snap["last_error"] == "Something broke"
+    assert snap["ended_at"] is not None
+
+
+def test_job_events_ordering(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_create, job_event, job_events
+    jid = job_create("run", "test")
+    job_event(jid, "account_selected", "running", "acct1", account="a@b.com")
+    job_event(jid, "quota_rotated", "rotating", "rotate", account="a@b.com")
+    job_event(jid, "job_succeeded", "succeeded", "done", account="a@b.com")
+    events = job_events(jid)
+    assert len(events) == 4  # job_started + 3 events
+    assert events[0]["event"] == "job_started"
+    assert events[1]["event"] == "account_selected"
+    assert events[2]["event"] == "quota_rotated"
+    assert events[3]["event"] == "job_succeeded"
+
+
+def test_job_list_empty(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_list
+    assert job_list() == []
+
+
+def test_job_list_orders_by_newest(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_create, job_list
+    import time
+    jid1 = job_create("run", "first")
+    time.sleep(1.01)
+    jid2 = job_create("run", "second")
+    jobs = job_list()
+    assert len(jobs) == 2
+    assert jobs[0]["job_id"] == jid2
+    assert jobs[1]["job_id"] == jid1
+
+
+def test_job_snapshot_nonexistent(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_snapshot
+    assert job_snapshot("nonexistent") is None
+
+
+def test_job_events_limit(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_create, job_event, job_events
+    jid = job_create("run", "test")
+    for i in range(10):
+        job_event(jid, "account_selected", "running", f"step{i}")
+    events = job_events(jid, limit=3)
+    assert len(events) == 3
+    assert events[-1]["stage"] == "step9"
+
+
+def test_job_set_verify_result(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    from dashboard.collectors.jobs import job_create, job_set_verify_result, job_snapshot
+    jid = job_create("do-escalate", "test")
+    job_set_verify_result(jid, "passed")
+    snap = job_snapshot(jid)
+    assert snap["verify_result"] == "passed"

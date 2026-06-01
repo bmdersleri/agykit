@@ -26,6 +26,14 @@ from .claude import (
 from .codex import codex_usage
 from .rtk import rtk_stats, _parse_suffix, _ROW_RE
 from .ops import ops_log
+from .jobs import (
+    job_create,
+    job_event,
+    job_snapshot,
+    job_events,
+    job_list,
+    job_set_verify_result,
+)
 
 __all__ = [
     "_apply_range",
@@ -54,4 +62,10 @@ __all__ = [
     "_parse_suffix",
     "_ROW_RE",
     "ops_log",
+    "job_create",
+    "job_event",
+    "job_snapshot",
+    "job_events",
+    "job_list",
+    "job_set_verify_result",
 ]

@@ -309,6 +309,37 @@ except Exception:
 PY
 }
 
+# ── Job observability helpers ──────────────────────────────────────────────
+# Wraps the dashboard.collectors.jobs Python module for use in bash commands.
+_job_op() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    PYTHONPATH="$repo" python3 - "$@" <<'PY'
+import sys
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import (
+    job_create, job_event, job_snapshot,
+    job_events, job_list, job_set_verify_result
+)
+op = sys.argv[1]
+if op == "create":
+    print(job_create(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""))
+elif op == "event":
+    job_event(
+        job_id=sys.argv[2],
+        event_type=sys.argv[3],
+        status=sys.argv[4],
+        stage=sys.argv[5],
+        account=sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None,
+        model=sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else None,
+        message=sys.argv[8] if len(sys.argv) > 8 else "",
+        error=sys.argv[9] if len(sys.argv) > 9 and sys.argv[9] else None,
+    )
+elif op == "set-verify-result":
+    job_set_verify_result(sys.argv[2], sys.argv[3])
+PY
+}
+
 # Run agy with quota-aware account rotation. Returns 0 on first success.
 # Accounts sorted by quota status: available first, exhausted last.
 cmd_run() {
@@ -316,14 +347,16 @@ cmd_run() {
     mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
     [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
     mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
+    local job_id; job_id=$(_job_op create "run" "$prompt")
     for a in "${accts[@]}"; do
         cmd_account_switch "$a" >/dev/null 2>&1 || continue
         echo "==> Trying account: $a"
+        _job_op event "$job_id" "account_selected" "running" "account $a" "$a"
         "$AGY_BIN" -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-        grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; _ops_log "run" "quota-rotate" "$a" "" "${prompt:0:80}"; continue; }
-        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; _quota_alert; return 0
+        grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; _ops_log "run" "quota-rotate" "$a" "" "${prompt:0:80}"; _job_op event "$job_id" "quota_rotated" "rotating" "quota rotate $a" "$a" "" "Quota on $a, rotating"; continue; }
+        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; _job_op event "$job_id" "job_succeeded" "succeeded" "done" "$a"; _quota_alert; return 0
     done
-    echo "==> ALL ACCOUNTS EXHAUSTED"; _ops_log "run" "exhausted" "" "" "${prompt:0:80}"; return 1
+    echo "==> ALL ACCOUNTS EXHAUSTED"; _ops_log "run" "exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "exhausted" "" "" "All accounts exhausted"; return 1
 }
 
 # Escalating do: model ladder on verify failure + quota rotation + git safety.
@@ -342,27 +375,32 @@ cmd_do_escalate() {
     local base=""; _in_git && base=$(git rev-parse -q --verify HEAD 2>/dev/null || echo "")
     _in_git || echo "==> ⚠ not a git repo — rollback safety disabled"
 
-    local verify_ctx=""   # error context from previous model's verify failure
+    local verify_ctx=""
+    local job_id; job_id=$(_job_op create "do-escalate" "$prompt")
 
     for model in "${LADDER[@]}"; do
         echo "════ MODEL: $model ════"
         cmd_model "$model" >/dev/null
+        _job_op event "$job_id" "model_selected" "running" "model $model" "" "$model"
         local snap=""; _in_git && snap=$(_snapshot)
         local applied=0
         for a in "${accts[@]}"; do
             cmd_account_switch "$a" >/dev/null 2>&1 || continue
             echo "==> $model @ $a"
+            _job_op event "$job_id" "account_selected" "running" "$model @ $a" "$a" "$model"
             "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)${verify_ctx}TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-            grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; _ops_log "do-escalate" "quota-rotate" "$a" "$model" "${prompt:0:80}"; _rollback_to "$base" "$snap"; continue; }
+            grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a"; _ops_log "do-escalate" "quota-rotate" "$a" "$model" "${prompt:0:80}"; _job_op event "$job_id" "quota_rotated" "rotating" "quota rotate $a" "$a" "$model" "Quota on $a at $model"; _rollback_to "$base" "$snap"; continue; }
             applied=1; break
         done
-        [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _ops_log "do-escalate" "exhausted" "" "$model" "${prompt:0:80}"; _rollback_to "$base" "$snap"; restore_model; exit 1; }
+        [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _ops_log "do-escalate" "exhausted" "" "$model" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "accounts exhausted" "" "$model" "Accounts exhausted at $model"; _rollback_to "$base" "$snap"; restore_model; exit 1; }
 
-        # Undo any stray git writes agy made — agykit owns version control.
         _normalize_head "$base"
 
+        _job_op event "$job_id" "verify_started" "verifying" "verify $model" "$a" "$model"
         if eval "$VERIFY_CMD" >/tmp/agykit-verify.log 2>&1; then
             restore_model
+            _job_op event "$job_id" "verify_passed" "succeeded" "done" "$a" "$model" "Verify passed on $model"
+            _job_op set-verify-result "$job_id" "passed"
             if _in_git && [ -n "$snap" ]; then
                 echo "==> agy changes (review before committing):"
                 git --no-pager diff --stat "$snap" 2>/dev/null || true
@@ -375,10 +413,13 @@ ${vout}
 
 Fix the above issues, then complete the original task:
 "
-            echo "==> verify FAILED on $model — escalating"; _ops_log "do-escalate" "verify-failed" "$a" "$model" "${prompt:0:80}"; _rollback_to "$base" "$snap"
+            echo "==> verify FAILED on $model — escalating"; _ops_log "do-escalate" "verify-failed" "$a" "$model" "${prompt:0:80}"
+            _job_op event "$job_id" "verify_failed" "rolling_back" "verify failed $model" "$a" "$model" "" "${vout:0:200}"
+            _job_op event "$job_id" "rollback_started" "rolling_back" "rollback $model" "" "$model" "Rolling back after verify failure on $model"
+            _rollback_to "$base" "$snap"
         fi
     done
-    echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; restore_model; return 1
+    echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "all models exhausted" "" "" "All models failed"; restore_model; return 1
 }
 
 cmd_init() {
@@ -482,11 +523,131 @@ for line in window:
 PY
 }
 
+_cmd_job_repo() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    echo "$repo"
+}
+
+cmd_jobs() {
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 - "${1:-20}" <<'PY'
+import sys
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import job_list
+from datetime import datetime, timezone
+jobs = job_list(limit=int(sys.argv[1]))
+if not jobs:
+    print("No jobs found.")
+    raise SystemExit(0)
+print(f"{'JOB ID':<28} {'CMD':<14} {'STATUS':<12} {'STAGE':<22} {'AGE'}")
+print("-" * 92)
+for j in jobs:
+    started = j.get('started_at', '')
+    age = ""
+    if started:
+        try:
+            ts = datetime.fromisoformat(started)
+            delta = datetime.now(timezone.utc) - ts
+            m = int(delta.total_seconds() // 60)
+            age = f"{m}m" if m < 60 else f"{m//60}h{m%60}m"
+        except Exception:
+            pass
+    jid = j['job_id']
+    cmd = (j.get('command', '') or '')[:14]
+    st = (j.get('status', '') or '')[:12]
+    stage = (j.get('stage', '') or '')[:22]
+    print(f"{jid:<28} {cmd:<14} {st:<12} {stage:<22} {age}")
+PY
+}
+
+cmd_job_watch() {
+    local job_id="$1"
+    [ -z "$job_id" ] && { echo "Usage: agykit watch <job-id>"; exit 1; }
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 - "$job_id" <<'PY'
+import sys, time, os
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import job_snapshot, job_events
+job_id = sys.argv[1]
+last_count = 0
+try:
+    while True:
+        snap = job_snapshot(job_id)
+        if not snap:
+            print(f"Job {job_id} not found.")
+            break
+        os.system('clear' if os.name == 'posix' else 'cls')
+        print(f"Job: {snap['job_id']}")
+        print(f"Command: {snap.get('command', '')}")
+        status = snap.get('status', '')
+        stage = snap.get('stage', '')
+        account = snap.get('account') or '\u2014'
+        model = snap.get('model') or '\u2014'
+        print(f"Status: {status}  |  Stage: {stage}")
+        print(f"Account: {account}  |  Model: {model}")
+        if snap.get('last_error'):
+            print(f"Error: {snap['last_error']}")
+        print(f"Started: {snap.get('started_at', '\u2014')}")
+        if snap.get('ended_at'):
+            print(f"Ended:   {snap['ended_at']}")
+        print()
+        events = job_events(job_id)
+        for e in events[-10:]:
+            ts = e.get('ts', '')[-8:]
+            msg = e.get('message', '') or ''
+            print(f"  {ts}  {e.get('event', ''):<20} {msg}")
+        if status in ('succeeded', 'failed', 'blocked'):
+            print(f"\nFinal status: {status}")
+            break
+        time.sleep(2)
+except KeyboardInterrupt:
+    pass
+PY
+}
+
+cmd_job_log() {
+    local job_id="$1"
+    [ -z "$job_id" ] && { echo "Usage: agykit log <job-id>"; exit 1; }
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 - "$job_id" "${2:-100}" <<'PY'
+import sys
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import job_events
+events = job_events(sys.argv[1], limit=int(sys.argv[2]))
+if not events:
+    print(f"No events for job: {sys.argv[1]}")
+    raise SystemExit(0)
+for e in events:
+    ts = e.get('ts', '')[-8:]
+    ev = e.get('event', '').ljust(20)
+    st = (e.get('status', '') or '').ljust(14)
+    acct = (e.get('account', '') or '-').split('@')[0][:15].ljust(15)
+    mdl = (e.get('model', '') or '-')[:16]
+    msg = e.get('message', '') or ''
+    err = e.get('error', '') or ''
+    print(f"{ts}  {ev}  {st}  {acct}  {mdl}  {msg}{'  ERROR: '+err[:80] if err else ''}")
+PY
+}
+
 cmd_status() {
     local model; model=$(python3 -c "import json; print(json.load(open('$AGY_SETTINGS')).get('model','?'))" 2>/dev/null || echo "?")
     local email; email=$(_active_email)
     local quota; quota=$(cmd_quota --status 2>/dev/null || echo "quota unknown")
-    echo "${email} | ${model} | ${quota}"
+    local repo; repo=$(_cmd_job_repo)
+    local job_info
+    job_info=$(PYTHONPATH="$repo" python3 - <<'PY' 2>/dev/null || echo ""
+import sys
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import job_list
+jobs = job_list(limit=1)
+if jobs:
+    j = jobs[0]
+    if j.get('status') in ('starting', 'running', 'verifying', 'rotating', 'rolling_back'):
+        print(f" | job:{j['job_id'][:8]}…({j.get('status','')}/{j.get('stage','')})")
+PY
+)
+    echo "${email} | ${model} | ${quota}${job_info}"
 }
 
 _quota_alert() {
@@ -726,6 +887,9 @@ agykit — portable Antigravity (agy) CLI manager
   agykit init                    Interactive project setup (.agykit.conf + system context)
   agykit status                  One-line: active account | model | quota summary
   agykit log [N]                 Show last N ops log entries (default: 20)
+  agykit jobs [N]                Show N most recent jobs (default: 20)
+  agykit watch <job-id>          Live-stream a job's status and events
+  agykit job-log <job-id>        Show all events for a specific job
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
@@ -749,6 +913,9 @@ case "${1:-}" in
     quota)         cmd_quota "${@:2}" ;;
     status)        cmd_status ;;
     log)           cmd_log "${2:-}" ;;
+    jobs)          cmd_jobs "${2:-}" ;;
+    watch)         cmd_job_watch "${2:-}" ;;
+    job-log)       cmd_job_log "${2:-}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;

@@ -1150,6 +1150,54 @@
             });
         }
 
+        // ── Active Job Card ──
+        function loadActiveJob() {
+            const el = document.getElementById('activeJobBody');
+            if (!el) return;
+            fetch('/api/active-job').then(r => r.json()).then(data => {
+                if (!data.active) {
+                    el.innerHTML = '<div class="sl-unavail">Aktif job yok.</div>';
+                    return;
+                }
+                const s = data.active.snapshot;
+                const status = s.status || '';
+                const stage = s.stage || '';
+                const account = s.account || '—';
+                const model = s.model || '—';
+                const prompt = (s.prompt || '').slice(0, 60);
+                const error = s.last_error || '';
+                const badgeClass = 'aj-badge-' + status;
+                const badgeLabel = status.replace(/_/g, ' ');
+
+                let eventsHtml = '';
+                (data.active.events || []).slice(-5).forEach(e => {
+                    const ts = (e.ts || '').slice(-8);
+                    const ev = e.event || '';
+                    const msg = e.message || '';
+                    eventsHtml += `<div class="aj-event-row">
+                        <span class="aj-event-ts">${ts}</span>
+                        <span class="aj-event-type">${ev}</span>
+                        <span class="aj-event-msg">${escapeHtml(msg)}</span>
+                    </div>`;
+                });
+
+                el.innerHTML = `
+                    <table class="aj-table">
+                        <tr><td class="aj-key">Status</td><td class="aj-val"><span class="aj-badge ${badgeClass}">${badgeLabel}</span></td></tr>
+                        <tr><td class="aj-key">Stage</td><td class="aj-val">${escapeHtml(stage)}</td></tr>
+                        <tr><td class="aj-key">Account</td><td class="aj-val">${escapeHtml(account)}</td></tr>
+                        <tr><td class="aj-key">Model</td><td class="aj-val">${escapeHtml(model)}</td></tr>
+                        <tr><td class="aj-key">Prompt</td><td class="aj-val" title="${escapeHtml(s.prompt || '')}">${escapeHtml(prompt)}${(s.prompt || '').length > 60 ? '…' : ''}</td></tr>
+                        ${error ? `<tr><td class="aj-key">Error</td><td class="aj-val" style="color:var(--danger)">${escapeHtml(error.slice(0, 100))}</td></tr>` : ''}
+                    </table>
+                    <div style="margin-top:0.5rem;font-size:0.78rem;color:var(--muted);font-weight:600;">Son Olaylar</div>
+                    ${eventsHtml || '<div style="font-size:0.78rem;color:var(--muted)">Olay yok.</div>'}
+                `;
+            }).catch(() => {
+                if (el) el.innerHTML = '<div class="sl-unavail">Aktif job yüklenemedi.</div>';
+            });
+        }
+
         // Footer timestamp
         // Doldurma loadData() tamamlandığında yapılır.
 
@@ -1173,6 +1221,7 @@
         loadStatusline();
         loadLastSession();
         loadActivityFeed();
+        loadActiveJob();
         loadRtkStats();
         loadQuotaAlerts();
         setInterval(loadRtkStats, 60_000);
@@ -1202,6 +1251,7 @@
                     loadQuota();
                     loadLastSession();
                     loadActivityFeed();
+                    loadActiveJob();
                     loadQuotaAlerts();
                 }
             };

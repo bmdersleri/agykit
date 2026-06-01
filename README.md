@@ -147,6 +147,9 @@ agykit quota --status          One-line summary for statusline/scripts
 agykit init                    Interactive project setup in current directory
 agykit doctor                  Check installation and system file dependencies
 agykit doctor --fix            Auto-fix resolvable issues (quota cache, account snapshot)
+agykit jobs [N]                Show N most recent jobs (default: 20)
+agykit watch <job-id>          Live-stream a running job's status and events
+agykit job-log <job-id>        Show full event history for a specific job
 ```
 
 ---
@@ -161,6 +164,55 @@ Live localhost web dashboard at `http://127.0.0.1:8787` (light/dark theme):
 - **agy Status** — statusline snapshot + last session summary
 
 Requires `tmux` for model quota capture. First load takes ~30s; results cached for 5 minutes.
+
+---
+
+## Job Observability
+
+Every `agykit run` and `agykit do-escalate` invocation is recorded as a **job**
+with structured events. Jobs are stored in `~/.gemini/agykit-jobs/` as
+snapshots (`<job_id>.json`) and append-only event logs (`<job_id>.events.jsonl`).
+
+### CLI commands
+
+```bash
+agykit jobs                  # list recent jobs with status, stage, age
+agykit watch <job-id>        # live-stream: clears screen, updates every 2s
+agykit job-log <job-id>      # full event history for one job
+agykit status                # includes active job info when a job is running
+```
+
+### Dashboard card
+
+The dashboard shows an **Aktif Job** card with current status, stage, account,
+model, and the 5 most recent events. It auto-refreshes alongside the existing
+SSE refresh cycle.
+
+### Job lifecycle
+
+| Event | Meaning |
+|-------|---------|
+| `job_started` | Job created, initial snapshot written |
+| `account_selected` | Account switch for this attempt |
+| `model_selected` | Model/effort set for this escalation step |
+| `quota_rotated` | Quota exhausted, rotating to next account |
+| `verify_started` | `AGYKIT_VERIFY` command launched |
+| `verify_passed` | Verify returned 0 |
+| `verify_failed` | Verify returned non-zero |
+| `rollback_started` | Git rollback in progress |
+| `job_succeeded` | Final success |
+| `job_failed` | All accounts or all models exhausted |
+
+### Storage layout
+
+```
+~/.gemini/agykit-jobs/
+  20260601T120000-a1b2c3.json          # current snapshot
+  20260601T120000-a1b2c3.events.jsonl  # append-only event log
+```
+
+The legacy `~/.gemini/agykit-ops.log` continues to be written for backward
+compatibility.
 
 ---
 

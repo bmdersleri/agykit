@@ -140,6 +140,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
             from dashboard import alerts as _alerts
             threshold = int(os.environ.get("AGYKIT_QUOTA_ALERT_PCT", "15"))
             self.serve_json(_alerts.check_quota_alerts(threshold, channels=["log"]))
+        elif path.startswith("/api/jobs/"):
+            job_id = path[len("/api/jobs/"):]
+            snap = collectors.job_snapshot(job_id)
+            if snap is None:
+                self.send_json_error("Job not found", 404)
+            else:
+                events = collectors.job_events(job_id, limit=100)
+                self.serve_json({"snapshot": snap, "events": events})
+        elif path == "/api/jobs":
+            limit = 20
+            if "limit=" in parsed.query:
+                try:
+                    limit = int(parsed.query.split("limit=")[1].split("&")[0])
+                except ValueError:
+                    pass
+            self.serve_json({"jobs": collectors.job_list(limit=limit)})
+        elif path == "/api/active-job":
+            jobs = collectors.job_list(limit=1)
+            active = None
+            if jobs:
+                j = jobs[0]
+                if j.get("status") in ("starting", "running", "verifying", "rotating", "rolling_back"):
+                    events = collectors.job_events(j["job_id"], limit=10)
+                    active = {"snapshot": j, "events": events}
+            self.serve_json({"active": active})
         elif path == "/events":
             self.serve_events()
         else:

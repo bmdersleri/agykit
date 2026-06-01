@@ -17,6 +17,9 @@ agykit is a quota-aware agy orchestrator. It rotates across multiple Google acco
 | Quota details | `agykit quota --status` |
 | First-time project setup | `agykit init` |
 | Troubleshoot setup | `agykit doctor` |
+| List recent jobs | `agykit jobs [N]` |
+| Live-stream a running job | `agykit watch <job-id>` |
+| View job event history | `agykit job-log <job-id>` |
 
 **Rule:** Use `do-escalate` whenever the task produces code that must be verified.
 Use `run` for everything else. Never use plain `agy` directly — agykit handles rotation and fallback.
@@ -106,6 +109,21 @@ Injected as a prefix into every prompt. Edit after `agykit init` creates it.
 - Never run git commands. Leave changes unstaged.
 - Only edit the files explicitly listed in the prompt.
 ```
+
+## Job monitoring
+
+Every `run` and `do-escalate` creates a job record. Track running jobs without
+opening the dashboard:
+
+```bash
+! agykit jobs            # see active and recent jobs
+! agykit watch <job-id>  # live 2s-polling status display
+! agykit job-log <job-id> # full event history
+```
+
+Each job stores a snapshot + event log at `~/.gemini/agykit-jobs/<job_id>.json`.
+The dashboard shows an "Aktif Job" card that auto-refreshes with the latest
+stage, account, model, and recent events.
 
 ## Quota monitoring
 
