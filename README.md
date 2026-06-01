@@ -183,6 +183,69 @@ examples/
 
 ---
 
+## Using agykit from Claude Code
+
+The recommended workflow: use Claude Code for planning, navigation, and context — delegate actual coding tasks to agy via agykit so quota is spread across multiple Google accounts and models.
+
+### When to use which
+
+| Task | Tool |
+|------|------|
+| Understand codebase, read files, plan | Claude Code directly |
+| Write/edit code, fix bugs, refactor | `agykit run` or `agykit do-escalate` via `! agykit ...` |
+| One-shot coding task, outcome verified | `agykit do-escalate` |
+| Quick rewrite, no verify step needed | `agykit run` |
+
+### Running agykit from within Claude Code
+
+Type `! agykit run "..."` in the Claude Code prompt — the `!` prefix runs the command in your session and its output lands directly in the conversation.
+
+```
+! agykit run "refactor the _apply_range function in dashboard/collectors/_common.py to be more readable"
+
+! agykit do-escalate "add pagination to the /api/ops-log endpoint"
+
+! agykit run "write a docstring for every public function in dashboard/alerts.py"
+```
+
+### Workflow pattern
+
+1. **You** describe what needs to change to Claude Code  
+2. **Claude Code** reads the relevant files and gives you the exact prompt to pass to agy  
+3. **You** run `! agykit do-escalate "<that prompt>"` — agy implements, verify runs, quota rotates automatically  
+4. **Claude Code** reviews the result
+
+### Effective prompt patterns for `agykit run`
+
+```bash
+# Scoped: always name the file and function
+! agykit run "in dashboard/collectors/rtk.py, add error handling for when 'rtk gain' returns empty output"
+
+# With context: paste the error inline
+! agykit run "fix the TypeError on line 42 of tests/test_alerts.py: 'NoneType' object is not iterable"
+
+# Refactor with constraint
+! agykit run "extract the cooldown check in dashboard/alerts.py into a private _is_cooled_down(key, state, now, cooldown) function — no logic changes"
+```
+
+### `do-escalate` vs `run`
+
+Use **`do-escalate`** when you have a `AGYKIT_VERIFY` command set (e.g. `pytest -q`). It:
+- Runs Flash first (cheapest), escalates to Pro → Opus only on verify failure
+- Passes the previous error to the next model as context
+- Rolls back agy's git changes on failure — your WIP is always safe
+
+Use **`run`** for tasks with no automated verify (docs, comments, scripts).
+
+### Quota tips
+
+- Check quota before a big task: `! agykit quota --status`
+- Add multiple Google accounts with `agykit account-add` to extend capacity
+- Dashboard at `http://localhost:8787` shows live quota bars + alert thresholds
+- Set `AGYKIT_QUOTA_ALERT_PCT=20` in `.agykit.conf` to get warned earlier
+
+---
+
 ## How it works
 
 **Account rotation (`run` / `do-escalate`)**
