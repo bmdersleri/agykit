@@ -773,3 +773,63 @@ def test_job_cancel(tmp_path, monkeypatch):
     events = job_events(jid)
     last = events[-1]
     assert last["event"] == "job_blocked"
+
+
+# ── Prune tests ──────────────────────────────────────────────────────────────
+
+def test_job_prune_older_than(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_list, job_prune
+    import time
+    jid1 = job_create("run", "old")
+    time.sleep(1.01)
+    jid2 = job_create("run", "new")
+    # First job should be older than 1s
+    removed = job_prune(older_than_seconds=1, dry_run=True)
+    assert removed >= 1
+    removed = job_prune(older_than_seconds=1)
+    assert removed >= 1
+    jobs = job_list()
+    assert all(j["job_id"] == jid2 for j in jobs)
+
+
+def test_job_prune_status_filter(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_prune, job_list
+    jid1 = job_create("run", "will-succeed")
+    jid2 = job_create("run", "will-fail")
+    job_event(jid1, "job_succeeded", "succeeded", "done")
+    job_event(jid2, "job_failed", "failed", "error", error="boom")
+    removed = job_prune(status_filter="succeeded")
+    assert removed == 1
+    jobs = job_list(limit=100)
+    ids = {j["job_id"] for j in jobs}
+    assert jid1 not in ids
+    assert jid2 in ids
+
+
+def test_job_prune_dry_run(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_prune
+    jid = job_create("run", "test")
+    removed = job_prune(older_than_seconds=0, dry_run=True)
+    assert removed == 1
+    # Job still exists
+    from dashboard.collectors.jobs import job_snapshot
+    assert job_snapshot(jid) is not None
+
+
+def test_job_prune_max_count(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_list, job_prune
+    jids = []
+    for _ in range(5):
+        jids.append(job_create("run", "test"))
+        import time; time.sleep(0.1)
+    job_prune(max_count=3, dry_run=False)
+    jobs = job_list(limit=100)
+    assert len(jobs) <= 3

@@ -748,6 +748,61 @@ finally:
 PY
 }
 
+cmd_job_prune() {
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 - "$@" <<'PY'
+import sys, re
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import job_prune
+
+args = sys.argv[1:]
+
+older_than = 0
+status_filter = None
+dry_run = False
+
+for a in args:
+    if a == "--dry-run":
+        dry_run = True
+    elif a == "--all":
+        older_than = 0  # will use 1=1 WHERE clause
+    elif a.startswith("--older-than="):
+        val = a.split("=", 1)[1]
+        m = re.match(r"(\d+)([smhd])$", val)
+        if m:
+            num, unit = int(m.group(1)), m.group(2)
+            mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+            older_than = num * mult[unit]
+        else:
+            older_than = int(val)
+    elif a == "--older-than" and len(args) > args.index(a) + 1:
+        idx = args.index(a)
+        val = args[idx + 1]
+        m = re.match(r"(\d+)([smhd])$", val)
+        if m:
+            num, unit = int(m.group(1)), m.group(2)
+            mult = {"s": 1, "m": 60, "h": 3600, "d": 86400}
+            older_than = num * mult[unit]
+        else:
+            older_than = int(val)
+    elif a.startswith("--status="):
+        status_filter = a.split("=", 1)[1]
+    elif a == "--status" and len(args) > args.index(a) + 1:
+        idx = args.index(a)
+        status_filter = args[idx + 1]
+
+removed = job_prune(
+    older_than_seconds=older_than,
+    status_filter=status_filter,
+    dry_run=dry_run,
+)
+if dry_run:
+    print(f"Would remove {removed} job(s)")
+else:
+    print(f"Removed {removed} job(s)")
+PY
+}
+
 cmd_job_cancel() {
     local job_id="$1"
     local all_mode=0
@@ -1032,6 +1087,10 @@ agykit — portable Antigravity (agy) CLI manager
   agykit tail                    Live-tail all job events (socket)
   agykit cancel <job-id>         Cancel a running/starting job
   agykit cancel --all            Cancel all in-progress jobs
+  agykit prune [--older-than N]  Remove old jobs (N=seconds, or 7d/30d suffix)
+  agykit prune --status succeeded  Remove only successful jobs
+  agykit prune --dry-run         Show what would be removed without deleting
+  agykit prune --all             Remove all jobs
   agykit job-log <job-id>        Show all events for a specific job
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
@@ -1060,6 +1119,7 @@ case "${1:-}" in
     watch)         cmd_job_watch "${2:-}" ;;
     tail)          cmd_job_tail ;;
     cancel)        cmd_job_cancel "${2:-}" ;;
+    prune)         cmd_job_prune "${@:2}" ;;
     job-log)       cmd_job_log "${2:-}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;

@@ -264,6 +264,7 @@ def job_list(limit: int = 20) -> list[dict]:
     conn = _get_db()
     try:
         _recover_stale_jobs(conn)
+        _auto_prune_if_needed(conn)
         rows = conn.execute(
             "SELECT * FROM jobs ORDER BY started_at DESC LIMIT ?", (limit,)
         ).fetchall()
@@ -299,6 +300,112 @@ def job_cancel(job_id: str, message: str = ""):
         "status": "blocked", "stage": "cancelled",
         "message": msg,
     })
+
+
+def job_prune(
+    older_than_seconds: int = 0,
+    status_filter: str | None = None,
+    dry_run: bool = False,
+    max_count: int = 0,
+) -> int:
+    """Delete jobs. Returns count of removed jobs.
+
+    Args:
+        older_than_seconds: remove jobs where started_at is older than now - N seconds.
+                            If 0 and no other filter, remove all (subject to status_filter).
+        status_filter:       optional status to filter by (e.g. 'succeeded').
+        dry_run:             if True, only count matching jobs without deleting.
+        max_count:           if > 0, keep only the most recent N jobs and prune the rest.
+                             Ignored when older_than_seconds is also set (both apply).
+    """
+    conn = _get_db()
+    from datetime import datetime, timezone, timedelta
+    now = datetime.now(timezone.utc)
+    wheres: list[str] = []
+    params: list = []
+
+    if older_than_seconds > 0:
+        cutoff = (now - timedelta(seconds=older_than_seconds)).isoformat()
+        wheres.append("started_at < ?")
+        params.append(cutoff)
+
+    if status_filter:
+        wheres.append("status = ?")
+        params.append(status_filter)
+
+    where_clause = " AND ".join(wheres) if wheres else "1=1"
+
+    count_row = conn.execute(
+        f"SELECT COUNT(*) AS cnt FROM jobs WHERE {where_clause}", params
+    ).fetchone()
+    count = count_row["cnt"] if count_row else 0
+
+    if dry_run:
+        conn.close()
+        return count
+
+    deleted = 0
+    if count > 0:
+        conn.execute(
+            f"DELETE FROM events WHERE job_id IN (SELECT job_id FROM jobs WHERE {where_clause})",
+            params,
+        )
+        conn.execute(
+            f"DELETE FROM jobs WHERE {where_clause}", params
+        )
+        conn.commit()
+        deleted = count
+
+    if max_count > 0:
+        # Remove jobs beyond the max_count limit (oldest first)
+        over = conn.execute(
+            "SELECT COUNT(*) - ? AS over FROM jobs", (max_count,)
+        ).fetchone()
+        over_count = over["over"] if over else 0
+        if over_count > 0:
+            rows = conn.execute(
+                "SELECT job_id FROM jobs ORDER BY started_at ASC LIMIT ?",
+                (over_count,),
+            ).fetchall()
+            ids = tuple(r["job_id"] for r in rows)
+            conn.execute(
+                f"DELETE FROM events WHERE job_id IN ({','.join('?' * len(ids))})", ids
+            )
+            conn.execute(
+                f"DELETE FROM jobs WHERE job_id IN ({','.join('?' * len(ids))})", ids
+            )
+            conn.commit()
+            deleted += len(ids)
+
+    conn.close()
+    return deleted
+
+
+def _auto_prune_if_needed(conn: sqlite3.Connection):
+    import os
+    from datetime import datetime, timezone, timedelta
+    ttl_days = int(os.environ.get("AGYKIT_JOB_TTL_DAYS", "30"))
+    max_jobs = int(os.environ.get("AGYKIT_JOB_MAX_COUNT", "500"))
+    if ttl_days > 0:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=ttl_days)).isoformat()
+        conn.execute("DELETE FROM events WHERE job_id IN (SELECT job_id FROM jobs WHERE started_at < ?)", (cutoff,))
+        conn.execute("DELETE FROM jobs WHERE started_at < ?", (cutoff,))
+    if max_jobs > 0:
+        over_row = conn.execute("SELECT MAX(0, COUNT(*) - ?) AS over FROM jobs", (max_jobs,)).fetchone()
+        over = over_row["over"] if over_row else 0
+        if over > 0:
+            rows = conn.execute(
+                "SELECT job_id FROM jobs ORDER BY started_at ASC LIMIT ?", (over,)
+            ).fetchall()
+            ids = tuple(r["job_id"] for r in rows)
+            conn.execute(
+                f"DELETE FROM events WHERE job_id IN ({','.join('?' * len(ids))})", ids
+            )
+            conn.execute(
+                f"DELETE FROM jobs WHERE job_id IN ({','.join('?' * len(ids))})", ids
+            )
+    if ttl_days > 0 or max_jobs > 0:
+        conn.commit()
 
 
 def job_set_verify_result(job_id: str, result: str):
