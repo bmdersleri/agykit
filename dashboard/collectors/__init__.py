@@ -33,6 +33,7 @@ from .jobs import (
     job_events,
     job_list,
     job_set_verify_result,
+    job_stats,
 )
 
 __all__ = [
@@ -58,7 +59,9 @@ __all__ = [
     "cc_activity",
     "activity_feed",
     "codex_usage",
+    "codex_status",
     "rtk_stats",
+    "job_stats",
     "_parse_suffix",
     "_ROW_RE",
     "ops_log",
