@@ -659,6 +659,15 @@ cmd_job_watch() {
     local job_id="$1"
     [ -z "$job_id" ] && { echo "Usage: agykit watch <job-id>"; exit 1; }
     local repo; repo=$(_cmd_job_repo)
+    # Try TUI (Textual) first; if not available, fall back to simple watch
+    PYTHONPATH="$repo" python3 -c "
+import sys
+sys.path.insert(0, '$repo')
+from dashboard.tui import watch_job_tui
+if not watch_job_tui('$job_id'):
+    raise SystemExit(99)
+" 2>/dev/null && return 0
+    # Fallback: simple terminal watch
     PYTHONPATH="$repo" python3 - "$job_id" <<'PY'
 import sys, os, time, socket, json
 sys.path.insert(0, '')
