@@ -1364,7 +1364,7 @@ case "${1:-}" in
     status)        cmd_status ;;
     stats)         cmd_jobs --stats ;;
     log)           cmd_log "${2:-}" ;;
-    jobs)          cmd_jobs "${2:-}" ;;
+    jobs)          cmd_jobs "${@:2}" ;;
     watch)         cmd_job_watch "${2:-}" ;;
     tail)          cmd_job_tail ;;
     cancel)        cmd_job_cancel "${2:-}" ;;

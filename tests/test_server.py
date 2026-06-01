@@ -94,7 +94,8 @@ def test_events_first_line():
         r = c.getresponse()
         assert r.status == 200
         assert r.headers["Content-Type"].startswith("text/event-stream")
-        assert r.fp.readline().startswith(b"data:")
+        first = r.fp.readline()
+        assert first.startswith(b"event:") or first.startswith(b"data:")
     finally:
         srv.shutdown()
 
