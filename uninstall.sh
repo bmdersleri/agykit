@@ -13,5 +13,12 @@ else
     echo "Not installed at $TARGET (nothing to remove)."
 fi
 
+AGENTS_SKILL_DIR="$HOME/.agents/skills/agykit"
+if [ -f "$AGENTS_SKILL_DIR/SKILL.md" ]; then
+    rm -f "$AGENTS_SKILL_DIR/SKILL.md"
+    rmdir "$AGENTS_SKILL_DIR" 2>/dev/null || true
+    echo "Removed: opencode skill ($AGENTS_SKILL_DIR)"
+fi
+
 echo "Left intact: ~/.gemini/accounts/ (snapshots), .agykit.conf (project config)."
 echo "To purge account snapshots: rm -rf ~/.gemini/accounts/"

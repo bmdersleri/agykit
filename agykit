@@ -978,7 +978,7 @@ cmd_doctor() {
     # ── agy State ───────────────────────────────────────────────────────────
     echo "agy State"
     local email
-    email=$(python3 - <<'PY' 2>/dev/null
+    email=$(python3 - <<'PY' 2>/dev/null || true
 import keyring, json, urllib.request
 v = keyring.get_password('gemini', 'antigravity')
 if not v: raise SystemExit("no token")

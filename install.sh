@@ -35,6 +35,14 @@ case ":$PATH:" in
        echo "      export PATH=\"$TARGET_DIR:\$PATH\"" ;;
 esac
 
+# ── Skill install (opencode) ──────────────────────────────────────────────────
+AGENTS_SKILL_DIR="$HOME/.agents/skills/agykit"
+if [ -d "$HOME/.agents/skills" ]; then
+    mkdir -p "$AGENTS_SKILL_DIR"
+    cp "$SRC_DIR/skills/SKILL.md" "$AGENTS_SKILL_DIR/SKILL.md"
+    echo "Installed: opencode skill -> $AGENTS_SKILL_DIR/SKILL.md"
+fi
+
 # ── Config scaffold ──────────────────────────────────────────────────────────
 if [ ! -f ".agykit.conf" ] && [ -t 0 ]; then
     echo "No .agykit.conf in CWD. Create one? (copies example) [y/N]"
