@@ -957,7 +957,10 @@ if jobs:
         print(f" | job:{j['job_id'][:8]}…({j.get('status','')}/{j.get('stage','')})")
 PY
 )
-    echo "${email} | ${model} | ${quota}${job_info}"
+    local codex_info
+    codex_info=$(cmd_codex --status 2>/dev/null || echo "")
+    [ -n "$codex_info" ] && codex_info=" | $codex_info"
+    echo "${email} | ${model} | ${quota}${job_info}${codex_info}"
 }
 
 _quota_alert() {
@@ -979,6 +982,86 @@ cmd_quota() {
     local dir; dir="$(cd "$(dirname "$self")" && pwd)/dashboard"
     [ -f "$dir/quota.py" ] || { echo "quota.py not found at $dir" >&2; exit 1; }
     python3 "$dir/quota.py" "$@"
+}
+
+cmd_codex() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    local json_mode=0 status_mode=0
+    for arg in "$@"; do
+        [ "$arg" = "--json" ] && json_mode=1
+        [ "$arg" = "--status" ] && status_mode=1
+    done
+    PYTHONPATH="$repo" python3 - "$json_mode" "$status_mode" <<'PY'
+import sys, json
+sys.path.insert(0, '')
+from dashboard.collectors.codex import codex_status, codex_usage
+
+def _fmt(n):
+    if n >= 1_000_000:
+        return f"{n/1_000_000:.1f}M"
+    if n >= 1_000:
+        return f"{n/1_000:.0f}K"
+    return str(n)
+
+json_mode = int(sys.argv[1]) == 1
+status_mode = int(sys.argv[2]) == 1
+
+status = codex_status()
+usage = codex_usage(limit=5)
+
+if not status.get("available"):
+    status_mode and print("codex: unavailable")
+    json_mode and print(json.dumps({"available": False, "warning": status.get("warning")}))
+    if not json_mode and not status_mode:
+        w = status.get("warning") or ""
+        print(f"Codex: unavailable  [{w}]" if w else "Codex: unavailable")
+    raise SystemExit(0)
+
+if json_mode:
+    print(json.dumps({**status, "usage": usage}, indent=2, default=str))
+    raise SystemExit(0)
+
+if status_mode:
+    acct = status.get("account") or {}
+    email = acct.get("email", "?")
+    model = status.get("current_model") or "?"
+    plan = acct.get("plan_type", "?")
+    print(f"codex: {email} | {model} | {plan} | {status['thread_count']} threads | {_fmt(status['total_tokens_used'])}")
+    raise SystemExit(0)
+
+# Full report
+acct = status.get("account") or {}
+print("Codex Account")
+if acct.get("email"):
+    print(f"  Email:          {acct['email']}")
+    print(f"  Plan:           {acct.get('plan_type', '?')}")
+    print(f"  Subscription:   {acct.get('subscription_active_until', '?')}")
+print(f"  Current model:  {status.get('current_model') or '?'}")
+print(f"  Active threads: {status['thread_count']}")
+print(f"  Total tokens:   {_fmt(status['total_tokens_used'])}")
+
+su = usage.get("summary") or {}
+if su.get("sessions", 0) > 0:
+    print()
+    print("Usage Summary")
+    print(f"  Sessions:       {su['sessions']}")
+    print(f"  Prompts:        {su.get('prompts', 0)}")
+    print(f"  Total tokens:   {_fmt(su['tokens_used'])}")
+    print(f"  Models:         {', '.join(su.get('models', []))}")
+    print(f"  Last activity:  {su.get('last_activity', '?')}")
+
+pj = usage.get("current_project") or {}
+if pj.get("sessions", 0) > 0:
+    print()
+    print(f"Current Project ({pj.get('name', '?')})")
+    print(f"  Sessions:       {pj['sessions']}")
+    print(f"  Tokens used:    {_fmt(pj['tokens_used'])}")
+
+w = status.get("warning") or usage.get("warning")
+if w:
+    print(f"\n  Warning: {w}")
+PY
 }
 
 cmd_doctor() {
@@ -1189,6 +1272,7 @@ agykit — portable Antigravity (agy) CLI manager
   agykit run "prompt"            Quota-aware run (rotate accounts)
   agykit do-escalate "prompt"    Model ladder on verify fail (needs AGYKIT_VERIFY)
   agykit dash [--port N]          Open the usage dashboard (localhost)
+  agykit codex [--json|--status]  Show Codex account/usage information
   agykit quota [--refresh]        Show model quota table (cached 5min)
   agykit quota --json             Machine-readable JSON quota output
   agykit quota --status           One-line summary for scripts/statusline
@@ -1234,6 +1318,7 @@ case "${1:-}" in
     do-escalate)   cmd_do_escalate "${2:-}" ;;
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
+    codex)         cmd_codex "${@:2}" ;;
     status)        cmd_status ;;
     stats)         cmd_jobs --stats ;;
     log)           cmd_log "${2:-}" ;;
