@@ -5,25 +5,129 @@ Orchestrator-agnostic agy management: works with Claude Code, OpenCode, Codex, o
 Multi-account rotation with quota-aware sorting, model ladder escalation with error context
 pass-through, usage dashboard, caveman-style terse output for token savings.
 
+---
+
 ## Install
+
+### Prerequisites
+
+- **agy** — Antigravity CLI (must be installed and on `$PATH`)
+- **python 3.11+** — stdlib only, no pip dependencies
+- **git** — required for model-ladder rollback
+- **tmux** — required for live quota capture
+- **jq** — required for quota parsing
+- **python-keyring** — for account snapshot storage (`pip install keyring` or distro package)
+
+### Clone + install
+
 ```bash
 git clone https://github.com/bmdersleri/agykit.git
-cd agykit && ./install.sh
+cd agykit
+./install.sh
 ```
-`install.sh` checks deps (agy, python3, git, jq, python-keyring), symlinks to `~/.local/bin`, then checks for an active agy OAuth token. If found, auto-saves an account snapshot. If not, prints numbered next steps.
 
-- Custom prefix: `AGYKIT_PREFIX=/usr/local/bin ./install.sh`
-- Uninstall: `./uninstall.sh` (keeps account snapshots + project config)
-- Manual: `ln -sf "$PWD/agykit" ~/.local/bin/agykit`
+`install.sh` checks all deps, symlinks the `agykit` binary to `~/.local/bin`, and auto-saves an account snapshot if an active agy OAuth token is detected.
 
-After install, run `agykit doctor` to verify everything is set up correctly.
+Options:
 
-**Claude Code skill (optional):** install `skills/agykit.md` so Claude Code knows how to use agykit:
+```bash
+AGYKIT_PREFIX=/usr/local/bin ./install.sh   # custom install prefix
+./uninstall.sh                               # removes binary (keeps snapshots + project config)
+ln -sf "$PWD/agykit" ~/.local/bin/agykit     # manual symlink
+```
+
+### First login — agy OAuth + account-save
+
+If you have not logged in to agy yet:
+
+```bash
+agy                        # launches browser OAuth flow
+agykit account-save        # snapshot keyring → ~/.gemini/accounts/<email>.json
+agykit whoami              # confirm active account
+```
+
+### Add more accounts (why it matters)
+
+Each Google account has independent per-model quotas. agykit rotates across all saved accounts before hitting a hard wall. Add every Google account you own:
+
+```bash
+agykit account-add         # guided: opens agy → OAuth login → auto-saves snapshot
+agykit account-list        # verify all accounts are registered
+```
+
+With 3+ accounts you can sustain long coding sessions without manual token juggling.
+
+### Install Claude Code skill (optional)
+
+Installs a skill file so Claude Code knows agykit's commands and patterns:
+
 ```bash
 cp "$(dirname $(which agykit))/../skills/agykit.md" ~/.claude/skills/agykit.md
 ```
 
+### Verify installation
+
+```bash
+agykit doctor              # checks all deps, data sources, account snapshots
+agykit doctor --fix        # auto-fixes resolvable warnings (cache, snapshots)
+```
+
+---
+
+## Setup for a new project
+
+### Step-by-step
+
+1. Change to your project directory and run init:
+
+   ```bash
+   cd /your/project
+   agykit init
+   ```
+
+   `agykit init` auto-detects your project type (Python / Node / Rust / Go / Justfile), prompts for verify command, source directory, and terse level, then creates:
+   - `.agykit.conf` — project config (added to `.gitignore` automatically)
+   - `CLAUDE_AGY_SYSTEM.md` — system context template
+
+2. Edit `CLAUDE_AGY_SYSTEM.md` with your project's context — architecture summary, key files, conventions, what agy should and should not touch. The more specific, the better the results.
+
+3. Set `AGYKIT_VERIFY` to your test command in `.agykit.conf`:
+
+   ```bash
+   AGYKIT_VERIFY="pytest -q"       # Python
+   # AGYKIT_VERIFY="npm test"      # Node
+   # AGYKIT_VERIFY="cargo test"    # Rust
+   # AGYKIT_VERIFY="just check"    # Justfile
+   ```
+
+   `do-escalate` will not escalate without this set.
+
+4. Point `AGYKIT_FLAGS` to your source directory — **not `$PWD`**:
+
+   ```bash
+   # Good: scope to source only
+   AGYKIT_FLAGS="--add-dir $PWD/src --dangerously-skip-permissions"
+
+   # Bad: $PWD loads logs, lock files, build artifacts → wastes tokens
+   # AGYKIT_FLAGS="--add-dir $PWD --dangerously-skip-permissions"
+   ```
+
+   Monorepo example:
+   ```bash
+   AGYKIT_FLAGS="--add-dir $PWD/src --add-dir $PWD/lib --dangerously-skip-permissions"
+   ```
+
+5. Smoke test:
+
+   ```bash
+   agykit run "hello"             # should respond via agy, no errors
+   agykit doctor                  # all green
+   ```
+
+---
+
 ## Commands
+
 ```
 agykit whoami                  Show active Google account
 agykit status                  One-line: active account | model | quota summary
@@ -45,6 +149,8 @@ agykit doctor                  Check installation and system file dependencies
 agykit doctor --fix            Auto-fix resolvable issues (quota cache, account snapshot)
 ```
 
+---
+
 ## Dashboard (`agykit dash`)
 
 Live localhost web dashboard at `http://127.0.0.1:8787` (light/dark theme):
@@ -55,6 +161,8 @@ Live localhost web dashboard at `http://127.0.0.1:8787` (light/dark theme):
 - **agy Status** — statusline snapshot + last session summary
 
 Requires `tmux` for model quota capture. First load takes ~30s; results cached for 5 minutes.
+
+---
 
 ## Quota CLI (`agykit quota`)
 
@@ -67,61 +175,125 @@ agykit quota --json | jq  # pipe to any tool
 
 The quota cache (`~/.gemini/antigravity-cli/quota-cache.json`) is also read by the dashboard and the statusline badge.
 
-## Project Setup (new project)
+---
 
-Run in your project directory:
+## Using agykit from Claude Code
 
-```bash
-cd /your/project
-agykit init
+The recommended workflow: use Claude Code for planning, navigation, and context — delegate actual implementation to agy via agykit so quota is spread across multiple Google accounts and models.
+
+### The full loop
+
+1. **Describe** what needs to change to Claude Code.
+2. **Claude Code** reads the relevant files and produces a scoped, specific prompt.
+3. **You** run `! agykit do-escalate "<that prompt>"` — agy implements, verify runs, quota rotates automatically.
+4. **Claude Code** reviews the diff and result.
+
+This loop keeps Claude Code's context clean (no large code edits inline) and uses agy quota for the heavy lifting.
+
+### The `!` prefix — running agykit inside Claude Code
+
+Type `! agykit ...` directly in the Claude Code prompt bar. The `!` prefix executes the command in your shell session and pipes its output back into the conversation — you see the result inline without leaving Claude Code.
+
+```
+! agykit run "refactor the _apply_range function in dashboard/collectors/_common.py to be more readable"
+
+! agykit do-escalate "add pagination to the /api/ops-log endpoint"
+
+! agykit quota --status
 ```
 
-`agykit init` auto-detects your project type (Python/Node/Rust/Go/Justfile), prompts for verify command, source directory, and terse level, then creates:
-- `.agykit.conf` — project config (added to `.gitignore` automatically)
-- `CLAUDE_AGY_SYSTEM.md` — system context template (edit to describe your project)
+### When to use `run` vs `do-escalate`
 
-Then verify setup:
+| Task | Command |
+|------|---------|
+| Understand codebase, read files, plan | Claude Code directly (no agykit) |
+| Docs, comments, scripts — no test needed | `agykit run` |
+| Quick rewrite, outcome visible by inspection | `agykit run` |
+| Code change + automated test (`AGYKIT_VERIFY` set) | `agykit do-escalate` |
+| Bug fix where you need guaranteed green tests | `agykit do-escalate` |
+
+### Writing a good `do-escalate` prompt
+
+A good prompt has four elements:
+
+1. **File + line scope** — name the file and function, not just the feature
+2. **What to do** — concrete action verb (add, extract, fix, replace)
+3. **Constraints** — what must not change (no logic changes, keep signature, do not rename)
+4. **Verify hint** (optional) — what the verify command will check
 
 ```bash
-agykit doctor        # check all dependencies and data sources
-agykit doctor --fix  # auto-fix any resolvable warnings
-agykit run "hello"   # smoke test
+# Scoped with constraint
+! agykit do-escalate "in dashboard/alerts.py, extract the cooldown check (lines 88-102) into a private _is_cooled_down(key, state, now, cooldown) function — no logic changes, existing tests must pass"
+
+# Bug fix with error inline
+! agykit do-escalate "fix TypeError on line 42 of tests/test_alerts.py: 'NoneType' object is not iterable — do not modify the test itself"
+
+# Feature addition with scope
+! agykit do-escalate "add a --dry-run flag to agykit account-remove that prints what would be deleted without deleting — update usage string in cmd_account_remove only"
 ```
 
-### Manual config reference
+Avoid vague prompts like "improve the dashboard" — agy will not know where to look and may touch unrelated files.
 
-<details>
-<summary>`.agykit.conf` key settings</summary>
+### How `do-escalate` escalation works
+
+```
+Flash  →  verify  →  pass: done
+                  →  fail: error captured
+          Pro    →  verify (error from Flash as context)  →  pass: done
+                                                           →  fail: error captured
+                  Opus  →  verify (errors from Flash+Pro as context)  →  pass: done
+                                                                       →  fail: all-exhausted
+```
+
+- Each escalation step **passes the previous model's verify error output** as context — Pro and Opus know exactly what went wrong.
+- After each step, agykit takes a `git` snapshot. On failure, WIP is rolled back — your working tree is always safe.
+- If all three models fail, status is `all-exhausted` and the last error is printed.
+
+### Multi-account quota extension
+
+With multiple accounts saved, agykit sorts them by quota status before every run:
+- Available accounts go first.
+- Exhausted accounts fall to the end as a fallback (sometimes still work after a short wait).
+- Mid-run quota errors trigger automatic rotation to the next account without interrupting the task.
+
+Check how many accounts you have ready:
 
 ```bash
-# Verify command: runs after every code task (required for do-escalate)
-AGYKIT_VERIFY="pytest -q"          # Python
-# AGYKIT_VERIFY="npm test"         # Node / AGYKIT_VERIFY="cargo test"  # Rust
-
-# System context file injected into every agy prompt
-AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
-
-# IMPORTANT: point to source directory, NOT $PWD
-# $PWD loads logs/lock files/build artifacts → wastes tokens
-AGYKIT_FLAGS="--add-dir $PWD/src --dangerously-skip-permissions"
-# Single-dir: --add-dir $PWD/mypackage   Monorepo: --add-dir $PWD/src --add-dir $PWD/lib
-
-AGYKIT_TIMEOUT="15m"
-AGYKIT_TERSE="ultra"   # token savings: lite | full | ultra
+agykit account-list
+agykit quota --status        # "✓ N models available across M accounts"
 ```
-</details>
+
+Add more with `agykit account-add`.
+
+### Quota monitoring tips
+
+```bash
+! agykit quota --status      # quick check before a big task
+! agykit quota               # full table: per-model limits and resets
+```
+
+- Dashboard at `http://localhost:8787` shows live quota bars, per-account cards, and alert thresholds.
+- Set `AGYKIT_QUOTA_ALERT_PCT=20` in `.agykit.conf` to be warned when any model drops below 20%.
+- First dashboard load takes ~30s (live tmux capture). Subsequent loads use the 5-minute cache.
 
 ---
 
 ## Config reference
+
 Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
-- `AGYKIT_VERIFY` — command run after a code task (needed for `do-escalate`)
-- `AGYKIT_SYSTEM` — path to system-context file injected into prompts
-- `AGYKIT_FLAGS` — extra agy flags (default: `--dangerously-skip-permissions`)
-- `AGYKIT_TIMEOUT` — agy print timeout (default: `15m`)
-- `AGYKIT_TERSE` — terse output for `run`: `0`/`lite`/`full`/`ultra` (saves output tokens; default `ultra`)
+
+| Variable | Description | Default |
+|----------|-------------|---------|
+| `AGYKIT_VERIFY` | Command run after a code task (needed for `do-escalate`) | — |
+| `AGYKIT_SYSTEM` | Path to system-context file injected into prompts | — |
+| `AGYKIT_FLAGS` | Extra agy flags | `--dangerously-skip-permissions` |
+| `AGYKIT_TIMEOUT` | agy print timeout | `15m` |
+| `AGYKIT_TERSE` | Terse output level: `0`/`lite`/`full`/`ultra` | `ultra` |
+| `AGYKIT_QUOTA_ALERT_PCT` | Warn when model quota drops below N% | — |
 
 See `agykit.conf.example` for a full annotated template.
+
+---
 
 ## System File Dependencies
 
@@ -180,69 +352,6 @@ examples/
   claude-credentials.json.example    ~/.claude/.credentials.json
   claude-stats-cache.json.example    ~/.claude/stats-cache.json
 ```
-
----
-
-## Using agykit from Claude Code
-
-The recommended workflow: use Claude Code for planning, navigation, and context — delegate actual coding tasks to agy via agykit so quota is spread across multiple Google accounts and models.
-
-### When to use which
-
-| Task | Tool |
-|------|------|
-| Understand codebase, read files, plan | Claude Code directly |
-| Write/edit code, fix bugs, refactor | `agykit run` or `agykit do-escalate` via `! agykit ...` |
-| One-shot coding task, outcome verified | `agykit do-escalate` |
-| Quick rewrite, no verify step needed | `agykit run` |
-
-### Running agykit from within Claude Code
-
-Type `! agykit run "..."` in the Claude Code prompt — the `!` prefix runs the command in your session and its output lands directly in the conversation.
-
-```
-! agykit run "refactor the _apply_range function in dashboard/collectors/_common.py to be more readable"
-
-! agykit do-escalate "add pagination to the /api/ops-log endpoint"
-
-! agykit run "write a docstring for every public function in dashboard/alerts.py"
-```
-
-### Workflow pattern
-
-1. **You** describe what needs to change to Claude Code  
-2. **Claude Code** reads the relevant files and gives you the exact prompt to pass to agy  
-3. **You** run `! agykit do-escalate "<that prompt>"` — agy implements, verify runs, quota rotates automatically  
-4. **Claude Code** reviews the result
-
-### Effective prompt patterns for `agykit run`
-
-```bash
-# Scoped: always name the file and function
-! agykit run "in dashboard/collectors/rtk.py, add error handling for when 'rtk gain' returns empty output"
-
-# With context: paste the error inline
-! agykit run "fix the TypeError on line 42 of tests/test_alerts.py: 'NoneType' object is not iterable"
-
-# Refactor with constraint
-! agykit run "extract the cooldown check in dashboard/alerts.py into a private _is_cooled_down(key, state, now, cooldown) function — no logic changes"
-```
-
-### `do-escalate` vs `run`
-
-Use **`do-escalate`** when you have a `AGYKIT_VERIFY` command set (e.g. `pytest -q`). It:
-- Runs Flash first (cheapest), escalates to Pro → Opus only on verify failure
-- Passes the previous error to the next model as context
-- Rolls back agy's git changes on failure — your WIP is always safe
-
-Use **`run`** for tasks with no automated verify (docs, comments, scripts).
-
-### Quota tips
-
-- Check quota before a big task: `! agykit quota --status`
-- Add multiple Google accounts with `agykit account-add` to extend capacity
-- Dashboard at `http://localhost:8787` shows live quota bars + alert thresholds
-- Set `AGYKIT_QUOTA_ALERT_PCT=20` in `.agykit.conf` to get warned earlier
 
 ---
 
