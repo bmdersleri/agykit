@@ -35,12 +35,19 @@ case ":$PATH:" in
        echo "      export PATH=\"$TARGET_DIR:\$PATH\"" ;;
 esac
 
-# ── Skill install (opencode) ──────────────────────────────────────────────────
+# ── Skill install ─────────────────────────────────────────────────────────────
+# OpenCode
 AGENTS_SKILL_DIR="$HOME/.agents/skills/agykit"
 if [ -d "$HOME/.agents/skills" ]; then
     mkdir -p "$AGENTS_SKILL_DIR"
     cp "$SRC_DIR/skills/SKILL.md" "$AGENTS_SKILL_DIR/SKILL.md"
     echo "Installed: opencode skill -> $AGENTS_SKILL_DIR/SKILL.md"
+fi
+
+# Codex
+if [ -d "$HOME/.codex/skills" ]; then
+    cp "$SRC_DIR/skills/codex.md" "$HOME/.codex/skills/agykit.md"
+    echo "Installed: codex skill -> ~/.codex/skills/agykit.md"
 fi
 
 # ── Config scaffold ──────────────────────────────────────────────────────────

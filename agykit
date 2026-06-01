@@ -317,30 +317,30 @@ _job_op() {
     PYTHONPATH="$repo" python3 - "$@" <<'PY'
 import sys
 sys.path.insert(0, '')
-    from dashboard.collectors.jobs import (
-        job_create, job_event, job_snapshot,
-        job_events, job_list, job_set_verify_result,
-        job_cancel,
+from dashboard.collectors.jobs import (
+    job_create, job_event, job_snapshot,
+    job_events, job_list, job_set_verify_result,
+    job_cancel,
+)
+op = sys.argv[1]
+if op == "create":
+    print(job_create(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""))
+elif op == "event":
+    job_event(
+        job_id=sys.argv[2],
+        event_type=sys.argv[3],
+        status=sys.argv[4],
+        stage=sys.argv[5],
+        account=sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None,
+        model=sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else None,
+        message=sys.argv[8] if len(sys.argv) > 8 else "",
+        error=sys.argv[9] if len(sys.argv) > 9 and sys.argv[9] else None,
     )
-    op = sys.argv[1]
-    if op == "create":
-        print(job_create(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""))
-    elif op == "event":
-        job_event(
-            job_id=sys.argv[2],
-            event_type=sys.argv[3],
-            status=sys.argv[4],
-            stage=sys.argv[5],
-            account=sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None,
-            model=sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else None,
-            message=sys.argv[8] if len(sys.argv) > 8 else "",
-            error=sys.argv[9] if len(sys.argv) > 9 and sys.argv[9] else None,
-        )
-    elif op == "set-verify-result":
-        job_set_verify_result(sys.argv[2], sys.argv[3])
-    elif op == "cancel":
-        msg = sys.argv[3] if len(sys.argv) > 3 else ""
-        job_cancel(sys.argv[2], msg)
+elif op == "set-verify-result":
+    job_set_verify_result(sys.argv[2], sys.argv[3])
+elif op == "cancel":
+    msg = sys.argv[3] if len(sys.argv) > 3 else ""
+    job_cancel(sys.argv[2], msg)
 PY
 }
 
@@ -442,10 +442,31 @@ Fix the above issues, then complete the original task:
     echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "all models exhausted" "" "" "All models failed"; restore_model; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 1
 }
 
+_detect_agent() {
+    if [ -n "${CODEX_API_KEY:-}" ] || [ -d "$HOME/.codex/skills" ]; then
+        echo "codex"
+    elif [ -n "${CLAUDE_CODE:-}" ] || [ -d "$HOME/.claude/skills" ]; then
+        echo "claude"
+    elif [ -n "${OPENCODE:-}" ] || [ -d "$HOME/.config/opencode" ]; then
+        echo "opencode"
+    else
+        echo "unknown"
+    fi
+}
+
+_agent_system_file() {
+    local agent; agent="$(_detect_agent)"
+    case "$agent" in
+        codex)    echo "CODEX_AGY_SYSTEM.md" ;;
+        opencode) echo "OPENCODE_AGY_SYSTEM.md" ;;
+        *)        echo "CLAUDE_AGY_SYSTEM.md" ;;
+    esac
+}
+
 cmd_init() {
     echo "═══ agykit init — project setup ═══"
     if [ -f ".agykit.conf" ]; then
-        echo ".agykit.conf already exists in $(pwd). Delete it first to reinitialize."; exit 1
+        echo ".agykit.conf already exists in $(pwd). Delete it to reinitialize."; exit 1
     fi
     local project_name; project_name=$(basename "$PWD")
     echo "Project: $project_name  ($(pwd))"; echo
@@ -465,6 +486,11 @@ cmd_init() {
         verify_default="just test"
     fi
 
+    local agent; agent="$(_detect_agent)"
+    local sys_file; sys_file="$(_agent_system_file)"
+    echo "Detected agent: $agent  →  $sys_file"
+    echo
+
     printf "Verify command [%s]: " "$verify_default"; read -r v_in
     local verify="${v_in:-$verify_default}"
     printf "Source dir for --add-dir [%s]: " "$src_default"; read -r s_in
@@ -476,7 +502,7 @@ cmd_init() {
     cat > .agykit.conf <<CONF
 # agykit config — $project_name
 AGYKIT_VERIFY="${verify}"
-AGYKIT_SYSTEM="CLAUDE_AGY_SYSTEM.md"
+AGYKIT_SYSTEM="${sys_file}"
 AGYKIT_FLAGS="--add-dir ${src_dir} --dangerously-skip-permissions"
 AGYKIT_TIMEOUT="15m"
 AGYKIT_TERSE="${terse}"
@@ -491,9 +517,15 @@ CONF
         fi
     fi
 
-    # CLAUDE_AGY_SYSTEM.md scaffold
-    if [ ! -f "CLAUDE_AGY_SYSTEM.md" ]; then
-        cat > CLAUDE_AGY_SYSTEM.md <<SYS
+    # System context scaffold (agent-aware)
+    if [ ! -f "$sys_file" ]; then
+        local agent_label=""
+        case "$agent" in
+            codex)    agent_label="Codex" ;;
+            opencode) agent_label="OpenCode" ;;
+            *)        agent_label="Claude Code" ;;
+        esac
+        cat > "$sys_file" <<SYS
 # $project_name — Project Context
 
 <describe what this project does in 2-3 sentences>
@@ -508,12 +540,12 @@ CONF
 - Never run git commands. Leave changes in working tree.
 - Only edit: <list the files agy is allowed to touch>
 SYS
-        echo "  ✓ CLAUDE_AGY_SYSTEM.md (edit to describe your project)"
+        echo "  ✓ $sys_file (edit to describe your project)"
     else
-        echo "  ✓ CLAUDE_AGY_SYSTEM.md already exists"
+        echo "  ✓ $sys_file already exists"
     fi
 
-    echo; echo "Done. Edit CLAUDE_AGY_SYSTEM.md, then run: agykit doctor"
+    echo; echo "Done. Edit $sys_file, then run: agykit doctor"
 }
 
 cmd_log() {
