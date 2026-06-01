@@ -504,8 +504,12 @@ def test_activity_feed_ts_epoch_zero_fallback(tmp_path):
 
 # ── Job state tests ─────────────────────────────────────────────────────────
 
+def _job_db_path(tmp_path):
+    return str(tmp_path / "jobs.db")
+
 def test_job_create_and_snapshot(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_create, job_snapshot
     jid = job_create("test-cmd", "test prompt")
     assert jid
@@ -520,7 +524,8 @@ def test_job_create_and_snapshot(tmp_path, monkeypatch):
 
 
 def test_job_event_updates_snapshot(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
     jid = job_create("run", "hello")
     job_event(jid, "account_selected", "running", "trying a@b.com", account="a@b.com")
@@ -531,7 +536,8 @@ def test_job_event_updates_snapshot(tmp_path, monkeypatch):
 
 
 def test_job_event_with_error(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
     jid = job_create("run", "hello")
     job_event(jid, "job_failed", "failed", "error", error="Something broke")
@@ -542,7 +548,8 @@ def test_job_event_with_error(tmp_path, monkeypatch):
 
 
 def test_job_events_ordering(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_create, job_event, job_events
     jid = job_create("run", "test")
     job_event(jid, "account_selected", "running", "acct1", account="a@b.com")
@@ -557,13 +564,15 @@ def test_job_events_ordering(tmp_path, monkeypatch):
 
 
 def test_job_list_empty(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_list
     assert job_list() == []
 
 
 def test_job_list_orders_by_newest(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_create, job_list
     import time
     jid1 = job_create("run", "first")
@@ -576,13 +585,15 @@ def test_job_list_orders_by_newest(tmp_path, monkeypatch):
 
 
 def test_job_snapshot_nonexistent(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_snapshot
     assert job_snapshot("nonexistent") is None
 
 
 def test_job_events_limit(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_create, job_event, job_events
     jid = job_create("run", "test")
     for i in range(10):
@@ -593,9 +604,80 @@ def test_job_events_limit(tmp_path, monkeypatch):
 
 
 def test_job_set_verify_result(tmp_path, monkeypatch):
-    monkeypatch.setattr("dashboard.collectors.jobs.JOBS_DIR", str(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
     from dashboard.collectors.jobs import job_create, job_set_verify_result, job_snapshot
     jid = job_create("do-escalate", "test")
     job_set_verify_result(jid, "passed")
     snap = job_snapshot(jid)
     assert snap["verify_result"] == "passed"
+
+
+# ── SQLite-specific tests ──────────────────────────────────────────────────
+
+def test_job_db_created(tmp_path, monkeypatch):
+    dbp = _job_db_path(tmp_path)
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", dbp)
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_list
+    assert not os.path.isfile(dbp)
+    job_create("run", "first contact")
+    assert os.path.isfile(dbp)
+
+
+def test_job_concurrent_write(tmp_path, monkeypatch):
+    dbp = _job_db_path(tmp_path)
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", dbp)
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+    import threading
+    jid = job_create("run", "concurrent")
+    errors = []
+    def _write():
+        try:
+            job_event(jid, "account_selected", "running", "step", account="a@b.com")
+        except Exception as e:
+            errors.append(e)
+    threads = [threading.Thread(target=_write) for _ in range(10)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+    assert not errors, f"Concurrent writes failed: {errors}"
+    snap = job_snapshot(jid)
+    assert snap["account"] == "a@b.com"
+
+
+def test_job_query_by_status(tmp_path, monkeypatch):
+    dbp = _job_db_path(tmp_path)
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", dbp)
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_list
+    jid = job_create("run", "test")
+    job_event(jid, "job_succeeded", "succeeded", "done")
+    jobs = job_list()
+    assert len(jobs) == 1
+    assert jobs[0]["status"] == "succeeded"
+
+
+def test_job_migration_from_json(tmp_path, monkeypatch):
+    old_dir = tmp_path / "agykit-jobs"
+    old_dir.mkdir()
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(old_dir))
+    dbp = _job_db_path(tmp_path)
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", dbp)
+    from dashboard.collectors.jobs import job_list
+    import json, uuid
+    from datetime import datetime, timezone
+    ts = datetime.now(timezone.utc)
+    jid = f"{ts.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}"
+    snap = {"job_id": jid, "command": "run", "status": "succeeded", "stage": "done",
+            "prompt": "migrated", "started_at": ts.isoformat(), "updated_at": ts.isoformat()}
+    (old_dir / f"{jid}.json").write_text(json.dumps(snap))
+    ev = {"job_id": jid, "ts": ts.isoformat(), "event": "job_started", "status": "starting",
+          "stage": "starting", "message": "migrated"}
+    (old_dir / f"{jid}.events.jsonl").write_text(json.dumps(ev) + "\n")
+    jobs = job_list()
+    assert len(jobs) == 1
+    assert jobs[0]["job_id"] == jid
+    assert jobs[0]["prompt"] == "migrated"

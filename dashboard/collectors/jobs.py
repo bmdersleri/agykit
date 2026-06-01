@@ -1,175 +1,236 @@
 import os
 import json
+import sqlite3
 import uuid
 from datetime import datetime, timezone
 
-JOBS_DIR = os.path.expanduser("~/.gemini/agykit-jobs")
+DB_PATH = os.path.expanduser("~/.gemini/agykit-jobs.db")
+_OLD_JSON_DIR = os.path.expanduser("~/.gemini/agykit-jobs")
+
+_SCHEMA_SQL = """
+CREATE TABLE IF NOT EXISTS jobs (
+    job_id      TEXT PRIMARY KEY,
+    command     TEXT NOT NULL,
+    status      TEXT NOT NULL DEFAULT 'starting',
+    stage       TEXT NOT NULL DEFAULT 'starting',
+    account     TEXT,
+    model       TEXT,
+    prompt      TEXT DEFAULT '',
+    started_at  TEXT NOT NULL,
+    updated_at  TEXT NOT NULL,
+    ended_at    TEXT,
+    last_error  TEXT,
+    verify_result TEXT
+);
+
+CREATE TABLE IF NOT EXISTS events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    job_id      TEXT NOT NULL REFERENCES jobs(job_id) ON DELETE CASCADE,
+    ts          TEXT NOT NULL,
+    event       TEXT NOT NULL,
+    status      TEXT NOT NULL,
+    stage       TEXT NOT NULL,
+    account     TEXT,
+    model       TEXT,
+    message     TEXT DEFAULT '',
+    error       TEXT
+);
+
+CREATE INDEX IF NOT EXISTS idx_events_job_id ON events(job_id);
+CREATE INDEX IF NOT EXISTS idx_events_ts     ON events(ts);
+CREATE INDEX IF NOT EXISTS idx_jobs_status   ON jobs(status);
+CREATE INDEX IF NOT EXISTS idx_jobs_started  ON jobs(started_at);
+"""
 
 
-def _ensure_dir():
-    os.makedirs(JOBS_DIR, exist_ok=True)
+def _get_db() -> sqlite3.Connection:
+    first = not os.path.isfile(DB_PATH)
+    conn = sqlite3.connect(DB_PATH, timeout=5)
+    conn.row_factory = sqlite3.Row
+    conn.executescript("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=5000")
+    conn.executescript(_SCHEMA_SQL)
+    if first and os.path.isdir(_OLD_JSON_DIR):
+        _migrate_from_json(conn)
+    return conn
 
 
-def _job_path(job_id):
-    return os.path.join(JOBS_DIR, f"{job_id}.json")
-
-
-def _events_path(job_id):
-    return os.path.join(JOBS_DIR, f"{job_id}.events.jsonl")
+def _migrate_from_json(conn: sqlite3.Connection):
+    try:
+        names = sorted(
+            n for n in os.listdir(_OLD_JSON_DIR)
+            if n.endswith(".json") and not n.endswith(".events.jsonl")
+        )
+    except Exception:
+        return
+    for name in names:
+        job_id = name[:-5]
+        snap_path = os.path.join(_OLD_JSON_DIR, name)
+        events_path = os.path.join(_OLD_JSON_DIR, f"{job_id}.events.jsonl")
+        try:
+            with open(snap_path) as f:
+                snap = json.load(f)
+        except Exception:
+            continue
+        conn.execute(
+            """INSERT OR IGNORE INTO jobs
+               (job_id, command, status, stage, account, model, prompt,
+                started_at, updated_at, ended_at, last_error, verify_result)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                snap.get("job_id", job_id),
+                snap.get("command", "") or "",
+                snap.get("status", "starting") or "starting",
+                snap.get("stage", "starting") or "starting",
+                snap.get("account"),
+                snap.get("model"),
+                snap.get("prompt", "") or "",
+                snap.get("started_at", "") or "",
+                snap.get("updated_at", "") or "",
+                snap.get("ended_at"),
+                snap.get("last_error"),
+                snap.get("verify_result"),
+            ),
+        )
+        if os.path.isfile(events_path):
+            try:
+                with open(events_path) as ef:
+                    for line in ef:
+                        line = line.strip()
+                        if not line:
+                            continue
+                        try:
+                            ev = json.loads(line)
+                        except json.JSONDecodeError:
+                            continue
+                        conn.execute(
+                            """INSERT INTO events
+                               (job_id, ts, event, status, stage, account, model, message, error)
+                               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                            (
+                                ev.get("job_id", job_id),
+                                ev.get("ts", "") or "",
+                                ev.get("event", "") or "",
+                                ev.get("status", "") or "",
+                                ev.get("stage", "") or "",
+                                ev.get("account"),
+                                ev.get("model"),
+                                ev.get("message", "") or "",
+                                ev.get("error"),
+                            ),
+                        )
+            except Exception:
+                pass
+    conn.commit()
 
 
 def job_create(command: str, prompt: str = "") -> str:
-    _ensure_dir()
+    conn = _get_db()
     ts = datetime.now(timezone.utc)
     suffix = uuid.uuid4().hex[:6]
     job_id = f"{ts.strftime('%Y%m%dT%H%M%S')}-{suffix}"
-
-    snapshot = {
-        "job_id": job_id,
-        "command": command,
-        "status": "starting",
-        "stage": "starting",
-        "account": None,
-        "model": None,
-        "prompt": prompt[:200],
-        "started_at": ts.isoformat(),
-        "updated_at": ts.isoformat(),
-        "ended_at": None,
-        "last_error": None,
-        "verify_result": None,
-    }
-
-    with open(_job_path(job_id), "w") as f:
-        json.dump(snapshot, f, indent=2)
-
-    _write_event(job_id, {
-        "job_id": job_id,
-        "ts": ts.isoformat(),
-        "event": "job_started",
-        "status": "starting",
-        "stage": "starting",
-        "account": None,
-        "model": None,
-        "message": f"Job started: {command}",
-    })
-
+    ts_iso = ts.isoformat()
+    try:
+        conn.execute(
+            """INSERT INTO jobs
+               (job_id, command, status, stage, prompt, started_at, updated_at)
+               VALUES (?, ?, 'starting', 'starting', ?, ?, ?)""",
+            (job_id, command, prompt[:200], ts_iso, ts_iso),
+        )
+        conn.execute(
+            """INSERT INTO events
+               (job_id, ts, event, status, stage, message)
+               VALUES (?, ?, 'job_started', 'starting', 'starting', ?)""",
+            (job_id, ts_iso, f"Job started: {command}"),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
     return job_id
 
 
 def job_event(job_id: str, event_type: str, status: str, stage: str,
               account: str | None = None, model: str | None = None,
               message: str = "", error: str | None = None):
-    _ensure_dir()
-    ts = datetime.now(timezone.utc)
-    event = {
-        "job_id": job_id,
-        "ts": ts.isoformat(),
-        "event": event_type,
-        "status": status,
-        "stage": stage,
-        "account": account,
-        "model": model,
-        "message": message,
-    }
-    if error is not None:
-        event["error"] = error
-
-    _write_event(job_id, event)
-    _update_snapshot(job_id, status, stage, account, model, error)
-
-
-def _write_event(job_id, event):
-    path = _events_path(job_id)
-    with open(path, "a") as f:
-        f.write(json.dumps(event) + "\n")
-
-
-def _update_snapshot(job_id, status, stage, account=None, model=None, error=None):
-    snap_path = _job_path(job_id)
-    if not os.path.exists(snap_path):
-        return
+    conn = _get_db()
+    ts = datetime.now(timezone.utc).isoformat()
     try:
-        with open(snap_path) as f:
-            snap = json.load(f)
-        snap["status"] = status
-        snap["stage"] = stage
-        snap["updated_at"] = datetime.now(timezone.utc).isoformat()
-        if account:
-            snap["account"] = account
-        if model:
-            snap["model"] = model
-        if error:
-            snap["last_error"] = error
-        if status in ("succeeded", "failed", "blocked"):
-            snap["ended_at"] = datetime.now(timezone.utc).isoformat()
-        with open(snap_path, "w") as f:
-            json.dump(snap, f, indent=2)
+        conn.execute(
+            """INSERT INTO events
+               (job_id, ts, event, status, stage, account, model, message, error)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (job_id, ts, event_type, status, stage, account, model, message, error),
+        )
+        ended_at = ts if status in ("succeeded", "failed", "blocked") else None
+        conn.execute(
+            """UPDATE jobs SET
+               status=?, stage=?, updated_at=?,
+               account=COALESCE(?, account),
+               model=COALESCE(?, model),
+               last_error=COALESCE(?, last_error),
+               ended_at=COALESCE(?, ended_at)
+               WHERE job_id=?""",
+            (status, stage, ts, account, model, error, ended_at, job_id),
+        )
+        conn.commit()
     except Exception:
-        pass
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 
 def job_snapshot(job_id: str) -> dict | None:
-    path = _job_path(job_id)
-    if not os.path.isfile(path):
-        return None
+    conn = _get_db()
     try:
-        with open(path) as f:
-            return json.load(f)
-    except Exception:
-        return None
+        row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+        ).fetchone()
+        if row is None:
+            return None
+        return dict(row)
+    finally:
+        conn.close()
 
 
 def job_events(job_id: str, limit: int = 100) -> list[dict]:
-    path = _events_path(job_id)
-    if not os.path.isfile(path):
-        return []
-    result = []
+    conn = _get_db()
     try:
-        with open(path) as f:
-            for line in f:
-                line = line.strip()
-                if not line:
-                    continue
-                try:
-                    result.append(json.loads(line))
-                except json.JSONDecodeError:
-                    pass
-    except Exception:
-        pass
-    return result[-limit:]
+        rows = conn.execute(
+            "SELECT * FROM events WHERE job_id=? ORDER BY id DESC LIMIT ?",
+            (job_id, limit),
+        ).fetchall()
+        result = [dict(r) for r in rows]
+        result.reverse()
+        return result
+    finally:
+        conn.close()
 
 
 def job_list(limit: int = 20) -> list[dict]:
-    _ensure_dir()
-    entries = []
+    conn = _get_db()
     try:
-        for name in os.listdir(JOBS_DIR):
-            if not name.endswith(".json") or name.endswith(".events.jsonl"):
-                continue
-            try:
-                with open(os.path.join(JOBS_DIR, name)) as f:
-                    entries.append(json.load(f))
-            except Exception:
-                pass
-        entries.sort(
-            key=lambda j: j.get("started_at", ""),
-            reverse=True
-        )
-        entries = entries[:limit]
-    except Exception:
-        pass
-    return entries
+        rows = conn.execute(
+            "SELECT * FROM jobs ORDER BY started_at DESC LIMIT ?", (limit,)
+        ).fetchall()
+        return [dict(r) for r in rows]
+    finally:
+        conn.close()
 
 
 def job_set_verify_result(job_id: str, result: str):
-    snap_path = _job_path(job_id)
-    if not os.path.exists(snap_path):
-        return
+    conn = _get_db()
     try:
-        with open(snap_path) as f:
-            snap = json.load(f)
-        snap["verify_result"] = result
-        with open(snap_path, "w") as f:
-            json.dump(snap, f, indent=2)
+        conn.execute(
+            "UPDATE jobs SET verify_result=? WHERE job_id=?",
+            (result, job_id),
+        )
+        conn.commit()
     except Exception:
-        pass
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
