@@ -162,3 +162,110 @@ def test_cc_activity_latest_stats(tmp_path):
     assert s["latest_stats"]["available"] is True
     assert s["latest_stats"]["date"]
     assert s["latest_stats"]["messages"] > 0
+
+
+# ── activity_feed tests ──────────────────────────────────────────────────────
+
+def _make_ops_log(tmp_path, entries):
+    """Write JSONL ops log entries."""
+    log = tmp_path / "ops.log"
+    log.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+    return str(log)
+
+
+def _make_history(tmp_path, entries):
+    """Write JSONL history entries (cc prompts, timestamp in ms)."""
+    hist = tmp_path / "history.jsonl"
+    hist.write_text("\n".join(json.dumps(e) for e in entries) + "\n")
+    return str(hist)
+
+
+def test_activity_feed_merge_order(tmp_path):
+    log = _make_ops_log(tmp_path, [
+        {"ts": "2026-01-01T00:00:10Z", "cmd": "run", "status": "success", "account": "a@b.com", "model": "", "prompt": "p1"},
+        {"ts": "2026-01-01T00:00:30Z", "cmd": "run", "status": "success", "account": "a@b.com", "model": "", "prompt": "p2"},
+    ])
+    hist = _make_history(tmp_path, [
+        {"display": "cc1", "timestamp": 1735689620000, "project": "/x/y", "sessionId": "s1"},  # epoch 1735689620
+    ])
+    result = collectors.activity_feed(log_path=log, history_path=hist, stats_path="/no/such.json")
+    events = result["events"]
+    assert len(events) == 3
+    epochs = [e["ts_epoch"] for e in events]
+    assert epochs == sorted(epochs, reverse=True)
+
+
+def test_activity_feed_ts_normalize_iso(tmp_path):
+    log = _make_ops_log(tmp_path, [
+        {"ts": "2026-06-01T12:00:00Z", "cmd": "run", "status": "success", "account": "x", "model": "", "prompt": ""},
+    ])
+    result = collectors.activity_feed(log_path=log, history_path="/no/such.jsonl", stats_path="/no/such.json")
+    ev = result["events"][0]
+    assert ev["kind"] == "agy"
+    assert ev["ts_epoch"] == 1780315200  # 2026-06-01T12:00:00Z
+
+
+def test_activity_feed_ts_normalize_cc_ms(tmp_path):
+    hist = _make_history(tmp_path, [
+        {"display": "hello", "timestamp": 1748779200000, "project": "/p/q", "sessionId": "s"},
+    ])
+    result = collectors.activity_feed(log_path="/no/such.log", history_path=hist, stats_path="/no/such.json")
+    ev = result["events"][0]
+    assert ev["kind"] == "cc"
+    assert ev["ts_epoch"] == 1748779200
+
+
+def test_activity_feed_limit(tmp_path):
+    entries = [
+        {"ts": f"2026-01-01T00:00:{i:02d}Z", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": ""}
+        for i in range(30)
+    ]
+    log = _make_ops_log(tmp_path, entries)
+    result = collectors.activity_feed(limit=25, log_path=log, history_path="/no/such.jsonl", stats_path="/no/such.json")
+    assert len(result["events"]) == 25
+    # newest 25
+    epochs = [e["ts_epoch"] for e in result["events"]]
+    assert epochs == sorted(epochs, reverse=True)
+
+
+def test_activity_feed_latest_stats_passthrough(tmp_path):
+    hist = _make_history(tmp_path, [
+        {"display": "x", "timestamp": 1000000, "project": "/p", "sessionId": "s"},
+    ])
+    result = collectors.activity_feed(log_path="/no/such.log", history_path=hist, stats_path=FIX)
+    assert result["latest_stats"]["available"] is True
+    assert result["latest_stats"]["messages"] > 0
+
+
+def test_activity_feed_missing_files(tmp_path):
+    result = collectors.activity_feed(
+        log_path="/no/such.log", history_path="/no/such.jsonl", stats_path="/no/such.json"
+    )
+    assert result["events"] == []
+    assert result["warning"] is not None
+
+
+def test_activity_feed_malformed_ops_skip(tmp_path):
+    log = tmp_path / "ops.log"
+    log.write_text(
+        'NOT JSON\n'
+        '{"ts": "2026-01-01T00:00:01Z", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": "ok"}\n'
+    )
+    result = collectors.activity_feed(log_path=str(log), history_path="/no/such.jsonl", stats_path="/no/such.json")
+    assert len(result["events"]) == 1
+    assert result["events"][0]["prompt"] == "ok"
+
+
+def test_activity_feed_ts_epoch_zero_fallback(tmp_path):
+    log = tmp_path / "ops.log"
+    log.write_text(
+        '{"ts": "INVALID", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": "bad"}\n'
+        '{"ts": "2026-01-01T00:00:01Z", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": "good"}\n'
+    )
+    result = collectors.activity_feed(log_path=str(log), history_path="/no/such.jsonl", stats_path="/no/such.json")
+    events = result["events"]
+    assert len(events) == 2
+    # bad ts → ts_epoch=0, sorts to end
+    assert events[-1]["prompt"] == "bad"
+    assert events[-1]["ts_epoch"] == 0
+    assert events[0]["prompt"] == "good"

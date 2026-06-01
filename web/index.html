@@ -134,16 +134,6 @@
                         <div class="sl-unavail">Yükleniyor…</div>
                     </div>
                 </div>
-                <!-- İşlem Günlüğü -->
-                <div class="info-card" id="opsLogCard">
-                    <div class="info-card-title-group">
-                        <h3 class="info-card-title">İşlem Günlüğü</h3>
-                        <button class="btn" onclick="loadOpsLog()">↻ Yenile</button>
-                    </div>
-                    <div id="opsLogBody" class="ops-log-body">
-                        <div class="sl-unavail">Yükleniyor…</div>
-                    </div>
-                </div>
                 <!-- RTK Tasarruf -->
                 <div class="info-card" id="rtkStatsCard">
                     <div class="info-card-title-group">
@@ -153,12 +143,19 @@
                         <div class="sl-unavail">Yükleniyor…</div>
                     </div>
                 </div>
-                <!-- CC Aktivitesi -->
-                <div class="info-card" id="ccActivityCard">
+                <!-- Aktivite Akışı -->
+                <div class="info-card" id="activityFeedCard">
                     <div class="info-card-title-group">
-                        <h3 class="info-card-title">CC Aktivitesi</h3>
+                        <h3 class="info-card-title">Aktivite Akışı</h3>
+                        <div class="feed-filter-group">
+                            <button class="feed-filter-btn active" data-filter="all" onclick="setFeedFilter('all')">Tümü</button>
+                            <button class="feed-filter-btn" data-filter="agy" onclick="setFeedFilter('agy')">agy</button>
+                            <button class="feed-filter-btn" data-filter="cc" onclick="setFeedFilter('cc')">CC</button>
+                        </div>
+                        <button class="btn" onclick="loadActivityFeed()">↻ Yenile</button>
                     </div>
-                    <div id="ccActivityBody" class="cc-activity-body">
+                    <div id="activityFeedStats"></div>
+                    <div id="activityFeedBody" class="activity-feed-body">
                         <div class="sl-unavail">Yükleniyor…</div>
                     </div>
                 </div>

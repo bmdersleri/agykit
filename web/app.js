@@ -941,40 +941,94 @@
             return fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null}));
         }
 
-        function loadOpsLog() {
-            const el = document.getElementById('opsLogBody');
-            fetch('/api/ops-log').then(r => r.json()).then(data => {
-                if (!data.entries || data.entries.length === 0) {
-                    el.innerHTML = `<div class="sl-unavail">${data.warning || 'Henüz işlem kaydı yok.'}</div>`;
-                    return;
-                }
-                const rows = data.entries.slice().reverse().map(e => {
-                    const ts = fmtTime(e.ts);
-                    const statusClass = e.status === 'ok' ? 'ops-ok' : 'ops-err';
-                    const statusText = e.status === 'ok' ? 'OK' : 'HATA';
-                    const cmd = (e.cmd || '').replace(/^agykit\s+/, '').slice(0, 28);
-                    const acct = (e.account || '').split('@')[0].slice(0, 12);
+        let _feedFilter = 'all';
+        let _feedData = null;
+
+        function setFeedFilter(filter) {
+            _feedFilter = filter;
+            document.querySelectorAll('.feed-filter-btn').forEach(btn => {
+                btn.classList.toggle('active', btn.dataset.filter === filter);
+            });
+            if (_feedData) renderActivityFeed(_feedData);
+        }
+
+        function renderActivityFeed(data) {
+            const el = document.getElementById('activityFeedBody');
+            const statsEl = document.getElementById('activityFeedStats');
+
+            const ls = data.latest_stats || {};
+            if (ls.available) {
+                statsEl.innerHTML = `<div class="cc-stat-chips">
+                    <div class="cc-stat-chip"><span class="cc-stat-val">${ls.messages}</span><span class="cc-stat-lbl">mesaj</span></div>
+                    <div class="cc-stat-chip"><span class="cc-stat-val">${ls.tool_calls}</span><span class="cc-stat-lbl">araç</span></div>
+                    <div class="cc-stat-chip"><span class="cc-stat-val">${ls.sessions}</span><span class="cc-stat-lbl">oturum</span></div>
+                </div><div class="cc-date-label">${ls.date}</div>`;
+            } else {
+                statsEl.innerHTML = '';
+            }
+
+            let events = (data.events || []);
+            if (_feedFilter !== 'all') {
+                events = events.filter(e => e.kind === _feedFilter);
+            }
+
+            if (events.length === 0) {
+                el.innerHTML = `<div class="sl-unavail">${data.warning || 'Henüz aktivite yok.'}</div>`;
+                return;
+            }
+
+            const rows = events.map(e => {
+                const ago = timeAgo(e.ts_epoch * 1000);
+                if (e.kind === 'agy') {
+                    const statusOk = e.status === 'success' || e.status === 'quota-rotate';
+                    const statusClass = statusOk ? 'ops-ok' : 'ops-err';
+                    const statusLabel = {
+                        'success': 'OK', 'quota-rotate': 'ROTA',
+                        'exhausted': 'TÜKENDI', 'verify-failed': 'HATA', 'all-exhausted': 'TAM TÜKENDI'
+                    }[e.status] || e.status;
+                    const cmd = (e.cmd || '').slice(0, 24);
                     const model = shortenModelName(e.model || '');
-                    return `
-                        <div class="ops-row">
-                            <span class="ops-ts">${ts}</span>
-                            <span class="ops-cmd" title="${(e.cmd || '').replace(/"/g, '&quot;')}">${cmd}</span>
-                            <span class="ops-status ${statusClass}">${statusText}</span>
-                            <span class="ops-acct" title="${e.account || ''}">${acct}</span>
-                            <span class="ops-model">${model}</span>
-                        </div>
-                    `;
-                }).join('');
-                let html = `<div class="ops-list">${rows}</div>`;
-                if (data.total > data.entries.length) {
-                    html += `<div class="ops-total-note">Toplam ${data.total} — son ${data.entries.length} gösteriliyor</div>`;
+                    const acct = (e.account || '').split('@')[0].slice(0, 10);
+                    const promptFull = (e.prompt || '').replace(/"/g, '&quot;');
+                    const promptShort = (e.prompt || '').slice(0, 50);
+                    return `<div class="feed-row feed-agy" onclick="this.querySelector('.feed-prompt-full').classList.toggle('hidden')">
+                        <span class="feed-kind-badge agy">agy</span>
+                        <span class="feed-ago">${ago}</span>
+                        <span class="feed-cmd" title="${promptFull}">${cmd}</span>
+                        <span class="feed-status ${statusClass}">${statusLabel}</span>
+                        ${model ? `<span class="feed-model">${model}</span>` : ''}
+                        ${acct ? `<span class="feed-acct">${acct}</span>` : ''}
+                        <div class="feed-prompt-full hidden">${promptFull || '—'}</div>
+                    </div>`;
+                } else {
+                    const proj = e.project || '';
+                    const displayFull = (e.display || '').replace(/"/g, '&quot;');
+                    const displayShort = (e.display || '').slice(0, 55);
+                    return `<div class="feed-row feed-cc" onclick="this.querySelector('.feed-prompt-full').classList.toggle('hidden')">
+                        <span class="feed-kind-badge cc">CC</span>
+                        <span class="feed-ago">${ago}</span>
+                        ${proj ? `<span class="feed-project">${proj}</span>` : ''}
+                        <span class="feed-prompt-short" title="${displayFull}">${displayShort}</span>
+                        <div class="feed-prompt-full hidden">${displayFull || '—'}</div>
+                    </div>`;
                 }
-                if (data.warning) {
-                    html += `<div class="warning-text-small">⚠ ${data.warning}</div>`;
-                }
-                el.innerHTML = html;
+            }).join('');
+
+            let html = `<div class="feed-list">${rows}</div>`;
+            if (data.warning) {
+                html += `<div class="warning-text-small">⚠ ${data.warning}</div>`;
+            }
+            el.innerHTML = html;
+        }
+
+        function loadActivityFeed() {
+            const el = document.getElementById('activityFeedBody');
+            el.innerHTML = '<div class="sl-unavail">Yükleniyor…</div>';
+            fetch('/api/activity-feed').then(r => r.json()).then(data => {
+                _feedData = data;
+                renderActivityFeed(data);
             }).catch(() => {
-                el.innerHTML = '<div class="sl-unavail">İşlem günlüğü yüklenemedi.</div>';
+                el.innerHTML = '<div class="sl-unavail">Aktivite akışı yüklenemedi.</div>';
             });
         }
 
@@ -1019,40 +1073,6 @@
             });
         }
 
-        function loadCcActivity() {
-            const el = document.getElementById('ccActivityBody');
-            fetch('/api/cc-activity').then(r => r.json()).then(data => {
-                let html = '';
-                const ls = data.latest_stats || {};
-                if (ls.available) {
-                    html += `<div class="cc-stat-chips">
-                        <div class="cc-stat-chip"><span class="cc-stat-val">${ls.messages}</span><span class="cc-stat-lbl">mesaj</span></div>
-                        <div class="cc-stat-chip"><span class="cc-stat-val">${ls.tool_calls}</span><span class="cc-stat-lbl">araç</span></div>
-                        <div class="cc-stat-chip"><span class="cc-stat-val">${ls.sessions}</span><span class="cc-stat-lbl">oturum</span></div>
-                    </div>
-                    <div class="cc-date-label">${ls.date}</div>`;
-                }
-                const prompts = (data.recent_prompts || []).slice(0, 10);
-                if (prompts.length === 0) {
-                    html += '<div class="sl-unavail">Geçmiş bulunamadı.</div>';
-                } else {
-                    html += prompts.map(p => {
-                        const txt = (p.display || '').slice(0, 60);
-                        const proj = p.project || '';
-                        const ago = timeAgo(p.timestamp);
-                        return `<div class="cc-prompt-row">
-                            <span class="cc-ago">${ago}</span>
-                            ${proj ? `<span class="cc-project-chip">${proj}</span>` : ''}
-                            <span class="cc-prompt-text" title="${(p.display||'').replace(/"/g,'&quot;')}">${txt}</span>
-                        </div>`;
-                    }).join('');
-                }
-                el.innerHTML = html;
-            }).catch(() => {
-                el.innerHTML = '<div class="sl-unavail">CC aktivitesi alınamadı.</div>';
-            });
-        }
-
         // Footer timestamp
         // Doldurma loadData() tamamlandığında yapılır.
 
@@ -1062,9 +1082,8 @@
         loadQuota();
         loadStatusline();
         loadLastSession();
-        loadOpsLog();
+        loadActivityFeed();
         loadRtkStats();
-        loadCcActivity();
         setInterval(loadRtkStats, 60_000);
 
         // SSE connection — statusline updates on every event; heavy rebuilds throttled
@@ -1090,8 +1109,7 @@
                     loadClaudeQuota();
                     loadQuota();
                     loadLastSession();
-                    loadOpsLog();
-                    loadCcActivity();
+                    loadActivityFeed();
                 }
             };
             es.onerror = function() {

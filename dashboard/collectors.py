@@ -1198,3 +1198,58 @@ def cc_activity(limit: int = 20, *, history_path: str | None = None, stats_path:
         "latest_stats": latest_stats,
         "warning": None,
     }
+
+
+def activity_feed(limit: int = 25, *, log_path: str | None = None,
+                  history_path: str | None = None, stats_path: str | None = None) -> dict:
+    """Merge agy ops events and CC prompts into a unified chronological feed."""
+    from datetime import datetime, timezone
+
+    agy_result = ops_log(limit=limit, log_path=log_path)
+    cc_result = cc_activity(limit=limit, history_path=history_path, stats_path=stats_path)
+
+    events: list[dict] = []
+    warnings: list[str] = []
+
+    if agy_result.get("warning"):
+        warnings.append(agy_result["warning"])
+    for e in agy_result.get("entries", []):
+        ts_epoch = 0
+        try:
+            ts_epoch = int(datetime.strptime(e["ts"], "%Y-%m-%dT%H:%M:%SZ")
+                           .replace(tzinfo=timezone.utc).timestamp())
+        except Exception:
+            pass
+        events.append({
+            "ts_epoch": ts_epoch,
+            "kind": "agy",
+            "cmd": e.get("cmd", ""),
+            "status": e.get("status", ""),
+            "model": e.get("model", ""),
+            "account": e.get("account", ""),
+            "prompt": e.get("prompt", ""),
+        })
+
+    if cc_result.get("warning"):
+        warnings.append(cc_result["warning"])
+    for p in cc_result.get("recent_prompts", []):
+        raw_ts = p.get("timestamp", 0)
+        # history.jsonl timestamps are milliseconds
+        ts_epoch = int(raw_ts // 1000) if raw_ts > 1_000_000_000_000 else int(raw_ts)
+        events.append({
+            "ts_epoch": ts_epoch,
+            "kind": "cc",
+            "display": p.get("display", ""),
+            "project": p.get("project", ""),
+            "session_id": p.get("session_id", ""),
+        })
+
+    events.sort(key=lambda x: x["ts_epoch"], reverse=True)
+    events = events[:limit]
+
+    result: dict = {
+        "events": events,
+        "latest_stats": cc_result.get("latest_stats", {"available": False}),
+        "warning": " | ".join(warnings) if warnings else None,
+    }
+    return result

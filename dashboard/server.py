@@ -103,6 +103,14 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     pass
             self.serve_json(collectors.cc_activity(limit=limit))
+        elif path == "/api/activity-feed":
+            limit = 25
+            if "limit=" in parsed.query:
+                try:
+                    limit = int(parsed.query.split("limit=")[1].split("&")[0])
+                except ValueError:
+                    pass
+            self.serve_json(collectors.activity_feed(limit=limit))
         elif path == "/events":
             self.serve_events()
         else:

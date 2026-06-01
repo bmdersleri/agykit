@@ -1148,39 +1148,6 @@
             margin-top: 0.5rem;
         }
 
-        /* ── Ops Log Widget ── */
-        .ops-log-body {
-            flex: 1;
-            overflow-y: auto;
-            min-height: 0;
-        }
-
-        .ops-list {
-            display: flex;
-            flex-direction: column;
-            gap: 0.2rem;
-        }
-
-        .ops-row {
-            display: grid;
-            grid-template-columns: 4.5rem 1fr 2.8rem 4rem 3.5rem;
-            gap: 0.4rem;
-            align-items: center;
-            padding: 0.3rem 0.5rem;
-            border-radius: 6px;
-            background: var(--bg);
-            border: 1px solid var(--border);
-        }
-
-        .ops-ts { color: var(--muted); font-size: 0.68rem; white-space: nowrap; }
-        .ops-cmd { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-family: monospace; font-size: 0.7rem; }
-        .ops-status { font-size: 0.62rem; font-weight: 700; text-align: center; padding: 0.1rem 0.25rem; border-radius: 4px; }
-        .ops-ok { color: var(--success); background: color-mix(in srgb, var(--success) 15%, transparent); }
-        .ops-err { color: var(--danger); background: color-mix(in srgb, var(--danger) 15%, transparent); }
-        .ops-acct { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 0.68rem; }
-        .ops-model { color: var(--accent); font-size: 0.68rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-        .ops-total-note { font-size: 0.68rem; color: var(--muted); text-align: right; margin-top: 0.4rem; }
-
         /* RTK Tasarruf */
         .rtk-stats-body { display: flex; flex-direction: column; gap: 0.4rem; }
         .rtk-big-number { font-size: 2rem; font-weight: 700; color: var(--success); line-height: 1; }
@@ -1194,14 +1161,34 @@
         .rtk-cmd-count { color: var(--muted); text-align: right; }
         .rtk-cmd-pct { color: var(--accent); text-align: right; font-weight: 600; }
 
-        /* CC Aktivitesi */
-        .cc-activity-body { display: flex; flex-direction: column; gap: 0.35rem; }
+        /* Aktivite Akışı */
+        .activity-feed-body { flex: 1; overflow-y: auto; min-height: 0; }
+        .feed-filter-group { display: flex; gap: 0.25rem; }
+        .feed-filter-btn { font-size: 0.65rem; padding: 0.15rem 0.5rem; border-radius: 4px; border: 1px solid var(--border); background: transparent; color: var(--muted); cursor: pointer; }
+        .feed-filter-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+        .feed-list { display: flex; flex-direction: column; gap: 0.2rem; }
+        .feed-row {
+            display: flex; flex-wrap: wrap; align-items: center; gap: 0.3rem;
+            padding: 0.3rem 0.5rem; border-radius: 6px;
+            background: var(--bg); border: 1px solid var(--border);
+            cursor: pointer; font-size: 0.7rem;
+        }
+        .feed-row:hover { border-color: var(--accent); }
+        .feed-kind-badge { font-size: 0.58rem; font-weight: 700; padding: 0.1rem 0.3rem; border-radius: 4px; white-space: nowrap; }
+        .feed-kind-badge.agy { background: color-mix(in srgb, var(--success) 20%, transparent); color: var(--success); }
+        .feed-kind-badge.cc { background: color-mix(in srgb, var(--accent) 20%, transparent); color: var(--accent); }
+        .feed-ago { color: var(--muted); white-space: nowrap; font-size: 0.68rem; }
+        .feed-cmd { font-family: monospace; color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 12rem; }
+        .feed-status { font-size: 0.62rem; font-weight: 700; padding: 0.1rem 0.25rem; border-radius: 4px; white-space: nowrap; }
+        .feed-model { color: var(--accent); font-size: 0.65rem; white-space: nowrap; }
+        .feed-acct { color: var(--muted); font-size: 0.65rem; white-space: nowrap; }
+        .feed-project { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 4px; padding: 0.05rem 0.3rem; font-size: 0.62rem; white-space: nowrap; max-width: 6rem; overflow: hidden; text-overflow: ellipsis; }
+        .feed-prompt-short { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; flex: 1; min-width: 0; }
+        .feed-prompt-full { width: 100%; font-size: 0.7rem; color: var(--text); padding: 0.4rem; background: var(--card-bg); border-radius: 4px; border: 1px solid var(--border); margin-top: 0.25rem; word-break: break-word; white-space: pre-wrap; }
+        .feed-prompt-full.hidden { display: none; }
+        /* cc-stat-chips/cc-date-label reused by feed stats header */
         .cc-stat-chips { display: flex; gap: 0.5rem; flex-wrap: wrap; }
         .cc-stat-chip { display: flex; flex-direction: column; align-items: center; background: var(--card-bg); border: 1px solid var(--border); border-radius: 6px; padding: 0.3rem 0.6rem; min-width: 3rem; }
         .cc-stat-val { font-size: 1rem; font-weight: 700; color: var(--text); line-height: 1.2; }
         .cc-stat-lbl { font-size: 0.62rem; color: var(--muted); }
         .cc-date-label { font-size: 0.65rem; color: var(--muted); margin-bottom: 0.25rem; }
-        .cc-prompt-row { display: grid; grid-template-columns: 2.8rem auto 1fr; gap: 0.3rem; align-items: center; font-size: 0.7rem; padding: 0.2rem 0; border-bottom: 1px solid var(--border); }
-        .cc-ago { color: var(--muted); white-space: nowrap; }
-        .cc-project-chip { background: color-mix(in srgb, var(--accent) 15%, transparent); color: var(--accent); border-radius: 4px; padding: 0.05rem 0.3rem; font-size: 0.62rem; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 5rem; }
-        .cc-prompt-text { color: var(--text); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
