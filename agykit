@@ -26,7 +26,11 @@ LADDER=("Gemini 3.5 Flash (Medium)" "Gemini 3.1 Pro (High)" "Claude Opus 4.6 (Th
 # ── Load per-project config ──────────────────────────────────────────────────
 [ -f ".agykit.conf" ] && source ".agykit.conf"
 VERIFY_CMD="${AGYKIT_VERIFY:-}"
-SYSTEM_FILE="${AGYKIT_SYSTEM:-}"
+if [ -n "${AGYKIT_SYSTEM:-}" ]; then
+    SYSTEM_FILE="$AGYKIT_SYSTEM"
+else
+    SYSTEM_FILE="$(_agent_system_file)"
+fi
 AGY_FLAGS="${AGYKIT_FLAGS:---dangerously-skip-permissions}"
 TIMEOUT="${AGYKIT_TIMEOUT:-15m}"
 # agy binary — overridable for testing with a stub.
