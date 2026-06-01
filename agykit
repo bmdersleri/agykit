@@ -366,9 +366,9 @@ cmd_run() {
         _job_op event "$job_id" "account_selected" "running" "account $a" "$a"
         "$AGY_BIN" -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
         grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; _ops_log "run" "quota-rotate" "$a" "" "${prompt:0:80}"; _job_op event "$job_id" "quota_rotated" "rotating" "quota rotate $a" "$a" "" "Quota on $a, rotating"; continue; }
-        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; _job_op event "$job_id" "job_succeeded" "succeeded" "done" "$a"; _quota_alert; return 0
+        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; _job_op event "$job_id" "job_succeeded" "succeeded" "done" "$a"; _quota_alert; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 0
     done
-    echo "==> ALL ACCOUNTS EXHAUSTED"; _ops_log "run" "exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "exhausted" "" "" "All accounts exhausted"; return 1
+    echo "==> ALL ACCOUNTS EXHAUSTED"; _ops_log "run" "exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "exhausted" "" "" "All accounts exhausted"; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 1
 }
 
 # Escalating do: model ladder on verify failure + quota rotation + git safety.
@@ -425,7 +425,7 @@ cmd_do_escalate() {
                 echo "==> agy changes (review before committing):"
                 git --no-pager diff --stat "$snap" 2>/dev/null || true
             fi
-            echo "==> SUCCESS with $model"; _ops_log "do-escalate" "success" "$a" "$model" "${prompt:0:80}"; _quota_alert; return 0
+            echo "==> SUCCESS with $model"; _ops_log "do-escalate" "success" "$a" "$model" "${prompt:0:80}"; _quota_alert; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 0
         else
             local vout; vout=$(tail -30 /tmp/agykit-verify.log 2>/dev/null || echo "")
             [ -n "$vout" ] && verify_ctx="Previous attempt with model '$model' failed verification. Error:
@@ -439,7 +439,7 @@ Fix the above issues, then complete the original task:
             _rollback_to "$base" "$snap"
         fi
     done
-    echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "all models exhausted" "" "" "All models failed"; restore_model; return 1
+    echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "all models exhausted" "" "" "All models failed"; restore_model; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 1
 }
 
 cmd_init() {
