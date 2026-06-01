@@ -143,3 +143,30 @@ def test_api_cc_activity(monkeypatch, tmp_path):
         assert "latest_stats" in data
     finally:
         srv.shutdown()
+
+
+def test_api_quota_alerts(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.agy.agy_model_quota",
+        lambda: {
+            "accounts": [{"email": "u@x.com", "models": [
+                {"model_id": "gemini-3.5-pro", "display_name": "Gemini 3.5 Pro",
+                 "remaining_fraction": 0.05}
+            ], "error": None}],
+            "warning": None,
+        },
+    )
+    import tempfile
+    with tempfile.TemporaryDirectory() as td:
+        monkeypatch.setenv("AGYKIT_QUOTA_ALERT_PCT", "15")
+        from dashboard import alerts as _dal
+        monkeypatch.setattr(_dal, "_STATE_DEFAULT", os.path.join(td, "state.json"))
+        monkeypatch.setattr(_dal, "_OPS_LOG_DEFAULT", os.path.join(td, "ops.log"))
+        srv = _boot()
+        try:
+            r = _get(srv.server_address[1], "/api/quota-alerts")
+            assert r.status == 200
+            data = json.loads(r.read())
+            assert "alerts" in data
+        finally:
+            srv.shutdown()

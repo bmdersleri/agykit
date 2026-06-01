@@ -109,6 +109,10 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     pass
             self.serve_json(collectors.activity_feed(limit=limit))
+        elif path == "/api/quota-alerts":
+            from dashboard import alerts as _alerts
+            threshold = int(os.environ.get("AGYKIT_QUOTA_ALERT_PCT", "15"))
+            self.serve_json(_alerts.check_quota_alerts(threshold, channels=["log"]))
         elif path == "/events":
             self.serve_events()
         else:

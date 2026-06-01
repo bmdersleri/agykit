@@ -1076,6 +1076,18 @@
         // Footer timestamp
         // Doldurma loadData() tamamlandığında yapılır.
 
+        function loadQuotaAlerts() {
+            fetch('/api/quota-alerts').then(r => r.json()).then(data => {
+                const alerts = data.alerts || [];
+                if (alerts.length > 0) {
+                    warningText.textContent = alerts.map(a => a.message).join(' | ');
+                    warningBanner.style.display = 'flex';
+                } else {
+                    warningBanner.style.display = 'none';
+                }
+            }).catch(() => {});
+        }
+
         // Initial Load
         loadData();
         loadClaudeQuota();
@@ -1084,6 +1096,7 @@
         loadLastSession();
         loadActivityFeed();
         loadRtkStats();
+        loadQuotaAlerts();
         setInterval(loadRtkStats, 60_000);
 
         // SSE connection — statusline updates on every event; heavy rebuilds throttled
@@ -1110,6 +1123,7 @@
                     loadQuota();
                     loadLastSession();
                     loadActivityFeed();
+                    loadQuotaAlerts();
                 }
             };
             es.onerror = function() {
