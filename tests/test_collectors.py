@@ -722,3 +722,54 @@ def test_notify_socket_delivers_event(tmp_path, monkeypatch):
     assert ev["job_id"] == jid
     assert ev["event"] == "job_succeeded"
     assert ev["status"] == "succeeded"
+
+
+# ── Stale detection / cancel tests ───────────────────────────────────────────
+
+def test_recover_stale_jobs_marks_old_active(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event, job_list
+    jid = job_create("run", "stale")
+    # Manually age the job so it appears stale
+    import sqlite3
+    conn = sqlite3.connect(_job_db_path(tmp_path))
+    conn.execute(
+        "UPDATE jobs SET updated_at='2000-01-01T00:00:00' WHERE job_id=?",
+        (jid,),
+    )
+    conn.commit()
+    conn.close()
+
+    jobs = job_list()
+    snap = next((j for j in jobs if j["job_id"] == jid), None)
+    assert snap is not None
+    assert snap["status"] == "blocked"
+    assert snap["stage"] == "recovered"
+
+
+def test_recover_stale_jobs_skips_recent(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr("dashboard.collectors.jobs.JOB_STALE_TIMEOUT", 3600)
+    from dashboard.collectors.jobs import job_create, job_list
+    jid = job_create("run", "recent")
+    jobs = job_list()
+    snap = next((j for j in jobs if j["job_id"] == jid), None)
+    assert snap is not None
+    assert snap["status"] == "starting"
+
+
+def test_job_cancel(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_cancel, job_snapshot, job_events
+    jid = job_create("run", "cancel-me")
+    job_cancel(jid, "Test cancel")
+    snap = job_snapshot(jid)
+    assert snap["status"] == "blocked"
+    assert snap["stage"] == "cancelled"
+    assert snap["ended_at"] is not None
+    events = job_events(jid)
+    last = events[-1]
+    assert last["event"] == "job_blocked"

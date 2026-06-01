@@ -8,6 +8,8 @@ from datetime import datetime, timezone
 DB_PATH = os.path.expanduser("~/.gemini/agykit-jobs.db")
 _OLD_JSON_DIR = os.path.expanduser("~/.gemini/agykit-jobs")
 _JOB_SOCKET = os.path.expanduser("~/.gemini/agykit-jobs.sock")
+_ACTIVE_STATUSES = frozenset({"starting", "running", "verifying", "rotating", "rolling_back"})
+JOB_STALE_TIMEOUT = 300  # 5 minutes
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -230,15 +232,73 @@ def job_events(job_id: str, limit: int = 100) -> list[dict]:
         conn.close()
 
 
+def _recover_stale_jobs(conn: sqlite3.Connection, force: bool = False):
+    from datetime import datetime, timezone, timedelta
+    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=JOB_STALE_TIMEOUT)).isoformat()
+    if force:
+        cutoff = datetime.now(timezone.utc).isoformat()
+    rows = conn.execute(
+        """SELECT job_id, command FROM jobs
+           WHERE status IN ('starting','running','verifying','rotating','rolling_back')
+           AND updated_at < ?""",
+        (cutoff,),
+    ).fetchall()
+    for row in rows:
+        jid = row["job_id"]
+        conn.execute(
+            """INSERT INTO events
+               (job_id, ts, event, status, stage, message)
+               VALUES (?, ?, 'job_blocked', 'blocked', 'recovered', ?)""",
+            (jid, cutoff, f"Marked stale — no activity for {JOB_STALE_TIMEOUT}s+"),
+        )
+        conn.execute(
+            """UPDATE jobs SET status='blocked', stage='recovered',
+               updated_at=?, ended_at=? WHERE job_id=?""",
+            (cutoff, cutoff, jid),
+        )
+    if rows:
+        conn.commit()
+
+
 def job_list(limit: int = 20) -> list[dict]:
     conn = _get_db()
     try:
+        _recover_stale_jobs(conn)
         rows = conn.execute(
             "SELECT * FROM jobs ORDER BY started_at DESC LIMIT ?", (limit,)
         ).fetchall()
         return [dict(r) for r in rows]
     finally:
         conn.close()
+
+
+def job_cancel(job_id: str, message: str = ""):
+    conn = _get_db()
+    ts = datetime.now(timezone.utc).isoformat()
+    msg = message or f"Cancelled by user"
+    try:
+        conn.execute(
+            """INSERT INTO events
+               (job_id, ts, event, status, stage, message)
+               VALUES (?, ?, 'job_blocked', 'blocked', 'cancelled', ?)""",
+            (job_id, ts, msg),
+        )
+        conn.execute(
+            """UPDATE jobs SET status='blocked', stage='cancelled',
+               updated_at=?, ended_at=? WHERE job_id=?""",
+            (ts, ts, job_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+    _notify_socket({
+        "job_id": job_id, "ts": ts, "event": "job_blocked",
+        "status": "blocked", "stage": "cancelled",
+        "message": msg,
+    })
 
 
 def job_set_verify_result(job_id: str, result: str):

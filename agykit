@@ -317,26 +317,30 @@ _job_op() {
     PYTHONPATH="$repo" python3 - "$@" <<'PY'
 import sys
 sys.path.insert(0, '')
-from dashboard.collectors.jobs import (
-    job_create, job_event, job_snapshot,
-    job_events, job_list, job_set_verify_result
-)
-op = sys.argv[1]
-if op == "create":
-    print(job_create(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""))
-elif op == "event":
-    job_event(
-        job_id=sys.argv[2],
-        event_type=sys.argv[3],
-        status=sys.argv[4],
-        stage=sys.argv[5],
-        account=sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None,
-        model=sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else None,
-        message=sys.argv[8] if len(sys.argv) > 8 else "",
-        error=sys.argv[9] if len(sys.argv) > 9 and sys.argv[9] else None,
+    from dashboard.collectors.jobs import (
+        job_create, job_event, job_snapshot,
+        job_events, job_list, job_set_verify_result,
+        job_cancel,
     )
-elif op == "set-verify-result":
-    job_set_verify_result(sys.argv[2], sys.argv[3])
+    op = sys.argv[1]
+    if op == "create":
+        print(job_create(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""))
+    elif op == "event":
+        job_event(
+            job_id=sys.argv[2],
+            event_type=sys.argv[3],
+            status=sys.argv[4],
+            stage=sys.argv[5],
+            account=sys.argv[6] if len(sys.argv) > 6 and sys.argv[6] else None,
+            model=sys.argv[7] if len(sys.argv) > 7 and sys.argv[7] else None,
+            message=sys.argv[8] if len(sys.argv) > 8 else "",
+            error=sys.argv[9] if len(sys.argv) > 9 and sys.argv[9] else None,
+        )
+    elif op == "set-verify-result":
+        job_set_verify_result(sys.argv[2], sys.argv[3])
+    elif op == "cancel":
+        msg = sys.argv[3] if len(sys.argv) > 3 else ""
+        job_cancel(sys.argv[2], msg)
 PY
 }
 
@@ -348,6 +352,14 @@ cmd_run() {
     [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
     mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
     local job_id; job_id=$(_job_op create "run" "$prompt")
+    _CURRENT_JOB_ID="$job_id"
+    _job_cleanup() {
+        [ -n "${_CURRENT_JOB_ID:-}" ] && {
+            _job_op event "$_CURRENT_JOB_ID" "job_blocked" "blocked" "interrupted" \
+                "" "" "Process interrupted (SIGINT/SIGTERM)"
+        }
+    }
+    trap _job_cleanup EXIT INT TERM
     for a in "${accts[@]}"; do
         cmd_account_switch "$a" >/dev/null 2>&1 || continue
         echo "==> Trying account: $a"
@@ -377,6 +389,14 @@ cmd_do_escalate() {
 
     local verify_ctx=""
     local job_id; job_id=$(_job_op create "do-escalate" "$prompt")
+    _CURRENT_JOB_ID="$job_id"
+    _job_cleanup() {
+        [ -n "${_CURRENT_JOB_ID:-}" ] && {
+            _job_op event "$_CURRENT_JOB_ID" "job_blocked" "blocked" "interrupted" \
+                "" "" "Process interrupted (SIGINT/SIGTERM)"
+        }
+    }
+    trap _job_cleanup EXIT INT TERM
 
     for model in "${LADDER[@]}"; do
         echo "════ MODEL: $model ════"
@@ -728,6 +748,28 @@ finally:
 PY
 }
 
+cmd_job_cancel() {
+    local job_id="$1"
+    local all_mode=0
+    [ "${job_id:-}" = "--all" ] && all_mode=1
+    if [ "$all_mode" -eq 0 ]; then
+        [ -z "$job_id" ] && { echo "Usage: agykit cancel <job-id>"; exit 1; }
+        _job_op cancel "$job_id" "Cancelled by user"
+        echo "Job $job_id cancelled."
+        return 0
+    fi
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 - <<'PY'
+import sys
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import job_list, job_cancel
+for j in job_list(limit=100):
+    if j.get('status') in ('starting', 'running', 'verifying', 'rotating', 'rolling_back'):
+        job_cancel(j['job_id'], "Cancelled by user (--all)")
+        print(f"Cancelled: {j['job_id']}")
+PY
+}
+
 cmd_status() {
     local model; model=$(python3 -c "import json; print(json.load(open('$AGY_SETTINGS')).get('model','?'))" 2>/dev/null || echo "?")
     local email; email=$(_active_email)
@@ -988,6 +1030,8 @@ agykit — portable Antigravity (agy) CLI manager
   agykit jobs [N]                Show N most recent jobs (default: 20)
   agykit watch <job-id>          Live-stream a job's status and events
   agykit tail                    Live-tail all job events (socket)
+  agykit cancel <job-id>         Cancel a running/starting job
+  agykit cancel --all            Cancel all in-progress jobs
   agykit job-log <job-id>        Show all events for a specific job
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
@@ -1015,6 +1059,7 @@ case "${1:-}" in
     jobs)          cmd_jobs "${2:-}" ;;
     watch)         cmd_job_watch "${2:-}" ;;
     tail)          cmd_job_tail ;;
+    cancel)        cmd_job_cancel "${2:-}" ;;
     job-log)       cmd_job_log "${2:-}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;
