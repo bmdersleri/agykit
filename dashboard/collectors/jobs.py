@@ -1,11 +1,13 @@
 import os
 import json
+import socket
 import sqlite3
 import uuid
 from datetime import datetime, timezone
 
 DB_PATH = os.path.expanduser("~/.gemini/agykit-jobs.db")
 _OLD_JSON_DIR = os.path.expanduser("~/.gemini/agykit-jobs")
+_JOB_SOCKET = os.path.expanduser("~/.gemini/agykit-jobs.sock")
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -124,6 +126,18 @@ def _migrate_from_json(conn: sqlite3.Connection):
     conn.commit()
 
 
+def _notify_socket(event_dict: dict):
+    if not os.path.exists(_JOB_SOCKET):
+        return
+    try:
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        s.settimeout(1.0)
+        s.sendto(json.dumps(event_dict, default=str).encode("utf-8"), _JOB_SOCKET)
+        s.close()
+    except Exception:
+        pass
+
+
 def job_create(command: str, prompt: str = "") -> str:
     conn = _get_db()
     ts = datetime.now(timezone.utc)
@@ -181,6 +195,12 @@ def job_event(job_id: str, event_type: str, status: str, stage: str,
         raise
     finally:
         conn.close()
+    _notify_socket({
+        "job_id": job_id, "ts": ts, "event": event_type,
+        "status": status, "stage": stage,
+        "account": account, "model": model,
+        "message": message, "error": error,
+    })
 
 
 def job_snapshot(job_id: str) -> dict | None:

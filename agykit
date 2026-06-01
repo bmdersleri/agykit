@@ -566,43 +566,74 @@ cmd_job_watch() {
     [ -z "$job_id" ] && { echo "Usage: agykit watch <job-id>"; exit 1; }
     local repo; repo=$(_cmd_job_repo)
     PYTHONPATH="$repo" python3 - "$job_id" <<'PY'
-import sys, time, os
+import sys, os, time, socket, json
 sys.path.insert(0, '')
-from dashboard.collectors.jobs import job_snapshot, job_events
+from dashboard.collectors.jobs import job_snapshot, job_events, _JOB_SOCKET
 job_id = sys.argv[1]
-last_count = 0
+snap = job_snapshot(job_id)
+if not snap:
+    print(f"Job {job_id} not found.")
+    raise SystemExit(1)
+def _redraw(snap, events):
+    os.system('clear' if os.name == 'posix' else 'cls')
+    print(f"Job: {snap['job_id']}")
+    print(f"Command: {snap.get('command', '')}")
+    status = snap.get('status', '')
+    stage = snap.get('stage', '')
+    account = snap.get('account') or '\u2014'
+    model = snap.get('model') or '\u2014'
+    print(f"Status: {status}  |  Stage: {stage}")
+    print(f"Account: {account}  |  Model: {model}")
+    if snap.get('last_error'):
+        print(f"Error: {snap['last_error']}")
+    print(f"Started: {snap.get('started_at', '\u2014')}")
+    if snap.get('ended_at'):
+        print(f"Ended:   {snap['ended_at']}")
+    print()
+    for e in events[-10:]:
+        ts = e.get('ts', '')[-8:]
+        msg = e.get('message', '') or ''
+        print(f"  {ts}  {e.get('event', ''):<20} {msg}")
+    if snap.get('status') in ('succeeded', 'failed', 'blocked'):
+        print(f"\nFinal status: {status}")
+        return True
+    return False
+events = job_events(job_id)
+done = _redraw(snap, events)
+if done:
+    raise SystemExit(0)
+# Socket listener (falls back to 1s SQLite polling)
+sock = None
+try:
+    if os.path.exists(_JOB_SOCKET):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.settimeout(1.0)
+        sock.bind(_JOB_SOCKET + f".{os.getpid()}.watch")
+except Exception:
+    sock = None
 try:
     while True:
-        snap = job_snapshot(job_id)
-        if not snap:
-            print(f"Job {job_id} not found.")
-            break
-        os.system('clear' if os.name == 'posix' else 'cls')
-        print(f"Job: {snap['job_id']}")
-        print(f"Command: {snap.get('command', '')}")
-        status = snap.get('status', '')
-        stage = snap.get('stage', '')
-        account = snap.get('account') or '\u2014'
-        model = snap.get('model') or '\u2014'
-        print(f"Status: {status}  |  Stage: {stage}")
-        print(f"Account: {account}  |  Model: {model}")
-        if snap.get('last_error'):
-            print(f"Error: {snap['last_error']}")
-        print(f"Started: {snap.get('started_at', '\u2014')}")
-        if snap.get('ended_at'):
-            print(f"Ended:   {snap['ended_at']}")
-        print()
-        events = job_events(job_id)
-        for e in events[-10:]:
-            ts = e.get('ts', '')[-8:]
-            msg = e.get('message', '') or ''
-            print(f"  {ts}  {e.get('event', ''):<20} {msg}")
-        if status in ('succeeded', 'failed', 'blocked'):
-            print(f"\nFinal status: {status}")
-            break
-        time.sleep(2)
+        got_data = False
+        if sock is not None:
+            try:
+                data = sock.recv(4096)
+                got_data = True
+            except socket.timeout:
+                pass
+        if not got_data:
+            snap = job_snapshot(job_id)
+            events = job_events(job_id)
+            if _redraw(snap, events):
+                break
 except KeyboardInterrupt:
     pass
+finally:
+    if sock is not None:
+        try:
+            os.unlink(_JOB_SOCKET + f".{os.getpid()}.watch")
+        except Exception:
+            pass
+        sock.close()
 PY
 }
 
@@ -627,6 +658,73 @@ for e in events:
     msg = e.get('message', '') or ''
     err = e.get('error', '') or ''
     print(f"{ts}  {ev}  {st}  {acct}  {mdl}  {msg}{'  ERROR: '+err[:80] if err else ''}")
+PY
+}
+
+cmd_job_tail() {
+    # Live-tail ALL jobs across the system
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 <<'PY'
+import os, sys, socket, json, select
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import _JOB_SOCKET, job_list
+
+# Prime with existing in-progress jobs
+print("Listening for job events… (Ctrl+C to stop)")
+in_progress = [j for j in job_list(limit=50) if j.get('status') not in ('succeeded', 'failed', 'blocked')]
+if in_progress:
+    print(f"\n── Active jobs ({len(in_progress)}) ──")
+    for j in in_progress:
+        jid = j['job_id']
+        cmd = (j.get('command') or '')[:30]
+        st = j.get('status', '')
+        sg = j.get('stage', '')
+        print(f"  {jid}  {cmd:<30} {st}/{sg}")
+    print()
+
+sock = None
+cleanup_path = None
+try:
+    if os.path.exists(_JOB_SOCKET):
+        sock = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        sock.settimeout(1.0)
+        cleanup_path = _JOB_SOCKET + f".{os.getpid()}.tail"
+        sock.bind(cleanup_path)
+    else:
+        print("Socket not available — run a job first to start the daemon.")
+        raise SystemExit(0)
+except Exception as e:
+    print(f"Cannot listen: {e}")
+    raise SystemExit(1)
+
+try:
+    while True:
+        r, _, _ = select.select([sock], [], [], 1.0)
+        if not r:
+            continue
+        data = sock.recv(65535)
+        if not data:
+            continue
+        try:
+            ev = json.loads(data.decode("utf-8"))
+        except json.JSONDecodeError:
+            continue
+        ts = ev.get('ts', '')[-8:] if ev.get('ts') else '--:--:--'
+        jid = (ev.get('job_id', '') or '')[:20]
+        evt = (ev.get('event', '') or '').ljust(16)
+        st  = (ev.get('status', '') or '').ljust(12)
+        msg = (ev.get('message', '') or '')[:80]
+        print(f"{ts}  {jid:<20} {evt} {st} {msg}")
+except KeyboardInterrupt:
+    pass
+finally:
+    if sock is not None:
+        sock.close()
+        if cleanup_path and os.path.exists(cleanup_path):
+            try:
+                os.unlink(cleanup_path)
+            except Exception:
+                pass
 PY
 }
 
@@ -889,6 +987,7 @@ agykit — portable Antigravity (agy) CLI manager
   agykit log [N]                 Show last N ops log entries (default: 20)
   agykit jobs [N]                Show N most recent jobs (default: 20)
   agykit watch <job-id>          Live-stream a job's status and events
+  agykit tail                    Live-tail all job events (socket)
   agykit job-log <job-id>        Show all events for a specific job
 
 Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
@@ -915,6 +1014,7 @@ case "${1:-}" in
     log)           cmd_log "${2:-}" ;;
     jobs)          cmd_jobs "${2:-}" ;;
     watch)         cmd_job_watch "${2:-}" ;;
+    tail)          cmd_job_tail ;;
     job-log)       cmd_job_log "${2:-}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;

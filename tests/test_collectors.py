@@ -681,3 +681,44 @@ def test_job_migration_from_json(tmp_path, monkeypatch):
     assert len(jobs) == 1
     assert jobs[0]["job_id"] == jid
     assert jobs[0]["prompt"] == "migrated"
+
+
+def test_notify_socket_noop_when_socket_missing(monkeypatch):
+    from dashboard.collectors.jobs import _notify_socket
+    _notify_socket({"event": "test"})  # should not raise
+
+
+def test_notify_socket_delivers_event(tmp_path, monkeypatch):
+    import socket, json, threading, time
+    sock_path = str(tmp_path / "test-jobs.sock")
+    monkeypatch.setattr("dashboard.collectors.jobs._JOB_SOCKET", sock_path)
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH",
+                        _job_db_path(tmp_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR",
+                        str(tmp_path / "no-such-dir"))
+    from dashboard.collectors.jobs import job_create, job_event
+
+    received = []
+    def _server():
+        s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
+        s.bind(sock_path)
+        s.settimeout(3.0)
+        try:
+            data = s.recv(4096)
+            received.append(json.loads(data.decode("utf-8")))
+        except socket.timeout:
+            pass
+        finally:
+            s.close()
+    t = threading.Thread(target=_server, daemon=True)
+    t.start()
+    time.sleep(0.2)
+
+    jid = job_create("test-socket")
+    job_event(jid, "job_succeeded", "succeeded", "done", account="a@b.com")
+    t.join(timeout=2)
+    assert len(received) == 1
+    ev = received[0]
+    assert ev["job_id"] == jid
+    assert ev["event"] == "job_succeeded"
+    assert ev["status"] == "succeeded"
