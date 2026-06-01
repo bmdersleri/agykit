@@ -382,6 +382,67 @@ def test_codex_usage_parse(tmp_path):
     assert s["recent_threads"][0]["title"] == "Second"
 
 
+def test_codex_status_from_auth(tmp_path):
+    auth = tmp_path / "auth.json"
+    # Create a fake JWT with a real-looking payload
+    import base64, json
+    payload = base64.urlsafe_b64encode(json.dumps({
+        "https://api.openai.com/auth": {
+            "chatgpt_plan_type": "plus",
+            "chatgpt_account_id": "acct_123",
+            "chatgpt_user_id": "user_456",
+            "chatgpt_subscription_active_until": "2026-07-01T00:00:00+00:00",
+        },
+        "https://api.openai.com/profile": {
+            "email": "test@example.com",
+        },
+    }).encode()).rstrip(b"=").decode()
+    fake_jwt = f"header.{payload}.signature"
+    auth.write_text(json.dumps({
+        "auth_mode": "chatgpt",
+        "tokens": {"access_token": fake_jwt},
+    }))
+    result = collectors.codex_status(auth_path=str(auth), state_path=str(tmp_path / "no-state.sqlite"))
+    assert result["available"] is True
+    assert result["account"]["plan_type"] == "plus"
+    assert result["account"]["email"] == "test@example.com"
+    assert result["account"]["account_id"] == "acct_123"
+
+
+def test_codex_status_missing_files(tmp_path):
+    result = collectors.codex_status(
+        auth_path=str(tmp_path / "no-auth.json"),
+        state_path=str(tmp_path / "no-state.sqlite"),
+    )
+    assert result["available"] is False
+    assert result["account"] is None
+
+
+def test_codex_status_from_state(tmp_path):
+    auth = tmp_path / "auth.json"
+    auth.write_text(json.dumps({"auth_mode": "local", "tokens": {"access_token": ""}}))
+    state = tmp_path / "state_5.sqlite"
+    import sqlite3
+    con = sqlite3.connect(str(state))
+    con.execute("""
+        CREATE TABLE threads (
+            id TEXT, title TEXT, cwd TEXT, tokens_used INTEGER,
+            model TEXT, updated_at INTEGER, archived INTEGER
+        )
+    """)
+    con.execute(
+        "INSERT INTO threads VALUES (?, ?, ?, ?, ?, ?, ?)",
+        ("s1", "Test", "/home/test", 5000, "gpt-5.5", 1780299000, 0),
+    )
+    con.commit()
+    con.close()
+    result = collectors.codex_status(auth_path=str(auth), state_path=str(state))
+    assert result["available"] is True
+    assert result["thread_count"] == 1
+    assert result["total_tokens_used"] == 5000
+    assert result["current_model"] == "gpt-5.5"
+
+
 def test_codex_usage_missing_files(tmp_path):
     s = collectors.codex_usage(
         history_path=str(tmp_path / "no-history.jsonl"),

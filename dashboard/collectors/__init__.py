@@ -23,7 +23,7 @@ from .claude import (
     cc_activity,
     activity_feed,
 )
-from .codex import codex_usage
+from .codex import codex_usage, codex_status
 from .rtk import rtk_stats, _parse_suffix, _ROW_RE
 from .ops import ops_log
 from .jobs import (

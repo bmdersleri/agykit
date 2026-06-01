@@ -1,3 +1,4 @@
+import base64
 import datetime
 import json
 import os
@@ -227,4 +228,111 @@ def codex_usage(
         "recent_threads": recent_threads,
         "indexed_sessions": indexed_sessions,
         "warning": " | ".join(warnings) if warnings and not available else None,
+    }
+
+
+def _decode_jwt_payload(token: str) -> dict | None:
+    """Decode a JWT token's payload without verification."""
+    try:
+        parts = token.split(".")
+        if len(parts) != 3:
+            return None
+        payload = parts[1]
+        padding = 4 - len(payload) % 4
+        if padding != 4:
+            payload += "=" * padding
+        return json.loads(base64.urlsafe_b64decode(payload))
+    except Exception:
+        return None
+
+
+def codex_status(
+    *,
+    codex_home: str | None = None,
+    auth_path: str | None = None,
+    state_path: str | None = None,
+) -> dict:
+    """Return Codex account status info (plan type, model, usage) from local files.
+
+    Returns:
+        dict with keys:
+          - available: bool
+          - account: dict (email, plan_type, subscription_active_until, account_id) or None
+          - current_model: str or None
+          - thread_count: int
+          - total_tokens_used: int
+          - warning: str or None
+    """
+    home = os.path.expanduser(
+        codex_home or os.environ.get("AGYKIT_DASH_CODEX_HOME") or _CODEX_HOME
+    )
+    auth = os.path.expanduser(
+        auth_path or os.path.join(home, "auth.json")
+    )
+    state = os.path.expanduser(
+        state_path or os.environ.get("AGYKIT_DASH_CODEX_STATE")
+        or os.path.join(home, "state_5.sqlite")
+    )
+
+    account = None
+    current_model = None
+    warnings = []
+
+    if os.path.isfile(auth):
+        try:
+            with open(auth) as f:
+                data = json.load(f)
+            token = data.get("tokens", {}).get("access_token", "")
+            if token:
+                payload = _decode_jwt_payload(token)
+                if payload:
+                    auth_data = payload.get("https://api.openai.com/auth", {})
+                    profile = payload.get("https://api.openai.com/profile", {})
+                    account = {
+                        "email": profile.get("email", ""),
+                        "plan_type": auth_data.get("chatgpt_plan_type", ""),
+                        "account_id": auth_data.get("chatgpt_account_id", ""),
+                        "user_id": auth_data.get("chatgpt_user_id", ""),
+                        "subscription_active_until": auth_data.get(
+                            "chatgpt_subscription_active_until", ""
+                        ),
+                    }
+        except Exception as e:
+            warnings.append(f"Cannot read Codex auth: {e}")
+
+    if os.path.isfile(state):
+        try:
+            con = sqlite3.connect(state)
+            con.row_factory = sqlite3.Row
+            row = con.execute(
+                "SELECT model FROM threads WHERE archived = 0 ORDER BY updated_at DESC LIMIT 1"
+            ).fetchone()
+            if row:
+                current_model = row["model"]
+            thread_count_row = con.execute(
+                "SELECT COUNT(*) AS c FROM threads WHERE archived = 0"
+            ).fetchone()
+            thread_count = thread_count_row["c"] if thread_count_row else 0
+            tokens_row = con.execute(
+                "SELECT SUM(tokens_used) AS t FROM threads WHERE archived = 0"
+            ).fetchone()
+            total_tokens = tokens_row["t"] if tokens_row and tokens_row["t"] else 0
+            con.close()
+        except Exception as e:
+            warnings.append(f"Cannot read Codex state: {e}")
+            thread_count = 0
+            total_tokens = 0
+    else:
+        thread_count = 0
+        total_tokens = 0
+
+    available = account is not None or thread_count > 0
+
+    return {
+        "available": available,
+        "account": account,
+        "current_model": current_model,
+        "thread_count": thread_count,
+        "total_tokens_used": total_tokens,
+        "warning": " | ".join(warnings) if warnings else None,
     }
