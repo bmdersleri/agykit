@@ -21,3 +21,15 @@ AGYKIT_TIMEOUT="15m"
 #   full  — drop articles, fragments, caveman pattern
 #   ultra — abbreviate prose, arrows (X→Y), maximum compression
 AGYKIT_TERSE="ultra"
+
+# ── Quota alert settings ─────────────────────────────────────────────────────
+
+# Alert when a model's remaining quota falls below this percentage (default: 15)
+# AGYKIT_QUOTA_ALERT_PCT=15
+
+# Minimum seconds between repeat alerts for the same account+model (default: 3600)
+# AGYKIT_ALERT_COOLDOWN=3600
+
+# Telegram channel — set both to enable Telegram alerts
+# AGYKIT_TG_BOT_TOKEN=your-bot-token
+# AGYKIT_TG_CHAT_ID=your-chat-id
