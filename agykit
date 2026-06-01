@@ -321,7 +321,7 @@ cmd_run() {
         echo "==> Trying account: $a"
         "$AGY_BIN" -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
         grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; _ops_log "run" "quota-rotate" "$a" "" "${prompt:0:80}"; continue; }
-        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; return 0
+        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; _quota_alert; return 0
     done
     echo "==> ALL ACCOUNTS EXHAUSTED"; _ops_log "run" "exhausted" "" "" "${prompt:0:80}"; return 1
 }
@@ -367,7 +367,7 @@ cmd_do_escalate() {
                 echo "==> agy changes (review before committing):"
                 git --no-pager diff --stat "$snap" 2>/dev/null || true
             fi
-            echo "==> SUCCESS with $model"; _ops_log "do-escalate" "success" "$a" "$model" "${prompt:0:80}"; return 0
+            echo "==> SUCCESS with $model"; _ops_log "do-escalate" "success" "$a" "$model" "${prompt:0:80}"; _quota_alert; return 0
         else
             local vout; vout=$(tail -30 /tmp/agykit-verify.log 2>/dev/null || echo "")
             [ -n "$vout" ] && verify_ctx="Previous attempt with model '$model' failed verification. Error:
@@ -487,6 +487,12 @@ cmd_status() {
     local email; email=$(_active_email)
     local quota; quota=$(cmd_quota --status 2>/dev/null || echo "quota unknown")
     echo "${email} | ${model} | ${quota}"
+}
+
+_quota_alert() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    PYTHONPATH="$repo" python3 -m dashboard.alerts check >/dev/null 2>&1 || true
 }
 
 cmd_dash() {
