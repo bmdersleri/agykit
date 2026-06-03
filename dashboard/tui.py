@@ -51,6 +51,7 @@ if HAS_TEXTUAL:
 
         def _load_initial(self):
             from dashboard.collectors.jobs import job_snapshot, job_events, _JOB_SOCKET
+
             self.snap = job_snapshot(self.job_id) or {}
             self.events = job_events(self.job_id, limit=100)
             self._update_display()
@@ -67,15 +68,17 @@ if HAS_TEXTUAL:
         def _update_display(self):
             s = self.snap
             lines = []
-            lines.append(f"[bold]Job:[/] {s.get('job_id', '\u2014')}    [bold]Status:[/] {s.get('status', '\u2014')}")
-            cmd = (s.get('command', '') or '')[:50]
-            stage = (s.get('stage', '') or '')[:30]
+            lines.append(
+                f"[bold]Job:[/] {s.get('job_id', '\u2014')}    [bold]Status:[/] {s.get('status', '\u2014')}"
+            )
+            cmd = (s.get("command", "") or "")[:50]
+            stage = (s.get("stage", "") or "")[:30]
             lines.append(f"[bold]Cmd:[/]  {cmd:<48} [bold]Stage:[/] {stage}")
-            acct = s.get('account') or '\u2014'
-            model = s.get('model') or '\u2014'
+            acct = s.get("account") or "\u2014"
+            model = s.get("model") or "\u2014"
             lines.append(f"[bold]Acct:[/] {acct:<48} [bold]Model:[/] {model}")
-            started = s.get('started_at', '')
-            elapsed = '\u2014'
+            started = s.get("started_at", "")
+            elapsed = "\u2014"
             if started:
                 try:
                     ts = datetime.fromisoformat(started)
@@ -85,24 +88,25 @@ if HAS_TEXTUAL:
                     elapsed = f"{m}m {secs}s"
                 except Exception:
                     pass
-            ended = s.get('ended_at') or '\u2014'
+            ended = s.get("ended_at") or "\u2014"
             lines.append(f"[bold]Elapsed:[/] {elapsed:<44} [bold]Ended:[/] {ended}")
-            if s.get('last_error'):
+            if s.get("last_error"):
                 lines.append(f"[red]Error:[/] {s['last_error']}")
             self.query_one("#job-info", Static).update("\n".join(lines))
 
             log = self.query_one("#event-log", RichLog)
             log.clear()
             for e in self.events[-20:]:
-                ts = e.get('ts', '')[-8:]
-                evt = e.get('event', '')[:18].ljust(18)
-                st = e.get('status', '')[:10].ljust(10)
-                msg = (e.get('message', '') or '')[:60]
+                ts = e.get("ts", "")[-8:]
+                evt = e.get("event", "")[:18].ljust(18)
+                st = e.get("status", "")[:10].ljust(10)
+                msg = (e.get("message", "") or "")[:60]
                 log.write(f"{ts}  {evt} {st} {msg}")
 
         def _poller(self):
             worker = get_current_worker()
             from dashboard.collectors.jobs import job_snapshot, job_events
+
             while not worker.is_cancelled:
                 got_data = False
                 if self._sock is not None:
@@ -117,7 +121,7 @@ if HAS_TEXTUAL:
                         self.snap = new_snap
                     self.events = job_events(self.job_id, limit=100)
                     self.call_from_thread(self._update_display)
-                    if self.snap.get('status') in ('succeeded', 'failed', 'blocked'):
+                    if self.snap.get("status") in ("succeeded", "failed", "blocked"):
                         _time.sleep(3)
                         self.call_from_thread(self.exit, 0)
                         return

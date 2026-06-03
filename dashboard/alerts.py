@@ -33,7 +33,7 @@ def _channel_log(alerts: list[dict], ops_log_path: str) -> None:
         with open(path, "a", encoding="utf-8") as f:
             for a in alerts:
                 entry = {
-                    "ts": datetime.datetime.utcnow().strftime("%Y-%m-%dT%H:%M:%SZ"),
+                    "ts": datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
                     "cmd": "alert",
                     "status": "quota-alert",
                     "account": a["email"],
@@ -97,7 +97,12 @@ def check_quota_alerts(
 
     quota = collectors.agy_model_quota()
     if quota.get("warning") and not quota.get("accounts"):
-        return {"alerts": [], "fired": [], "skipped_cooldown": [], "warning": quota["warning"]}
+        return {
+            "alerts": [],
+            "fired": [],
+            "skipped_cooldown": [],
+            "warning": quota["warning"],
+        }
 
     state = _load_state(resolved_state)
     now = time.time()
@@ -119,13 +124,15 @@ def check_quota_alerts(
                 continue
             pct_left = round(frac * 100)
             msg = f"⚠ {email} — {model['display_name']} %{pct_left} kaldı"
-            to_fire.append({
-                "email": email,
-                "model_id": model["model_id"],
-                "display_name": model["display_name"],
-                "pct_remaining": pct_left,
-                "message": msg,
-            })
+            to_fire.append(
+                {
+                    "email": email,
+                    "model_id": model["model_id"],
+                    "display_name": model["display_name"],
+                    "pct_remaining": pct_left,
+                    "message": msg,
+                }
+            )
             state[key] = now
 
     if to_fire:
@@ -138,7 +145,9 @@ def check_quota_alerts(
         active = ["log"]
         if shutil.which("notify-send"):
             active.append("desktop")
-        if os.environ.get("AGYKIT_TG_BOT_TOKEN") and os.environ.get("AGYKIT_TG_CHAT_ID"):
+        if os.environ.get("AGYKIT_TG_BOT_TOKEN") and os.environ.get(
+            "AGYKIT_TG_CHAT_ID"
+        ):
             active.append("telegram")
     else:
         active = channels
@@ -164,6 +173,7 @@ def check_quota_alerts(
 
 if __name__ == "__main__":
     import sys
+
     if len(sys.argv) > 1 and sys.argv[1] == "check":
         result = check_quota_alerts()
         n = len(result["alerts"])

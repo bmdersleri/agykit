@@ -34,19 +34,18 @@ def test_env():
 
     # Also patch collectors jobs module's DB_PATH
     import dashboard.collectors.jobs as cj
+
     cj.DB_PATH = db_path
     cj._JOB_SOCKET = sock_path
 
     os.makedirs(TEST_DIR, exist_ok=True)
-    for p in [pid_file, sock_path, db_path,
-              db_path + "-wal", db_path + "-shm"]:
+    for p in [pid_file, sock_path, db_path, db_path + "-wal", db_path + "-shm"]:
         try:
             os.unlink(p)
         except OSError:
             pass
     yield
-    for p in [pid_file, sock_path, db_path,
-              db_path + "-wal", db_path + "-shm"]:
+    for p in [pid_file, sock_path, db_path, db_path + "-wal", db_path + "-shm"]:
         try:
             os.unlink(p)
         except OSError:
@@ -86,7 +85,12 @@ def test_daemon_socket_broadcast():
     watcher.bind(watcher_path)
 
     sender = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
-    event = {"job_id": "test-001", "event": "job_started", "status": "starting", "stage": "starting"}
+    event = {
+        "job_id": "test-001",
+        "event": "job_started",
+        "status": "starting",
+        "stage": "starting",
+    }
     sender.sendto(json.dumps(event).encode("utf-8"), jd.SOCK_PATH)
     sender.close()
 
@@ -141,6 +145,7 @@ def test_daemon_recover_stale_jobs():
 def test_socket_notify_auto_starts_daemon():
     from dashboard.collectors.jobs import _notify_socket, _JOB_SOCKET
     import dashboard.collectors.jobs as cj
+
     cj._JOB_SOCKET = jd.SOCK_PATH
     assert daemon_status()["running"] is False
     _notify_socket({"job_id": "auto-test", "event": "test"})
@@ -182,5 +187,6 @@ def test_daemon_timeout_auto_cancel():
 
 def test_can_start_job_no_active():
     from dashboard.collectors.jobs import job_list, _ACTIVE_STATUSES
+
     active = [j for j in job_list(limit=50) if j.get("status") in _ACTIVE_STATUSES]
     assert isinstance(active, list)

@@ -155,7 +155,8 @@ class JobDaemon:
                 ).fetchall()
 
             rows = stale_rows + [
-                r for r in timed_out_rows
+                r
+                for r in timed_out_rows
                 if r["job_id"] not in {x["job_id"] for x in stale_rows}
             ]
 

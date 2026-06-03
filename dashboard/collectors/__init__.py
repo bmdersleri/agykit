@@ -25,6 +25,7 @@ from .claude import (
 )
 from .codex import codex_usage, codex_status
 from .rtk import rtk_stats, _parse_suffix, _ROW_RE
+from .omniroute import omniroute_series, omniroute_summary
 from .ops import ops_log
 from .jobs import (
     job_create,
@@ -64,6 +65,8 @@ __all__ = [
     "job_stats",
     "_parse_suffix",
     "_ROW_RE",
+    "omniroute_series",
+    "omniroute_summary",
     "ops_log",
     "job_create",
     "job_event",

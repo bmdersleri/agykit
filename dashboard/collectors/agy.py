@@ -18,19 +18,19 @@ _BRAIN_DIR_DEFAULT = "~/.gemini/antigravity-cli/brain"
 _STATUSLINE_JSON = "~/.gemini/antigravity-cli/statusline-latest.json"
 
 _MODEL_DISPLAY = {
-    "gemini-2.5-flash":      "Gemini 2.5 Flash",
+    "gemini-2.5-flash": "Gemini 2.5 Flash",
     "gemini-2.5-flash-lite": "Gemini 2.5 Flash Lite",
-    "gemini-2.5-pro":        "Gemini 2.5 Pro",
+    "gemini-2.5-pro": "Gemini 2.5 Pro",
     "gemini-3.1-flash-lite": "Gemini 3.1 Flash Lite",
-    "gemini-3.5-flash":      "Gemini 3.5 Flash",
+    "gemini-3.5-flash": "Gemini 3.5 Flash",
     "gemini-3.5-flash-lite": "Gemini 3.5 Flash Lite",
-    "gemini-3.5-pro":        "Gemini 3.5 Pro",
-    "gemini-3.1-pro":        "Gemini 3.1 Pro",
-    "gemini-3.1-flash":      "Gemini 3.1 Flash",
+    "gemini-3.5-pro": "Gemini 3.5 Pro",
+    "gemini-3.1-pro": "Gemini 3.1 Pro",
+    "gemini-3.1-flash": "Gemini 3.1 Flash",
 }
-_QUOTA_URL  = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
-_TOKEN_URL  = "https://oauth2.googleapis.com/token"
-_CLIENT_ID  = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
+_QUOTA_URL = "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota"
+_TOKEN_URL = "https://oauth2.googleapis.com/token"
+_CLIENT_ID = "1071006060591-tmhssin2h21lcre235vtolojh4g403ep.apps.googleusercontent.com"
 _CLIENT_SEC = "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"  # from agy binary
 
 _QUOTA_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
@@ -113,7 +113,9 @@ def agy_series(range_key: str = "all", *, brain_dir: str | None = None) -> dict:
                 all_models.add(model)
                 if date not in model_mix_by_date:
                     model_mix_by_date[date] = {}
-                model_mix_by_date[date][model] = model_mix_by_date[date].get(model, 0) + 1
+                model_mix_by_date[date][model] = (
+                    model_mix_by_date[date].get(model, 0) + 1
+                )
 
         if max_created_at:
             date = max_created_at[:10]
@@ -200,21 +202,28 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
                 mon, day, hms = int(lm.group(1)), int(lm.group(2)), lm.group(3)
                 h, mi, s = map(int, hms.split(":"))
                 try:
-                    logged_at = datetime.datetime(year, mon, day, h, mi, s,
-                                                  tzinfo=datetime.timezone.utc)
+                    logged_at = datetime.datetime(
+                        year, mon, day, h, mi, s, tzinfo=datetime.timezone.utc
+                    )
                 except ValueError:
                     continue
 
                 rm = _RESET_RE.search(line)
                 reset_dur_s = 0
                 if rm:
-                    reset_dur_s = (int(rm.group(1) or 0) * 3600
-                                   + int(rm.group(2) or 0) * 60
-                                   + int(rm.group(3) or 0))
+                    reset_dur_s = (
+                        int(rm.group(1) or 0) * 3600
+                        + int(rm.group(2) or 0) * 60
+                        + int(rm.group(3) or 0)
+                    )
                     if reset_dur_s > max_reset_dur:
                         max_reset_dur = reset_dur_s
 
-                reset_abs = logged_at + datetime.timedelta(seconds=reset_dur_s) if reset_dur_s else None
+                reset_abs = (
+                    logged_at + datetime.timedelta(seconds=reset_dur_s)
+                    if reset_dur_s
+                    else None
+                )
 
                 if email:
                     exhaustions[email] = exhaustions.get(email, 0) + 1
@@ -234,16 +243,20 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
         resets_in = max(0, int((reset_abs - now).total_seconds())) if reset_abs else 0
         elapsed = int((now - info["logged_at"]).total_seconds())
         status = "exhausted" if resets_in > 0 else "available"
-        accounts.append({
-            "email": email,
-            "status": status,
-            "last_exhausted_at": info["logged_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
-            "resets_at": reset_abs.strftime("%Y-%m-%dT%H:%M:%SZ") if reset_abs else None,
-            "resets_in_seconds": resets_in,
-            "elapsed_seconds": elapsed,
-            "session_count": sessions.get(email, 0),
-            "exhaustion_count": exhaustions.get(email, 0),
-        })
+        accounts.append(
+            {
+                "email": email,
+                "status": status,
+                "last_exhausted_at": info["logged_at"].strftime("%Y-%m-%dT%H:%M:%SZ"),
+                "resets_at": reset_abs.strftime("%Y-%m-%dT%H:%M:%SZ")
+                if reset_abs
+                else None,
+                "resets_in_seconds": resets_in,
+                "elapsed_seconds": elapsed,
+                "session_count": sessions.get(email, 0),
+                "exhaustion_count": exhaustions.get(email, 0),
+            }
+        )
 
     accounts_dir = os.path.expanduser(_ACCOUNTS_DIR)
     snapshot_emails = {
@@ -252,16 +265,18 @@ def agy_quota_status(*, log_dir: str | None = None) -> dict:
     }
     known_emails = {a["email"] for a in accounts}
     for email in sorted(snapshot_emails - known_emails):
-        accounts.append({
-            "email": email,
-            "status": "available",
-            "last_exhausted_at": None,
-            "resets_at": None,
-            "resets_in_seconds": 0,
-            "elapsed_seconds": 0,
-            "session_count": sessions.get(email, 0),
-            "exhaustion_count": exhaustions.get(email, 0),
-        })
+        accounts.append(
+            {
+                "email": email,
+                "status": "available",
+                "last_exhausted_at": None,
+                "resets_at": None,
+                "resets_in_seconds": 0,
+                "elapsed_seconds": 0,
+                "session_count": sessions.get(email, 0),
+                "exhaustion_count": exhaustions.get(email, 0),
+            }
+        )
 
     if snapshot_emails:
         accounts = [a for a in accounts if a["email"] in snapshot_emails]
@@ -324,7 +339,9 @@ def agy_statusline_snapshot(*, path: str | None = None) -> dict:
             "context_pct": cw.get("used_percentage", 0),
             "context_input_tokens": cw.get("total_input_tokens", 0),
             "context_output_tokens": cw.get("total_output_tokens", 0),
-            "model": model.get("display_name") or model.get("id") or raw.get("model", ""),
+            "model": model.get("display_name")
+            or model.get("id")
+            or raw.get("model", ""),
             "plan_tier": raw.get("plan_tier", ""),
             "email": raw.get("email", ""),
             "vcs_branch": vcs.get("branch", ""),
@@ -403,6 +420,7 @@ def agy_last_session(*, brain_dir: str | None = None) -> dict:
 def _google_userinfo(access_token: str) -> dict:
     """Fetch Google userinfo (email, name, picture) for a given access token."""
     import urllib.request
+
     req = urllib.request.Request(
         "https://www.googleapis.com/oauth2/v3/userinfo",
         headers={"Authorization": f"Bearer {access_token}"},
@@ -415,14 +433,15 @@ def agy_active_account() -> dict:
     """Return active agy account info (email, name, picture) via Google userinfo."""
     try:
         import keyring
+
         v = keyring.get_password("gemini", "antigravity")
         if not v:
             return {"email": None, "picture": None, "warning": "No keyring entry"}
         token = json.loads(v)["token"]["access_token"]
         info = _google_userinfo(token)
         return {
-            "email":   info.get("email", ""),
-            "name":    info.get("name", ""),
+            "email": info.get("email", ""),
+            "name": info.get("name", ""),
             "picture": info.get("picture"),
             "warning": None,
         }
@@ -433,15 +452,21 @@ def agy_active_account() -> dict:
 def _refresh_access_token(refresh_token: str) -> str:
     import urllib.request
     import urllib.parse
-    body = urllib.parse.urlencode({
-        "client_id":     _CLIENT_ID,
-        "client_secret": _CLIENT_SEC,
-        "refresh_token": refresh_token,
-        "grant_type":    "refresh_token",
-    }).encode()
-    req = urllib.request.Request(_TOKEN_URL,
+
+    body = urllib.parse.urlencode(
+        {
+            "client_id": _CLIENT_ID,
+            "client_secret": _CLIENT_SEC,
+            "refresh_token": refresh_token,
+            "grant_type": "refresh_token",
+        }
+    ).encode()
+    req = urllib.request.Request(
+        _TOKEN_URL,
         headers={"Content-Type": "application/x-www-form-urlencoded"},
-        data=body, method="POST")
+        data=body,
+        method="POST",
+    )
     with urllib.request.urlopen(req, timeout=10) as r:
         return json.loads(r.read())["access_token"]
 
@@ -449,6 +474,7 @@ def _refresh_access_token(refresh_token: str) -> str:
 def agy_model_quota() -> dict:
     """Fetch per-model quota for all saved agy accounts."""
     import urllib.request
+
     accounts_dir = os.path.expanduser("~/.gemini/accounts")
     if not os.path.isdir(accounts_dir):
         return {"accounts": [], "warning": "No accounts dir found"}
@@ -466,16 +492,21 @@ def agy_model_quota() -> dict:
         try:
             rt = json.load(open(f))["token"]["refresh_token"]
             at = _refresh_access_token(rt)
-            req = urllib.request.Request(_QUOTA_URL,
-                headers={"Authorization": f"Bearer {at}",
-                         "Content-Type": "application/json"},
-                data=b"", method="POST")
+            req = urllib.request.Request(
+                _QUOTA_URL,
+                headers={
+                    "Authorization": f"Bearer {at}",
+                    "Content-Type": "application/json",
+                },
+                data=b"",
+                method="POST",
+            )
             with urllib.request.urlopen(req, timeout=10) as r:
                 d = json.loads(r.read())
             models = []
             for b in d.get("buckets", []):
-                mid   = b.get("modelId", "")
-                frac  = float(b.get("remainingFraction", 1))
+                mid = b.get("modelId", "")
+                frac = float(b.get("remainingFraction", 1))
                 rtime = b.get("resetTime")
                 resets_in = 0
                 resets_at_str = None
@@ -486,24 +517,36 @@ def agy_model_quota() -> dict:
                         resets_in = max(0, int((rdt - now).total_seconds()))
                     except Exception:
                         pass
-                models.append({
-                    "model_id":           mid,
-                    "display_name":       _MODEL_DISPLAY.get(mid, mid),
-                    "remaining_fraction": round(frac, 4),
-                    "used_pct":           round((1 - frac) * 100, 1),
-                    "pct_remaining":      round(frac * 100, 1),
-                    "resets_at":          resets_at_str,
-                    "resets_in_seconds":  resets_in,
-                    "token_type":         b.get("tokenType", ""),
-                })
+                models.append(
+                    {
+                        "model_id": mid,
+                        "display_name": _MODEL_DISPLAY.get(mid, mid),
+                        "remaining_fraction": round(frac, 4),
+                        "used_pct": round((1 - frac) * 100, 1),
+                        "pct_remaining": round(frac * 100, 1),
+                        "resets_at": resets_at_str,
+                        "resets_in_seconds": resets_in,
+                        "token_type": b.get("tokenType", ""),
+                    }
+                )
             all_full = all(m["remaining_fraction"] >= 1.0 for m in models)
             tier_note = "standard-tier (unlimited)" if all_full and models else None
-            accounts.append({"email": email, "models": models, "error": None, "tier_note": tier_note})
+            accounts.append(
+                {
+                    "email": email,
+                    "models": models,
+                    "error": None,
+                    "tier_note": tier_note,
+                }
+            )
         except Exception as e:
             accounts.append({"email": email, "models": [], "error": str(e)[:80]})
             warnings.append(f"{email}: {e}")
 
-    return {"accounts": accounts, "warning": ("; ".join(warnings) if warnings else None)}
+    return {
+        "accounts": accounts,
+        "warning": ("; ".join(warnings) if warnings else None),
+    }
 
 
 def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
@@ -519,8 +562,13 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
 
     r = run("tmux", "new-session", "-d", "-s", session, "-x", "220", "-y", "60", "agy")
     if r.returncode != 0:
-        return {"models": [], "warning": f"tmux failed: {r.stderr[:60]}",
-                "account": None, "plan": None, "captured_at": None}
+        return {
+            "models": [],
+            "warning": f"tmux failed: {r.stderr[:60]}",
+            "account": None,
+            "plan": None,
+            "captured_at": None,
+        }
 
     deadline = time.time() + 40
     ready = False
@@ -538,17 +586,22 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
 
     if not ready:
         run("tmux", "kill-session", "-t", session)
-        return {"models": [], "warning": "agy did not reach READY state",
-                "account": None, "plan": None, "captured_at": None}
+        return {
+            "models": [],
+            "warning": "agy did not reach READY state",
+            "account": None,
+            "plan": None,
+            "captured_at": None,
+        }
 
     time.sleep(1)
 
     statusline = run("tmux", "capture-pane", "-t", session, "-p").stdout
     account, plan = None, None
-    m = re.search(r'([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})', statusline)
+    m = re.search(r"([a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,})", statusline)
     if m:
         account = m.group(1)
-    m = re.search(r'Google AI Pro|standard-tier|Pro Plus|Free', statusline)
+    m = re.search(r"Google AI Pro|standard-tier|Pro Plus|Free", statusline)
     if m:
         plan = m.group(0)
 
@@ -557,7 +610,10 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
     deadline2 = time.time() + 20
     while time.time() < deadline2:
         cap = run("tmux", "capture-pane", "-t", session, "-p", "-S", "-", "-E", "-")
-        if any(k in cap.stdout for k in ["Model Quota", "Gemini 3.5", "Refreshes in", "Quota available"]):
+        if any(
+            k in cap.stdout
+            for k in ["Model Quota", "Gemini 3.5", "Refreshes in", "Quota available"]
+        ):
             break
         time.sleep(1)
 
@@ -568,7 +624,7 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
 
     run("tmux", "kill-session", "-t", session)
 
-    MODEL_RE = re.compile(r'^(Gemini|Claude|GPT|Llama|Mistral|Qwen|Deepseek|Grok)')
+    MODEL_RE = re.compile(r"^(Gemini|Claude|GPT|Llama|Mistral|Qwen|Deepseek|Grok)")
     raw_lines = [ln.strip() for ln in raw.splitlines() if ln.strip()]
     models = []
     for i, line in enumerate(raw_lines):
@@ -582,33 +638,35 @@ def agy_model_quota_tmux(*, session: str = "agykit-quota-snap") -> dict:
         for ln in raw_lines[i + 1 : i + 4]:
             if MODEL_RE.match(ln):
                 break
-            m2 = re.search(r'(\d+)%', ln)
+            m2 = re.search(r"(\d+)%", ln)
             if m2:
                 pct = int(m2.group(1))
-                bar_blocks = ln.count('█')
-            if 'Quota available' in ln or 'quota available' in ln.lower():
+                bar_blocks = ln.count("█")
+            if "Quota available" in ln or "quota available" in ln.lower():
                 status = "available"
-            m3 = re.search(r'Refreshes? in (.+)', ln)
+            m3 = re.search(r"Refreshes? in (.+)", ln)
             if m3:
                 refreshes_in = m3.group(1).strip()
                 status = "limited"
-        models.append({
-            "display_name":  model_name,
-            "pct_shown":     pct,
-            "pct_remaining": pct,
-            "status":        status,
-            "refreshes_in":  refreshes_in,
-            "bar_blocks":    bar_blocks,
-        })
+        models.append(
+            {
+                "display_name": model_name,
+                "pct_shown": pct,
+                "pct_remaining": pct,
+                "status": status,
+                "refreshes_in": refreshes_in,
+                "bar_blocks": bar_blocks,
+            }
+        )
 
     captured_at = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     warning = None if models else "No model quota data found in screen output"
     return {
-        "models":      models,
-        "account":     account,
-        "plan":        plan,
+        "models": models,
+        "account": account,
+        "plan": plan,
         "captured_at": captured_at,
-        "warning":     warning,
+        "warning": warning,
     }
 
 
@@ -678,14 +736,21 @@ def agy_model_quota_cached(*, force: bool = False) -> dict:
 def _fetch_quota_reset_times() -> dict | None:
     """Get reset time from retrieveUserQuota (fast, no tmux needed)."""
     import urllib.request
+
     try:
         import keyring
+
         v = keyring.get_password("gemini", "antigravity")
         token = json.loads(v)["token"]["access_token"]
         req = urllib.request.Request(
             "https://daily-cloudcode-pa.googleapis.com/v1internal:retrieveUserQuota",
-            headers={"Authorization": f"Bearer {token}", "Content-Type": "application/json"},
-            data=b"", method="POST")
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Content-Type": "application/json",
+            },
+            data=b"",
+            method="POST",
+        )
         with urllib.request.urlopen(req, timeout=8) as r:
             d = json.loads(r.read())
         buckets = d.get("buckets", [])
@@ -700,9 +765,9 @@ def _fetch_quota_reset_times() -> dict | None:
         h, mi = secs // 3600, (secs % 3600) // 60
         label = f"{h}sa {mi}dk" if h else f"{mi}dk"
         return {
-            "reset_at":      rdt.astimezone().strftime("%H:%M"),
+            "reset_at": rdt.astimezone().strftime("%H:%M"),
             "reset_in_secs": secs,
-            "label":         label,
+            "label": label,
         }
     except Exception:
         return None
@@ -743,11 +808,13 @@ def agy_refresh_all_accounts(*, agykit_path: str | None = None) -> dict:
                 [agykit, "run", "echo ok"], capture_output=True, text=True, timeout=60
             )
             ok = run.returncode == 0
-            results.append({
-                "email": email,
-                "ok": ok,
-                "error": run.stderr.strip()[:80] if not ok else None,
-            })
+            results.append(
+                {
+                    "email": email,
+                    "ok": ok,
+                    "error": run.stderr.strip()[:80] if not ok else None,
+                }
+            )
         except subprocess.TimeoutExpired:
             results.append({"email": email, "ok": False, "error": "timeout"})
         except Exception as e:

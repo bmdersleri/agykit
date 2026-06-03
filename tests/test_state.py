@@ -16,12 +16,18 @@ def test_resolve_job_state_falls_back_and_copies_primary_bundle(monkeypatch, tmp
 
     copied = {}
 
-    monkeypatch.setattr(state, "_candidate_state_dirs", lambda: [str(primary), str(fallback)])
-    monkeypatch.setattr(state, "_probe_sqlite_path", lambda db_path: db_path.startswith(str(fallback)))
+    monkeypatch.setattr(
+        state, "_candidate_state_dirs", lambda: [str(primary), str(fallback)]
+    )
+    monkeypatch.setattr(
+        state, "_probe_sqlite_path", lambda db_path: db_path.startswith(str(fallback))
+    )
     monkeypatch.setattr(
         state,
         "_copy_job_bundle",
-        lambda source_dir, target_dir: copied.update({"source": source_dir, "target": target_dir}),
+        lambda source_dir, target_dir: copied.update(
+            {"source": source_dir, "target": target_dir}
+        ),
     )
     monkeypatch.setattr(state, "_STATE_CACHE", None)
     monkeypatch.setattr(state, "PRIMARY_STATE_DIR", str(primary))
@@ -31,4 +37,3 @@ def test_resolve_job_state_falls_back_and_copies_primary_bundle(monkeypatch, tmp
     assert resolved["state_dir"] == str(fallback)
     assert resolved["db_path"] == os.path.join(str(fallback), state.JOB_DB_NAME)
     assert copied == {"source": str(primary), "target": str(fallback)}
-

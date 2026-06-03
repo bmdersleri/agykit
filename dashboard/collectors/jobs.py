@@ -9,28 +9,33 @@ from datetime import datetime, timezone
 
 from dashboard.state import resolve_job_state
 
+
 # Lazy import: avoid circular dep when jobd.py loads this module
 def _ensure_daemon():
     try:
         from dashboard.jobd import ensure_daemon
+
         # Don't check return value — best-effort start
         ensure_daemon()
     except Exception:
         pass
 
+
 _STATE = resolve_job_state()
 DB_PATH = _STATE["db_path"]
 _OLD_JSON_DIR = _STATE["old_job_dir"]
 _JOB_SOCKET = _STATE["socket_path"]
-_ACTIVE_STATUSES = frozenset({"starting", "running", "verifying", "rotating", "rolling_back"})
+_ACTIVE_STATUSES = frozenset(
+    {"starting", "running", "verifying", "rotating", "rolling_back"}
+)
 JOB_STALE_TIMEOUT = 300  # 5 minutes
 
 ERROR_CATEGORIES = {
-    "quota":   r"RESOURCE_EXHAUSTED|quota.*(?:reached|exceeded)|429.*quota|rate.*limit|403.*quota",
+    "quota": r"RESOURCE_EXHAUSTED|quota.*(?:reached|exceeded)|429.*quota|rate.*limit|403.*quota",
     "timeout": r"timeout|timed ?out",
     "network": r"ConnectionError|Connection refused|reset by peer|Name or service not known",
-    "auth":    r"unauthorized|invalid.*token|OAuth|permission.*denied|access_denied",
-    "verify":  r"verify.*fail|VERIFICATION FAILED",
+    "auth": r"unauthorized|invalid.*token|OAuth|permission.*denied|access_denied",
+    "verify": r"verify.*fail|VERIFICATION FAILED",
 }
 
 
@@ -41,6 +46,7 @@ def _classify_error(error_text: str | None) -> str | None:
         if re.search(pattern, error_text, re.IGNORECASE):
             return category
     return None
+
 
 _SCHEMA_SQL = """
 CREATE TABLE IF NOT EXISTS jobs (
@@ -112,7 +118,8 @@ def _get_db() -> sqlite3.Connection:
 def _migrate_from_json(conn: sqlite3.Connection):
     try:
         names = sorted(
-            n for n in os.listdir(_OLD_JSON_DIR)
+            n
+            for n in os.listdir(_OLD_JSON_DIR)
             if n.endswith(".json") and not n.endswith(".events.jsonl")
         )
     except Exception:
@@ -186,6 +193,7 @@ def _notify_socket(event_dict: dict):
             if os.path.exists(_JOB_SOCKET):
                 break
             import time
+
             time.sleep(0.3)
         else:
             return
@@ -226,9 +234,16 @@ def job_create(command: str, prompt: str = "") -> str:
     return job_id
 
 
-def job_event(job_id: str, event_type: str, status: str, stage: str,
-              account: str | None = None, model: str | None = None,
-              message: str = "", error: str | None = None):
+def job_event(
+    job_id: str,
+    event_type: str,
+    status: str,
+    stage: str,
+    account: str | None = None,
+    model: str | None = None,
+    message: str = "",
+    error: str | None = None,
+):
     conn = _get_db()
     ts = datetime.now(timezone.utc).isoformat()
     try:
@@ -267,8 +282,19 @@ def job_event(job_id: str, event_type: str, status: str, stage: str,
                error_detail=COALESCE(?, error_detail),
                error_category=COALESCE(?, error_category)
                WHERE job_id=?""",
-            (status, stage, ts, account, model, error, ended_at,
-             duration_seconds, error, error_category, job_id),
+            (
+                status,
+                stage,
+                ts,
+                account,
+                model,
+                error,
+                ended_at,
+                duration_seconds,
+                error,
+                error_category,
+                job_id,
+            ),
         )
         conn.commit()
     except Exception:
@@ -276,15 +302,23 @@ def job_event(job_id: str, event_type: str, status: str, stage: str,
         raise
     finally:
         conn.close()
-    _notify_socket({
-        "job_id": job_id, "ts": ts, "event": event_type,
-        "status": status, "stage": stage,
-        "account": account, "model": model,
-        "message": message, "error": error,
-    })
+    _notify_socket(
+        {
+            "job_id": job_id,
+            "ts": ts,
+            "event": event_type,
+            "status": status,
+            "stage": stage,
+            "account": account,
+            "model": model,
+            "message": message,
+            "error": error,
+        }
+    )
     if status in ("succeeded", "failed", "blocked"):
         try:
             from dashboard.notify import notify as _notify
+
             cmd = ""
             conn2 = _get_db()
             try:
@@ -306,9 +340,7 @@ def job_event(job_id: str, event_type: str, status: str, stage: str,
 def job_snapshot(job_id: str) -> dict | None:
     conn = _get_db()
     try:
-        row = conn.execute(
-            "SELECT * FROM jobs WHERE job_id=?", (job_id,)
-        ).fetchone()
+        row = conn.execute("SELECT * FROM jobs WHERE job_id=?", (job_id,)).fetchone()
         if row is None:
             return None
         return dict(row)
@@ -332,7 +364,10 @@ def job_events(job_id: str, limit: int = 100) -> list[dict]:
 
 def _recover_stale_jobs(conn: sqlite3.Connection, force: bool = False):
     from datetime import datetime, timezone, timedelta
-    cutoff = (datetime.now(timezone.utc) - timedelta(seconds=JOB_STALE_TIMEOUT)).isoformat()
+
+    cutoff = (
+        datetime.now(timezone.utc) - timedelta(seconds=JOB_STALE_TIMEOUT)
+    ).isoformat()
     if force:
         cutoff = datetime.now(timezone.utc).isoformat()
     rows = conn.execute(
@@ -400,12 +435,15 @@ def job_list(
 def job_stats() -> dict:
     conn = _get_db()
     from datetime import datetime, timezone, timedelta
+
     try:
         _recover_stale_jobs(conn)
         now = datetime.now(timezone.utc)
         total = conn.execute("SELECT COUNT(*) AS c FROM jobs").fetchone()["c"]
         by_status: dict[str, int] = {}
-        for row in conn.execute("SELECT status, COUNT(*) AS c FROM jobs GROUP BY status").fetchall():
+        for row in conn.execute(
+            "SELECT status, COUNT(*) AS c FROM jobs GROUP BY status"
+        ).fetchall():
             by_status[row["status"]] = row["c"]
 
         since_24h = (now - timedelta(hours=24)).isoformat()
@@ -417,9 +455,11 @@ def job_stats() -> dict:
         recent_total = sum(recent_by_status.values())
 
         success_rate_24h = None
-        terminal_24h = recent_by_status.get("succeeded", 0) \
-            + recent_by_status.get("failed", 0) \
+        terminal_24h = (
+            recent_by_status.get("succeeded", 0)
+            + recent_by_status.get("failed", 0)
             + recent_by_status.get("blocked", 0)
+        )
         if terminal_24h > 0:
             success_rate_24h = round(
                 recent_by_status.get("succeeded", 0) / terminal_24h * 100, 1
@@ -428,7 +468,9 @@ def job_stats() -> dict:
         avg_dur_row = conn.execute(
             "SELECT AVG(duration_seconds) AS ad FROM jobs WHERE duration_seconds IS NOT NULL"
         ).fetchone()
-        avg_duration_seconds = round(avg_dur_row["ad"], 1) if avg_dur_row and avg_dur_row["ad"] else None
+        avg_duration_seconds = (
+            round(avg_dur_row["ad"], 1) if avg_dur_row and avg_dur_row["ad"] else None
+        )
 
         error_breakdown: dict[str, int] = {}
         for row in conn.execute(
@@ -478,11 +520,16 @@ def job_cancel(job_id: str, message: str = ""):
         raise
     finally:
         conn.close()
-    _notify_socket({
-        "job_id": job_id, "ts": ts, "event": "job_blocked",
-        "status": "blocked", "stage": "cancelled",
-        "message": msg,
-    })
+    _notify_socket(
+        {
+            "job_id": job_id,
+            "ts": ts,
+            "event": "job_blocked",
+            "status": "blocked",
+            "stage": "cancelled",
+            "message": msg,
+        }
+    )
 
 
 def job_prune(
@@ -503,6 +550,7 @@ def job_prune(
     """
     conn = _get_db()
     from datetime import datetime, timezone, timedelta
+
     now = datetime.now(timezone.utc)
     wheres: list[str] = []
     params: list = []
@@ -533,9 +581,7 @@ def job_prune(
             f"DELETE FROM events WHERE job_id IN (SELECT job_id FROM jobs WHERE {where_clause})",
             params,
         )
-        conn.execute(
-            f"DELETE FROM jobs WHERE {where_clause}", params
-        )
+        conn.execute(f"DELETE FROM jobs WHERE {where_clause}", params)
         conn.commit()
         deleted = count
 
@@ -567,14 +613,20 @@ def job_prune(
 def _auto_prune_if_needed(conn: sqlite3.Connection):
     import os
     from datetime import datetime, timezone, timedelta
+
     ttl_days = int(os.environ.get("AGYKIT_JOB_TTL_DAYS", "30"))
     max_jobs = int(os.environ.get("AGYKIT_JOB_MAX_COUNT", "500"))
     if ttl_days > 0:
         cutoff = (datetime.now(timezone.utc) - timedelta(days=ttl_days)).isoformat()
-        conn.execute("DELETE FROM events WHERE job_id IN (SELECT job_id FROM jobs WHERE started_at < ?)", (cutoff,))
+        conn.execute(
+            "DELETE FROM events WHERE job_id IN (SELECT job_id FROM jobs WHERE started_at < ?)",
+            (cutoff,),
+        )
         conn.execute("DELETE FROM jobs WHERE started_at < ?", (cutoff,))
     if max_jobs > 0:
-        over_row = conn.execute("SELECT MAX(0, COUNT(*) - ?) AS over FROM jobs", (max_jobs,)).fetchone()
+        over_row = conn.execute(
+            "SELECT MAX(0, COUNT(*) - ?) AS over FROM jobs", (max_jobs,)
+        ).fetchone()
         over = over_row["over"] if over_row else 0
         if over > 0:
             rows = conn.execute(

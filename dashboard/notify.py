@@ -26,7 +26,9 @@ def _notify_slack(webhook: str, summary: str) -> bool:
 
 def _notify_telegram(token: str, chat_id: str, summary: str) -> bool:
     url = f"https://api.telegram.org/bot{token}/sendMessage"
-    return _post_json(url, {"chat_id": chat_id, "text": summary, "parse_mode": "Markdown"})
+    return _post_json(
+        url, {"chat_id": chat_id, "text": summary, "parse_mode": "Markdown"}
+    )
 
 
 def _notify_ntfy(topic: str, summary: str) -> bool:

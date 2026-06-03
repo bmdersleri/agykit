@@ -135,7 +135,9 @@ def test_agy_quota_status_enriches_saved_accounts(monkeypatch, tmp_path):
         "_load_plans_cache",
         lambda: {"pro@example.com": "Google AI Pro"},
     )
-    monkeypatch.setattr(agy_collectors, "_save_profile", lambda email, name, picture: None)
+    monkeypatch.setattr(
+        agy_collectors, "_save_profile", lambda email, name, picture: None
+    )
 
     result = collectors.agy_quota_status(log_dir=str(log_dir))
     by_email = {a["email"]: a for a in result["accounts"]}
@@ -148,7 +150,9 @@ def test_agy_quota_status_enriches_saved_accounts(monkeypatch, tmp_path):
     assert by_email["free@example.com"]["status"] == "available"
 
 
-def test_agy_quota_status_uses_cached_profile_on_userinfo_failure(monkeypatch, tmp_path):
+def test_agy_quota_status_uses_cached_profile_on_userinfo_failure(
+    monkeypatch, tmp_path
+):
     home = tmp_path / "home"
     accounts_dir = home / ".gemini" / "accounts"
     accounts_dir.mkdir(parents=True)
@@ -347,22 +351,30 @@ def test_codex_usage_parse(tmp_path):
     other.mkdir()
     history = tmp_path / "history.jsonl"
     history.write_text(
-        json.dumps({"session_id": "s1", "ts": 1780299000, "text": "first"}) + "\n"
-        + json.dumps({"session_id": "s2", "ts": 1780299100, "text": "second"}) + "\n"
+        json.dumps({"session_id": "s1", "ts": 1780299000, "text": "first"})
+        + "\n"
+        + json.dumps({"session_id": "s2", "ts": 1780299100, "text": "second"})
+        + "\n"
     )
     session_index = tmp_path / "session_index.jsonl"
     session_index.write_text(
-        json.dumps({
-            "id": "s2",
-            "thread_name": "Second",
-            "updated_at": "2026-06-01T07:31:40Z",
-        }) + "\n"
+        json.dumps(
+            {
+                "id": "s2",
+                "thread_name": "Second",
+                "updated_at": "2026-06-01T07:31:40Z",
+            }
+        )
+        + "\n"
     )
-    state = _make_codex_state(tmp_path, [
-        ("s1", "First", str(project), 1000, "gpt-5.5", 1780299000, 0),
-        ("s2", "Second", str(other), 2000, "gpt-5.5", 1780299100, 0),
-        ("old", "Archived", str(project), 9999, "gpt-5.5", 1, 1),
-    ])
+    state = _make_codex_state(
+        tmp_path,
+        [
+            ("s1", "First", str(project), 1000, "gpt-5.5", 1780299000, 0),
+            ("s2", "Second", str(other), 2000, "gpt-5.5", 1780299100, 0),
+            ("old", "Archived", str(project), 9999, "gpt-5.5", 1, 1),
+        ],
+    )
 
     s = collectors.codex_usage(
         history_path=str(history),
@@ -386,23 +398,38 @@ def test_codex_status_from_auth(tmp_path):
     auth = tmp_path / "auth.json"
     # Create a fake JWT with a real-looking payload
     import base64, json
-    payload = base64.urlsafe_b64encode(json.dumps({
-        "https://api.openai.com/auth": {
-            "chatgpt_plan_type": "plus",
-            "chatgpt_account_id": "acct_123",
-            "chatgpt_user_id": "user_456",
-            "chatgpt_subscription_active_until": "2026-07-01T00:00:00+00:00",
-        },
-        "https://api.openai.com/profile": {
-            "email": "test@example.com",
-        },
-    }).encode()).rstrip(b"=").decode()
+
+    payload = (
+        base64.urlsafe_b64encode(
+            json.dumps(
+                {
+                    "https://api.openai.com/auth": {
+                        "chatgpt_plan_type": "plus",
+                        "chatgpt_account_id": "acct_123",
+                        "chatgpt_user_id": "user_456",
+                        "chatgpt_subscription_active_until": "2026-07-01T00:00:00+00:00",
+                    },
+                    "https://api.openai.com/profile": {
+                        "email": "test@example.com",
+                    },
+                }
+            ).encode()
+        )
+        .rstrip(b"=")
+        .decode()
+    )
     fake_jwt = f"header.{payload}.signature"
-    auth.write_text(json.dumps({
-        "auth_mode": "chatgpt",
-        "tokens": {"access_token": fake_jwt},
-    }))
-    result = collectors.codex_status(auth_path=str(auth), state_path=str(tmp_path / "no-state.sqlite"))
+    auth.write_text(
+        json.dumps(
+            {
+                "auth_mode": "chatgpt",
+                "tokens": {"access_token": fake_jwt},
+            }
+        )
+    )
+    result = collectors.codex_status(
+        auth_path=str(auth), state_path=str(tmp_path / "no-state.sqlite")
+    )
     assert result["available"] is True
     assert result["account"]["plan_type"] == "plus"
     assert result["account"]["email"] == "test@example.com"
@@ -423,6 +450,7 @@ def test_codex_status_from_state(tmp_path):
     auth.write_text(json.dumps({"auth_mode": "local", "tokens": {"access_token": ""}}))
     state = tmp_path / "state_5.sqlite"
     import sqlite3
+
     con = sqlite3.connect(str(state))
     con.execute("""
         CREATE TABLE threads (
@@ -458,6 +486,7 @@ def test_codex_usage_missing_files(tmp_path):
 
 # ── activity_feed tests ──────────────────────────────────────────────────────
 
+
 def _make_ops_log(tmp_path, entries):
     """Write JSONL ops log entries."""
     log = tmp_path / "ops.log"
@@ -473,14 +502,41 @@ def _make_history(tmp_path, entries):
 
 
 def test_activity_feed_merge_order(tmp_path):
-    log = _make_ops_log(tmp_path, [
-        {"ts": "2026-01-01T00:00:10Z", "cmd": "run", "status": "success", "account": "a@b.com", "model": "", "prompt": "p1"},
-        {"ts": "2026-01-01T00:00:30Z", "cmd": "run", "status": "success", "account": "a@b.com", "model": "", "prompt": "p2"},
-    ])
-    hist = _make_history(tmp_path, [
-        {"display": "cc1", "timestamp": 1735689620000, "project": "/x/y", "sessionId": "s1"},  # epoch 1735689620
-    ])
-    result = collectors.activity_feed(log_path=log, history_path=hist, stats_path="/no/such.json")
+    log = _make_ops_log(
+        tmp_path,
+        [
+            {
+                "ts": "2026-01-01T00:00:10Z",
+                "cmd": "run",
+                "status": "success",
+                "account": "a@b.com",
+                "model": "",
+                "prompt": "p1",
+            },
+            {
+                "ts": "2026-01-01T00:00:30Z",
+                "cmd": "run",
+                "status": "success",
+                "account": "a@b.com",
+                "model": "",
+                "prompt": "p2",
+            },
+        ],
+    )
+    hist = _make_history(
+        tmp_path,
+        [
+            {
+                "display": "cc1",
+                "timestamp": 1735689620000,
+                "project": "/x/y",
+                "sessionId": "s1",
+            },  # epoch 1735689620
+        ],
+    )
+    result = collectors.activity_feed(
+        log_path=log, history_path=hist, stats_path="/no/such.json"
+    )
     events = result["events"]
     assert len(events) == 3
     epochs = [e["ts_epoch"] for e in events]
@@ -488,20 +544,42 @@ def test_activity_feed_merge_order(tmp_path):
 
 
 def test_activity_feed_ts_normalize_iso(tmp_path):
-    log = _make_ops_log(tmp_path, [
-        {"ts": "2026-06-01T12:00:00Z", "cmd": "run", "status": "success", "account": "x", "model": "", "prompt": ""},
-    ])
-    result = collectors.activity_feed(log_path=log, history_path="/no/such.jsonl", stats_path="/no/such.json")
+    log = _make_ops_log(
+        tmp_path,
+        [
+            {
+                "ts": "2026-06-01T12:00:00Z",
+                "cmd": "run",
+                "status": "success",
+                "account": "x",
+                "model": "",
+                "prompt": "",
+            },
+        ],
+    )
+    result = collectors.activity_feed(
+        log_path=log, history_path="/no/such.jsonl", stats_path="/no/such.json"
+    )
     ev = result["events"][0]
     assert ev["kind"] == "agy"
     assert ev["ts_epoch"] == 1780315200  # 2026-06-01T12:00:00Z
 
 
 def test_activity_feed_ts_normalize_cc_ms(tmp_path):
-    hist = _make_history(tmp_path, [
-        {"display": "hello", "timestamp": 1748779200000, "project": "/p/q", "sessionId": "s"},
-    ])
-    result = collectors.activity_feed(log_path="/no/such.log", history_path=hist, stats_path="/no/such.json")
+    hist = _make_history(
+        tmp_path,
+        [
+            {
+                "display": "hello",
+                "timestamp": 1748779200000,
+                "project": "/p/q",
+                "sessionId": "s",
+            },
+        ],
+    )
+    result = collectors.activity_feed(
+        log_path="/no/such.log", history_path=hist, stats_path="/no/such.json"
+    )
     ev = result["events"][0]
     assert ev["kind"] == "cc"
     assert ev["ts_epoch"] == 1748779200
@@ -509,11 +587,23 @@ def test_activity_feed_ts_normalize_cc_ms(tmp_path):
 
 def test_activity_feed_limit(tmp_path):
     entries = [
-        {"ts": f"2026-01-01T00:00:{i:02d}Z", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": ""}
+        {
+            "ts": f"2026-01-01T00:00:{i:02d}Z",
+            "cmd": "run",
+            "status": "success",
+            "account": "a",
+            "model": "",
+            "prompt": "",
+        }
         for i in range(30)
     ]
     log = _make_ops_log(tmp_path, entries)
-    result = collectors.activity_feed(limit=25, log_path=log, history_path="/no/such.jsonl", stats_path="/no/such.json")
+    result = collectors.activity_feed(
+        limit=25,
+        log_path=log,
+        history_path="/no/such.jsonl",
+        stats_path="/no/such.json",
+    )
     assert len(result["events"]) == 25
     # newest 25
     epochs = [e["ts_epoch"] for e in result["events"]]
@@ -521,17 +611,24 @@ def test_activity_feed_limit(tmp_path):
 
 
 def test_activity_feed_latest_stats_passthrough(tmp_path):
-    hist = _make_history(tmp_path, [
-        {"display": "x", "timestamp": 1000000, "project": "/p", "sessionId": "s"},
-    ])
-    result = collectors.activity_feed(log_path="/no/such.log", history_path=hist, stats_path=FIX)
+    hist = _make_history(
+        tmp_path,
+        [
+            {"display": "x", "timestamp": 1000000, "project": "/p", "sessionId": "s"},
+        ],
+    )
+    result = collectors.activity_feed(
+        log_path="/no/such.log", history_path=hist, stats_path=FIX
+    )
     assert result["latest_stats"]["available"] is True
     assert result["latest_stats"]["messages"] > 0
 
 
 def test_activity_feed_missing_files(tmp_path):
     result = collectors.activity_feed(
-        log_path="/no/such.log", history_path="/no/such.jsonl", stats_path="/no/such.json"
+        log_path="/no/such.log",
+        history_path="/no/such.jsonl",
+        stats_path="/no/such.json",
     )
     assert result["events"] == []
     assert result["warning"] is not None
@@ -540,10 +637,12 @@ def test_activity_feed_missing_files(tmp_path):
 def test_activity_feed_malformed_ops_skip(tmp_path):
     log = tmp_path / "ops.log"
     log.write_text(
-        'NOT JSON\n'
+        "NOT JSON\n"
         '{"ts": "2026-01-01T00:00:01Z", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": "ok"}\n'
     )
-    result = collectors.activity_feed(log_path=str(log), history_path="/no/such.jsonl", stats_path="/no/such.json")
+    result = collectors.activity_feed(
+        log_path=str(log), history_path="/no/such.jsonl", stats_path="/no/such.json"
+    )
     assert len(result["events"]) == 1
     assert result["events"][0]["prompt"] == "ok"
 
@@ -554,7 +653,9 @@ def test_activity_feed_ts_epoch_zero_fallback(tmp_path):
         '{"ts": "INVALID", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": "bad"}\n'
         '{"ts": "2026-01-01T00:00:01Z", "cmd": "run", "status": "success", "account": "a", "model": "", "prompt": "good"}\n'
     )
-    result = collectors.activity_feed(log_path=str(log), history_path="/no/such.jsonl", stats_path="/no/such.json")
+    result = collectors.activity_feed(
+        log_path=str(log), history_path="/no/such.jsonl", stats_path="/no/such.json"
+    )
     events = result["events"]
     assert len(events) == 2
     # bad ts → ts_epoch=0, sorts to end
@@ -565,13 +666,18 @@ def test_activity_feed_ts_epoch_zero_fallback(tmp_path):
 
 # ── Job state tests ─────────────────────────────────────────────────────────
 
+
 def _job_db_path(tmp_path):
     return str(tmp_path / "jobs.db")
 
+
 def test_job_create_and_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_snapshot
+
     jid = job_create("test-cmd", "test prompt")
     assert jid
     assert "T" in jid
@@ -586,8 +692,11 @@ def test_job_create_and_snapshot(tmp_path, monkeypatch):
 
 def test_job_event_updates_snapshot(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+
     jid = job_create("run", "hello")
     job_event(jid, "account_selected", "running", "trying a@b.com", account="a@b.com")
     snap = job_snapshot(jid)
@@ -598,8 +707,11 @@ def test_job_event_updates_snapshot(tmp_path, monkeypatch):
 
 def test_job_event_with_error(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+
     jid = job_create("run", "hello")
     job_event(jid, "job_failed", "failed", "error", error="Something broke")
     snap = job_snapshot(jid)
@@ -610,9 +722,12 @@ def test_job_event_with_error(tmp_path, monkeypatch):
 
 def test_job_event_duration_and_category(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
     import time
+
     jid = job_create("run", "duration test")
     time.sleep(0.05)
     job_event(jid, "job_failed", "failed", "error", error="403 quota exceeded reached")
@@ -625,8 +740,11 @@ def test_job_event_duration_and_category(tmp_path, monkeypatch):
 
 def test_job_event_duration_non_terminal(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+
     jid = job_create("run", "no duration")
     job_event(jid, "account_selected", "running", "trying", account="a@b.com")
     snap = job_snapshot(jid)
@@ -635,8 +753,11 @@ def test_job_event_duration_non_terminal(tmp_path, monkeypatch):
 
 def test_job_event_error_detail_full(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+
     long_error = "x" * 500
     jid = job_create("run", "detail test")
     job_event(jid, "job_failed", "failed", "error", error=long_error)
@@ -646,8 +767,16 @@ def test_job_event_error_detail_full(tmp_path, monkeypatch):
 
 def test_job_event_error_category_taxonomy(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
-    from dashboard.collectors.jobs import job_create, job_event, job_snapshot, _classify_error
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    from dashboard.collectors.jobs import (
+        job_create,
+        job_event,
+        job_snapshot,
+        _classify_error,
+    )
+
     assert _classify_error("RESOURCE_EXHAUSTED quota") == "quota"
     assert _classify_error("request timed out") == "timeout"
     assert _classify_error("Connection refused") == "network"
@@ -660,8 +789,11 @@ def test_job_event_error_category_taxonomy(tmp_path, monkeypatch):
 
 def test_job_event_category_integration(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
+
     cases = [
         ("rate limit exceeded", "quota"),
         ("timed out", "timeout"),
@@ -673,13 +805,18 @@ def test_job_event_category_integration(tmp_path, monkeypatch):
         jid = job_create("run", f"cat-{expected_cat}")
         job_event(jid, "job_failed", "failed", "error", error=error_text)
         snap = job_snapshot(jid)
-        assert snap["error_category"] == expected_cat, f"Expected {expected_cat} for '{error_text}', got {snap['error_category']}"
+        assert snap["error_category"] == expected_cat, (
+            f"Expected {expected_cat} for '{error_text}', got {snap['error_category']}"
+        )
 
 
 def test_job_event_schema_migration(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import _get_db
+
     conn = _get_db()
     cols = [row[1] for row in conn.execute("PRAGMA table_info(jobs)").fetchall()]
     conn.close()
@@ -690,8 +827,11 @@ def test_job_event_schema_migration(tmp_path, monkeypatch):
 
 def test_job_event_schema_migration_idempotent(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import _get_db
+
     conn1 = _get_db()
     conn1.close()
     conn2 = _get_db()
@@ -702,9 +842,12 @@ def test_job_event_schema_migration_idempotent(tmp_path, monkeypatch):
 
 def test_job_stats_success_rate(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_stats
     from datetime import datetime, timezone, timedelta
+
     old = (datetime.now(timezone.utc) - timedelta(hours=2)).isoformat()
     jid1 = job_create("run", "a")
     job_event(jid1, "job_succeeded", "succeeded", "done")
@@ -718,8 +861,11 @@ def test_job_stats_success_rate(tmp_path, monkeypatch):
 
 def test_job_stats_avg_duration(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_stats
+
     jid = job_create("run", "dur")
     job_event(jid, "job_succeeded", "succeeded", "done")
     stats = job_stats()
@@ -728,8 +874,11 @@ def test_job_stats_avg_duration(tmp_path, monkeypatch):
 
 def test_job_stats_error_breakdown(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_stats
+
     jid1 = job_create("run", "q")
     job_event(jid1, "job_failed", "failed", "error", error="quota exceeded")
     jid2 = job_create("run", "t")
@@ -741,8 +890,11 @@ def test_job_stats_error_breakdown(tmp_path, monkeypatch):
 
 def test_job_stats_daily_counts(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_stats
+
     jid = job_create("run", "daily")
     job_event(jid, "job_succeeded", "succeeded", "done")
     stats = job_stats()
@@ -752,8 +904,11 @@ def test_job_stats_daily_counts(tmp_path, monkeypatch):
 
 def test_job_stats_empty(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_stats
+
     stats = job_stats()
     assert stats["total"] == 0
     assert stats["success_rate_24h"] is None
@@ -762,8 +917,11 @@ def test_job_stats_empty(tmp_path, monkeypatch):
 
 def test_job_events_ordering(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_events
+
     jid = job_create("run", "test")
     job_event(jid, "account_selected", "running", "acct1", account="a@b.com")
     job_event(jid, "quota_rotated", "rotating", "rotate", account="a@b.com")
@@ -778,16 +936,22 @@ def test_job_events_ordering(tmp_path, monkeypatch):
 
 def test_job_list_empty(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_list
+
     assert job_list() == []
 
 
 def test_job_list_orders_by_newest(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_list
     import time
+
     jid1 = job_create("run", "first")
     time.sleep(1.01)
     jid2 = job_create("run", "second")
@@ -799,15 +963,21 @@ def test_job_list_orders_by_newest(tmp_path, monkeypatch):
 
 def test_job_snapshot_nonexistent(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_snapshot
+
     assert job_snapshot("nonexistent") is None
 
 
 def test_job_events_limit(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_events
+
     jid = job_create("run", "test")
     for i in range(10):
         job_event(jid, "account_selected", "running", f"step{i}")
@@ -818,8 +988,15 @@ def test_job_events_limit(tmp_path, monkeypatch):
 
 def test_job_set_verify_result(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
-    from dashboard.collectors.jobs import job_create, job_set_verify_result, job_snapshot
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    from dashboard.collectors.jobs import (
+        job_create,
+        job_set_verify_result,
+        job_snapshot,
+    )
+
     jid = job_create("do-escalate", "test")
     job_set_verify_result(jid, "passed")
     snap = job_snapshot(jid)
@@ -828,11 +1005,15 @@ def test_job_set_verify_result(tmp_path, monkeypatch):
 
 # ── SQLite-specific tests ──────────────────────────────────────────────────
 
+
 def test_job_db_created(tmp_path, monkeypatch):
     dbp = _job_db_path(tmp_path)
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", dbp)
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_list
+
     assert not os.path.isfile(dbp)
     job_create("run", "first contact")
     assert os.path.isfile(dbp)
@@ -841,16 +1022,21 @@ def test_job_db_created(tmp_path, monkeypatch):
 def test_job_concurrent_write(tmp_path, monkeypatch):
     dbp = _job_db_path(tmp_path)
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", dbp)
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_snapshot
     import threading
+
     jid = job_create("run", "concurrent")
     errors = []
+
     def _write():
         try:
             job_event(jid, "account_selected", "running", "step", account="a@b.com")
         except Exception as e:
             errors.append(e)
+
     threads = [threading.Thread(target=_write) for _ in range(10)]
     for t in threads:
         t.start()
@@ -864,8 +1050,11 @@ def test_job_concurrent_write(tmp_path, monkeypatch):
 def test_job_query_by_status(tmp_path, monkeypatch):
     dbp = _job_db_path(tmp_path)
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", dbp)
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_list
+
     jid = job_create("run", "test")
     job_event(jid, "job_succeeded", "succeeded", "done")
     jobs = job_list()
@@ -882,13 +1071,27 @@ def test_job_migration_from_json(tmp_path, monkeypatch):
     from dashboard.collectors.jobs import job_list
     import json, uuid
     from datetime import datetime, timezone
+
     ts = datetime.now(timezone.utc)
     jid = f"{ts.strftime('%Y%m%dT%H%M%S')}-{uuid.uuid4().hex[:6]}"
-    snap = {"job_id": jid, "command": "run", "status": "succeeded", "stage": "done",
-            "prompt": "migrated", "started_at": ts.isoformat(), "updated_at": ts.isoformat()}
+    snap = {
+        "job_id": jid,
+        "command": "run",
+        "status": "succeeded",
+        "stage": "done",
+        "prompt": "migrated",
+        "started_at": ts.isoformat(),
+        "updated_at": ts.isoformat(),
+    }
     (old_dir / f"{jid}.json").write_text(json.dumps(snap))
-    ev = {"job_id": jid, "ts": ts.isoformat(), "event": "job_started", "status": "starting",
-          "stage": "starting", "message": "migrated"}
+    ev = {
+        "job_id": jid,
+        "ts": ts.isoformat(),
+        "event": "job_started",
+        "status": "starting",
+        "stage": "starting",
+        "message": "migrated",
+    }
     (old_dir / f"{jid}.events.jsonl").write_text(json.dumps(ev) + "\n")
     jobs = job_list()
     assert len(jobs) == 1
@@ -898,20 +1101,23 @@ def test_job_migration_from_json(tmp_path, monkeypatch):
 
 def test_notify_socket_noop_when_socket_missing(monkeypatch):
     from dashboard.collectors.jobs import _notify_socket
+
     _notify_socket({"event": "test"})  # should not raise
 
 
 def test_notify_socket_delivers_event(tmp_path, monkeypatch):
     import socket, json, threading, time
+
     sock_path = str(tmp_path / "test-jobs.sock")
     monkeypatch.setattr("dashboard.collectors.jobs._JOB_SOCKET", sock_path)
-    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH",
-                        _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR",
-                        str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event
 
     received = []
+
     def _server():
         s = socket.socket(socket.AF_UNIX, socket.SOCK_DGRAM)
         s.bind(sock_path)
@@ -923,6 +1129,7 @@ def test_notify_socket_delivers_event(tmp_path, monkeypatch):
             pass
         finally:
             s.close()
+
     t = threading.Thread(target=_server, daemon=True)
     t.start()
     time.sleep(0.2)
@@ -939,13 +1146,18 @@ def test_notify_socket_delivers_event(tmp_path, monkeypatch):
 
 # ── Stale detection / cancel tests ───────────────────────────────────────────
 
+
 def test_recover_stale_jobs_marks_old_active(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_list
+
     jid = job_create("run", "stale")
     # Manually age the job so it appears stale
     import sqlite3
+
     conn = sqlite3.connect(_job_db_path(tmp_path))
     conn.execute(
         "UPDATE jobs SET updated_at='2000-01-01T00:00:00' WHERE job_id=?",
@@ -963,9 +1175,12 @@ def test_recover_stale_jobs_marks_old_active(tmp_path, monkeypatch):
 
 def test_recover_stale_jobs_skips_recent(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     monkeypatch.setattr("dashboard.collectors.jobs.JOB_STALE_TIMEOUT", 3600)
     from dashboard.collectors.jobs import job_create, job_list
+
     jid = job_create("run", "recent")
     jobs = job_list()
     snap = next((j for j in jobs if j["job_id"] == jid), None)
@@ -975,8 +1190,16 @@ def test_recover_stale_jobs_skips_recent(tmp_path, monkeypatch):
 
 def test_job_cancel(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
-    from dashboard.collectors.jobs import job_create, job_cancel, job_snapshot, job_events
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    from dashboard.collectors.jobs import (
+        job_create,
+        job_cancel,
+        job_snapshot,
+        job_events,
+    )
+
     jid = job_create("run", "cancel-me")
     job_cancel(jid, "Test cancel")
     snap = job_snapshot(jid)
@@ -990,11 +1213,15 @@ def test_job_cancel(tmp_path, monkeypatch):
 
 # ── Prune tests ──────────────────────────────────────────────────────────────
 
+
 def test_job_prune_older_than(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_list, job_prune
     import time
+
     jid1 = job_create("run", "old")
     time.sleep(1.01)
     jid2 = job_create("run", "new")
@@ -1009,8 +1236,11 @@ def test_job_prune_older_than(tmp_path, monkeypatch):
 
 def test_job_prune_status_filter(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_prune, job_list
+
     jid1 = job_create("run", "will-succeed")
     jid2 = job_create("run", "will-fail")
     job_event(jid1, "job_succeeded", "succeeded", "done")
@@ -1025,24 +1255,33 @@ def test_job_prune_status_filter(tmp_path, monkeypatch):
 
 def test_job_prune_dry_run(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_prune
+
     jid = job_create("run", "test")
     removed = job_prune(older_than_seconds=0, dry_run=True)
     assert removed == 1
     # Job still exists
     from dashboard.collectors.jobs import job_snapshot
+
     assert job_snapshot(jid) is not None
 
 
 def test_job_prune_max_count(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_list, job_prune
+
     jids = []
     for _ in range(5):
         jids.append(job_create("run", "test"))
-        import time; time.sleep(0.1)
+        import time
+
+        time.sleep(0.1)
     job_prune(max_count=3, dry_run=False)
     jobs = job_list(limit=100)
     assert len(jobs) <= 3
@@ -1050,10 +1289,14 @@ def test_job_prune_max_count(tmp_path, monkeypatch):
 
 # ── Filter / stats tests ────────────────────────────────────────────────────
 
+
 def test_job_list_filter_status(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_list
+
     jid1 = job_create("run", "a")
     jid2 = job_create("run", "b")
     job_event(jid1, "job_succeeded", "succeeded", "done")
@@ -1065,8 +1308,11 @@ def test_job_list_filter_status(tmp_path, monkeypatch):
 
 def test_job_list_filter_command(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_list
+
     jid1 = job_create("run", "x")
     jid2 = job_create("do-escalate", "y")
     runs = job_list(command="run")
@@ -1076,8 +1322,11 @@ def test_job_list_filter_command(tmp_path, monkeypatch):
 
 def test_job_stats_returns_summary(tmp_path, monkeypatch):
     monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
-    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir"))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
     from dashboard.collectors.jobs import job_create, job_event, job_stats
+
     for _ in range(3):
         jid = job_create("run", "x")
         job_event(jid, "job_succeeded", "succeeded", "done")
@@ -1085,3 +1334,74 @@ def test_job_stats_returns_summary(tmp_path, monkeypatch):
     assert s["total"] >= 3
     assert s["by_status"].get("succeeded", 0) >= 3
     assert "last_24h" in s
+
+
+def test_omniroute_missing_db(tmp_path):
+    from dashboard.collectors import omniroute_series, omniroute_summary
+
+    nonexistent_db = str(tmp_path / "nonexistent.sqlite")
+    series = omniroute_series(db_path=nonexistent_db)
+    assert series["labels"] == []
+    assert "omniroute DB not found" in series["warning"]
+
+    summary = omniroute_summary(db_path=nonexistent_db)
+    assert summary["total_requests"] == 0
+    assert "omniroute DB not found" in summary["warning"]
+
+
+def test_omniroute_series_and_summary_success(tmp_path):
+    import sqlite3
+    from dashboard.collectors import omniroute_series, omniroute_summary
+
+    db_path = str(tmp_path / "storage.sqlite")
+    conn = sqlite3.connect(db_path)
+    conn.execute(
+        """
+        CREATE TABLE usage_history (
+            timestamp TEXT,
+            provider TEXT,
+            model TEXT,
+            tokens_input INTEGER,
+            tokens_output INTEGER,
+            tokens_cache_read INTEGER
+        )
+        """
+    )
+    conn.execute(
+        "INSERT INTO usage_history VALUES (?, ?, ?, ?, ?, ?)",
+        ("2026-06-03T12:00:00Z", "claude", "claude-3-5-sonnet", 100, 50, 10),
+    )
+    conn.execute(
+        "INSERT INTO usage_history VALUES (?, ?, ?, ?, ?, ?)",
+        ("2026-06-03T13:00:00Z", "claude", "claude-3-5-sonnet", 200, 100, 20),
+    )
+    conn.execute(
+        "INSERT INTO usage_history VALUES (?, ?, ?, ?, ?, ?)",
+        ("2026-06-02T15:00:00Z", "openai", "gpt-4", 300, 150, 30),
+    )
+    conn.commit()
+    conn.close()
+
+    series = omniroute_series("all", db_path=db_path)
+    assert series["labels"] == ["2026-06-02", "2026-06-03"]
+    assert series["input_tokens"] == [300, 300]
+    assert series["output_tokens"] == [150, 150]
+    assert series["cache_tokens"] == [30, 30]
+    assert series["requests"] == [1, 2]
+    assert series["tokens_by_provider"]["claude"] == [0, 450]
+    assert series["tokens_by_provider"]["openai"] == [450, 0]
+    assert series["warning"] is None
+
+    summary = omniroute_summary(db_path=db_path)
+    assert summary["total_requests"] == 3
+    assert summary["total_input_tokens"] == 600
+    assert summary["total_output_tokens"] == 300
+    assert summary["total_cache_tokens"] == 60
+    assert summary["by_provider"]["claude"]["requests"] == 2
+    assert summary["by_provider"]["claude"]["input_tokens"] == 300
+    assert summary["by_provider"]["openai"]["requests"] == 1
+    assert summary["by_provider"]["openai"]["input_tokens"] == 300
+    assert summary["by_model"]["claude/claude-3-5-sonnet"]["requests"] == 2
+    assert summary["by_model"]["openai/gpt-4"]["requests"] == 1
+    assert summary["warning"] is None
+

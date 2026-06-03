@@ -104,11 +104,10 @@ def test_events_first_line():
 # new widget endpoints
 # ---------------------------------------------------------------------------
 
+
 class _FakeProc:
     stdout = (
-        "Total commands:    1\n"
-        "Tokens saved:      0K (0.0%)\n"
-        "Efficiency meter: ░ 0.0%\n"
+        "Total commands:    1\nTokens saved:      0K (0.0%)\nEfficiency meter: ░ 0.0%\n"
     )
     returncode = 0
 
@@ -149,9 +148,7 @@ def test_api_cc_activity(monkeypatch, tmp_path):
 
 def test_api_codex_usage(monkeypatch, tmp_path):
     hist = tmp_path / "history.jsonl"
-    hist.write_text(
-        '{"session_id": "s", "ts": 1780299000, "text": "codex prompt"}\n'
-    )
+    hist.write_text('{"session_id": "s", "ts": 1780299000, "text": "codex prompt"}\n')
     idx = tmp_path / "session_index.jsonl"
     idx.write_text(
         '{"id": "s", "thread_name": "Codex", "updated_at": "2026-06-01T07:30:00Z"}\n'
@@ -203,17 +200,28 @@ def test_api_quota_alerts(monkeypatch):
     monkeypatch.setattr(
         "dashboard.collectors.agy.agy_model_quota",
         lambda: {
-            "accounts": [{"email": "u@x.com", "models": [
-                {"model_id": "gemini-3.5-pro", "display_name": "Gemini 3.5 Pro",
-                 "remaining_fraction": 0.05}
-            ], "error": None}],
+            "accounts": [
+                {
+                    "email": "u@x.com",
+                    "models": [
+                        {
+                            "model_id": "gemini-3.5-pro",
+                            "display_name": "Gemini 3.5 Pro",
+                            "remaining_fraction": 0.05,
+                        }
+                    ],
+                    "error": None,
+                }
+            ],
             "warning": None,
         },
     )
     import tempfile
+
     with tempfile.TemporaryDirectory() as td:
         monkeypatch.setenv("AGYKIT_QUOTA_ALERT_PCT", "15")
         from dashboard import alerts as _dal
+
         monkeypatch.setattr(_dal, "_STATE_DEFAULT", os.path.join(td, "state.json"))
         monkeypatch.setattr(_dal, "_OPS_LOG_DEFAULT", os.path.join(td, "ops.log"))
         srv = _boot()

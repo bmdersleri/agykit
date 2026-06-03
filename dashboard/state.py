@@ -32,7 +32,9 @@ def _candidate_state_dirs() -> list[str]:
 
 
 def _copy_job_bundle(source_dir: str, target_dir: str):
-    if not os.path.isdir(source_dir) or os.path.abspath(source_dir) == os.path.abspath(target_dir):
+    if not os.path.isdir(source_dir) or os.path.abspath(source_dir) == os.path.abspath(
+        target_dir
+    ):
         return
 
     os.makedirs(target_dir, exist_ok=True)
@@ -81,7 +83,9 @@ def resolve_job_state() -> dict[str, str]:
         socket_path = os.path.join(state_dir, JOB_SOCKET_NAME)
         pid_file = os.path.join(state_dir, JOB_PID_NAME)
 
-        if state_dir != PRIMARY_STATE_DIR and os.path.exists(os.path.join(PRIMARY_STATE_DIR, JOB_DB_NAME)):
+        if state_dir != PRIMARY_STATE_DIR and os.path.exists(
+            os.path.join(PRIMARY_STATE_DIR, JOB_DB_NAME)
+        ):
             try:
                 _copy_job_bundle(PRIMARY_STATE_DIR, state_dir)
             except OSError:

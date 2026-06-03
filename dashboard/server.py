@@ -42,7 +42,10 @@ def _check_mtimes():
         "claude-brain": os.path.join(
             os.environ.get("AGYKIT_DASH_BRAIN")
             or os.path.expanduser("~/.gemini/antigravity-cli/brain"),
-            "*", ".system_generated", "logs", "transcript_full.jsonl",
+            "*",
+            ".system_generated",
+            "logs",
+            "transcript_full.jsonl",
         ),
         "codex-history": os.environ.get("AGYKIT_DASH_CODEX_HISTORY")
         or os.path.expanduser("~/.codex/history.jsonl"),
@@ -51,7 +54,9 @@ def _check_mtimes():
         "codex-state": os.environ.get("AGYKIT_DASH_CODEX_STATE")
         or os.path.expanduser("~/.codex/state_5.sqlite"),
         "quota-cache": os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json"),
-        "statusline": os.path.expanduser("~/.gemini/antigravity-cli/statusline-latest.json"),
+        "statusline": os.path.expanduser(
+            "~/.gemini/antigravity-cli/statusline-latest.json"
+        ),
     }
     for key, path in checks.items():
         if key.endswith("-brain"):
@@ -82,7 +87,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
         # Suppress server request logging for cleaner test output
         pass
 
-    _WEB_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web")
+    _WEB_DIR = os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "web"
+    )
     _STATIC = {
         "/style.css": "text/css",
         "/app.js": "application/javascript",
@@ -162,10 +169,11 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.serve_json(collectors.activity_feed(limit=limit))
         elif path == "/api/quota-alerts":
             from dashboard import alerts as _alerts
+
             threshold = int(os.environ.get("AGYKIT_QUOTA_ALERT_PCT", "15"))
             self.serve_json(_alerts.check_quota_alerts(threshold, channels=["log"]))
         elif path.startswith("/api/jobs/"):
-            job_id = path[len("/api/jobs/"):]
+            job_id = path[len("/api/jobs/") :]
             snap = collectors.job_snapshot(job_id)
             if snap is None:
                 self.send_json_error("Job not found", 404)
@@ -185,7 +193,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
             active = None
             if jobs:
                 j = jobs[0]
-                if j.get("status") in ("starting", "running", "verifying", "rotating", "rolling_back"):
+                if j.get("status") in (
+                    "starting",
+                    "running",
+                    "verifying",
+                    "rotating",
+                    "rolling_back",
+                ):
                     events = collectors.job_events(j["job_id"], limit=10)
                     active = {"snapshot": j, "events": events}
                 elif j.get("status") == "succeeded" and j.get("diff_output"):

@@ -1,9 +1,7 @@
 import re
 import subprocess
 
-_ROW_RE = re.compile(
-    r"^\s*(\d+)\.\s+(.+?)\s{2,}(\d+)\s+([\d.]+[KMkm]?)\s+([\d.]+)%"
-)
+_ROW_RE = re.compile(r"^\s*(\d+)\.\s+(.+?)\s{2,}(\d+)\s+([\d.]+[KMkm]?)\s+([\d.]+)%")
 
 
 def _parse_suffix(s: str) -> int:
@@ -50,13 +48,15 @@ def rtk_stats() -> dict:
 
         m = _ROW_RE.match(line)
         if m:
-            top_commands.append({
-                "rank": int(m.group(1)),
-                "cmd": m.group(2).strip(),
-                "count": int(m.group(3)),
-                "saved": _parse_suffix(m.group(4)),
-                "avg_pct": float(m.group(5)),
-            })
+            top_commands.append(
+                {
+                    "rank": int(m.group(1)),
+                    "cmd": m.group(2).strip(),
+                    "count": int(m.group(3)),
+                    "saved": _parse_suffix(m.group(4)),
+                    "avg_pct": float(m.group(5)),
+                }
+            )
 
     return {
         "total_commands": total_commands,

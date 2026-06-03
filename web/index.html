@@ -23,7 +23,7 @@
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                 </svg>
                 <h1 class="logo-title">agykit · Quota Dashboard</h1>
-                <span class="version-badge">v1.0.0</span>
+                <span class="version-badge">v1.1.6</span>
             </div>
             <div class="header-actions">
                 <div class="live-indicator">
@@ -91,6 +91,7 @@
                     <div style="display: flex; align-items: center; gap: 0.25rem;">
                         <label for="sourceSelect">Kaynak:</label>
                         <select id="sourceSelect">
+                            <option value="omniroute">omniroute (tümü)</option>
                             <option value="claude">Claude</option>
                             <option value="agy">agy</option>
                         </select>
@@ -145,16 +146,6 @@
                             <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Kayıt</div></div>
                             <div class="ls-stat-card"><div class="ls-stat-val">—</div><div class="ls-stat-lbl">Süre</div></div>
                         </div>
-                        <div class="sl-unavail">Yükleniyor…</div>
-                    </div>
-                </div>
-                <!-- Codex Hesap -->
-                <div class="info-card" id="codexAccountCard">
-                    <div class="info-card-title-group">
-                        <h3 class="info-card-title">Codex Hesap</h3>
-                        <button class="btn" onclick="loadCodexStatus()">↻ Yenile</button>
-                    </div>
-                    <div id="codexAccountBody" class="rtk-stats-body">
                         <div class="sl-unavail">Yükleniyor…</div>
                     </div>
                 </div>
