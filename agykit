@@ -151,6 +151,17 @@ _git_lock_directive() {
     printf '%s\n\n' 'RULE: Edit files only. Do NOT run git commit, git reset, git rebase, git push, or git stash — agykit manages version control. Make changes directly in the working tree and stop.'
 }
 
+# ── Account liveness ping ────────────────────────────────────────────────────
+# Quick check: run a trivial prompt with 30s timeout.
+# Returns 0 if agy responds, 1 if it hangs/quota-blocks/errors.
+_agy_ping() {
+    timeout 30 "$AGY_BIN" -p "reply: ok" --print-timeout 25s $AGY_FLAGS 2>&1 | tee /tmp/agykit-ping.log >/dev/null
+    local rc=${PIPESTATUS[0]}
+    [ $rc -ne 0 ] && return 1
+    grep -qiE "$QUOTA_RE|ConnectionError|Connection refused|timed ?out|UNAVAILABLE" /tmp/agykit-ping.log && return 1
+    return 0
+}
+
 # ── Account quota sorting ────────────────────────────────────────────────────
 # Sort emails: available accounts first, exhausted last (reads agy log files).
 # Falls back to original order on any error. O(n log n) over log files, ~50ms.
@@ -399,6 +410,8 @@ cmd_run() {
     trap _job_cleanup EXIT INT TERM
     for a in "${accts[@]}"; do
         cmd_account_switch "$a" >/dev/null 2>&1 || continue
+        echo "==> Pinging $a (30s)..."
+        if ! _agy_ping; then echo "==> PING FAIL on $a — skipping"; _job_op event "$job_id" "quota_rotated" "rotating" "ping fail $a" "$a" "" "Ping failed on $a, rotating"; continue; fi
         echo "==> Trying account: $a"
         _job_op event "$job_id" "account_selected" "running" "account $a" "$a"
         "$AGY_BIN" -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
@@ -449,6 +462,8 @@ cmd_do_escalate() {
         local applied=0
         for a in "${accts[@]}"; do
             cmd_account_switch "$a" >/dev/null 2>&1 || continue
+            echo "==> Pinging $a (30s)..."
+            if ! _agy_ping; then echo "==> PING FAIL on $a — skipping"; _job_op event "$job_id" "quota_rotated" "rotating" "ping fail $a" "$a" "$model" "Ping failed on $a, rotating"; continue; fi
             local agy_ok=0 agy_attempt=0
             while [ $agy_attempt -le 2 ] && [ $agy_ok -eq 0 ]; do
                 [ $agy_attempt -gt 0 ] && {
