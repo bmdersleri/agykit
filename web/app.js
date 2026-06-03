@@ -318,10 +318,105 @@
             });
         }
 
+        function createOmnirouteCharts(ctxMain, ctxMix, data, cColors) {
+            const noAnim = { animation: false };
+            mainChartInstance = new Chart(ctxMain, {
+                type: 'bar',
+                data: {
+                    labels: data.labels,
+                    datasets: [
+                        {
+                            label: 'Input',
+                            data: data.input_tokens,
+                            backgroundColor: 'rgba(99, 102, 241, 0.7)',
+                            stack: 'tokens',
+                        },
+                        {
+                            label: 'Output',
+                            data: data.output_tokens,
+                            backgroundColor: 'rgba(16, 185, 129, 0.7)',
+                            stack: 'tokens',
+                        },
+                        {
+                            label: 'Cache',
+                            data: data.cache_tokens,
+                            backgroundColor: 'rgba(245, 158, 11, 0.4)',
+                            stack: 'tokens',
+                        },
+                    ]
+                },
+                options: {
+                    ...noAnim,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: true, labels: { color: cColors.text, boxWidth: 12 } },
+                        tooltip: {
+                            callbacks: {
+                                label: item => {
+                                    const v = item.raw;
+                                    return ` ${item.dataset.label}: ${v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v/1e3)+'k' : v}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 8, maxRotation: 0 } },
+                        y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v/1e3)+'k' : v } }
+                    }
+                }
+            });
+            mixChartInstance = new Chart(ctxMix, {
+                type: 'bar',
+                data: { labels: data.labels, datasets: buildMixDatasets(data.tokens_by_provider) },
+                options: {
+                    ...noAnim,
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: item => {
+                                    const v = item.raw;
+                                    return ` ${item.dataset.label}: ${v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v/1e3)+'k' : v}`;
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        x: { stacked: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, maxTicksLimit: 8, maxRotation: 0 } },
+                        y: { stacked: true, beginAtZero: true, grid: { color: cColors.grid }, ticks: { color: cColors.text, callback: v => v >= 1e6 ? (v/1e6).toFixed(1)+'M' : v >= 1e3 ? Math.round(v/1e3)+'k' : v } }
+                    }
+                }
+            });
+        }
+
         function renderCharts(source, data) {
             const cColors = getChartColors();
 
-            if (source === 'claude') {
+            if (source === 'omniroute') {
+                document.getElementById('mainChartTitle').textContent = 'Günlük Token Kullanımı (omniroute)';
+                document.getElementById('mixChartTitle').textContent = 'Provider Dağılımı';
+
+                if (currentChartSource === 'omniroute' && mainChartInstance && mixChartInstance) {
+                    mainChartInstance.data.labels = data.labels;
+                    mainChartInstance.data.datasets[0].data = data.input_tokens;
+                    mainChartInstance.data.datasets[1].data = data.output_tokens;
+                    mainChartInstance.data.datasets[2].data = data.cache_tokens;
+                    mainChartInstance.update('none');
+                    mixChartInstance.data.labels = data.labels;
+                    mixChartInstance.data.datasets = buildMixDatasets(data.tokens_by_provider);
+                    mixChartInstance.update('none');
+                } else {
+                    if (mainChartInstance) mainChartInstance.destroy();
+                    if (mixChartInstance) mixChartInstance.destroy();
+                    const ctxMain = document.getElementById('mainChart').getContext('2d');
+                    const ctxMix = document.getElementById('mixChart').getContext('2d');
+                    createOmnirouteCharts(ctxMain, ctxMix, data, cColors);
+                    currentChartSource = 'omniroute';
+                }
+            } else if (source === 'claude') {
                 document.getElementById('mainChartTitle').textContent = 'Günlük Token Kullanımı';
                 document.getElementById('mixChartTitle').textContent = 'Model Dağılımı';
 
@@ -341,6 +436,7 @@
                     currentChartSource = 'claude';
                 }
             } else {
+                // agy
                 document.getElementById('mainChartTitle').textContent = 'Günlük Aktivite (Oturumlar & Araçlar)';
                 document.getElementById('mixChartTitle').textContent = 'Model Dağılımı';
 
@@ -424,9 +520,11 @@
                 const windowSecs = data.quota_window_seconds || 14400;
                 const nowEpoch = Date.now() / 1000;
 
-                const sorted = [...data.accounts].sort((a, b) => 
-                    a.email === activeEmail ? -1 : b.email === activeEmail ? 1 : 0
-                );
+                const sorted = [...data.accounts].sort((a, b) => {
+                    const rankA = a.email === activeEmail ? 0 : a.is_pro ? 1 : 2;
+                    const rankB = b.email === activeEmail ? 0 : b.is_pro ? 1 : 2;
+                    return rankA - rankB;
+                });
 
                 sorted.forEach((acct, i) => {
                     const exhausted = acct.status === 'exhausted';
@@ -512,55 +610,77 @@
                           + `<div class="qcard-avatar-fallback" style="display:none">${handle[0].toUpperCase()}</div>`
                         : `<div class="qcard-avatar-fallback">${handle[0].toUpperCase()}</div>`;
 
-                    card.innerHTML = `
-                        <div class="qcard-header">
-                            <div class="qcard-badges-top">
-                                ${isActive ? '<span class="qcard-active-badge">● AKTİF</span>' : ''}
-                                ${isPro ? '<span class="qcard-pro-badge">PRO</span>' : ''}
-                                <span class="qbadge ${exhausted ? 'qbadge-exhausted' : 'qbadge-available'}">${exhausted ? 'TÜKENDİ' : 'MÜSAİT'}</span>
-                            </div>
-                            <div class="qcard-identity">
-                                ${avatarHtml}
-                                <div class="qcard-identity-text">
-                                    <span class="qcard-handle">${acct.name || handle}</span>
-                                    <span class="qcard-domain">${acct.email}</span>
+                    if (isActive) {
+                        // Aktif kart: sol dar (avatar+isim) + sağ geniş (kotalar)
+                        card.innerHTML = `
+                        <div class="qcard-inner qcard-inner-active">
+                            <div class="qcard-left">
+                                <div class="qcard-badges-top">
+                                    <span class="qcard-active-badge">● AKTİF</span>
+                                    ${isPro ? '<span class="qcard-pro-badge">PRO</span>' : ''}
+                                    <span class="qbadge ${exhausted ? 'qbadge-exhausted' : 'qbadge-available'}">${exhausted ? 'TÜKENDİ' : 'MÜSAİT'}</span>
+                                </div>
+                                <div class="qcard-identity">
+                                    ${avatarHtml}
+                                    <div class="qcard-identity-text">
+                                        <span class="qcard-handle">${acct.name || handle}</span>
+                                        <span class="qcard-domain">${acct.email}</span>
+                                    </div>
+                                </div>
+                                <div class="qcard-body">${statusHtml}</div>
+                                <div class="qcard-footer">
+                                    <span>${acct.session_count} oturum</span>
+                                    <span>${acct.exhaustion_count} kota ihlali</span>
                                 </div>
                             </div>
-                        </div>
-                        
-                        <div class="qcard-body">
-                            ${statusHtml}
-                        </div>
-
-                        <!-- Model Quota Area -->
-                        <div class="mq-card-section" style="${isActive ? '' : 'display: none;'}">
-                            <div class="mq-card-section-header">
-                                <span class="mq-card-section-title">Model Kotası <span class="mq-via">via agy /usage</span></span>
-                                ${isActive ? `<button class="mq-card-section-refresh" onclick="event.stopPropagation(); loadModelQuota(true);">Yenile</button>` : ''}
+                            <div class="qcard-right">
+                                <div class="mq-card-section">
+                                    <div class="mq-card-section-header">
+                                        <span class="mq-card-section-title">Model Kotası <span class="mq-via">via agy /usage</span></span>
+                                        <button class="mq-card-section-refresh" onclick="event.stopPropagation(); loadModelQuota(true);">Yenile</button>
+                                    </div>
+                                    <div class="mq-card-section-body" id="activeModelQuotaBody">
+                                        <div class="loading-text">Yükleniyor…</div>
+                                    </div>
+                                </div>
+                                <div class="mq-card-section">
+                                    <div class="mq-card-section-header">
+                                        <span class="mq-card-section-title">Canlı Durum</span>
+                                        <span id="slAge" style="font-size:0.72rem;color:var(--muted);font-weight:500;"></span>
+                                    </div>
+                                    <div class="mq-card-section-body" id="statuslineBody">
+                                        <div class="loading-text">Yükleniyor…</div>
+                                    </div>
+                                </div>
                             </div>
-                            <div class="mq-card-section-body" id="${isActive ? 'activeModelQuotaBody' : ''}">
-                                ${isActive ? `<div class="loading-text">Yükleniyor…</div>` : `<div class="not-active-text">Aktif hesap değil</div>`}
+                        </div>`;
+                    } else {
+                        // Pasif kart: kompakt yatay — avatar | isim+durum+footer
+                        const statusIcon = exhausted
+                            ? statusHtml   // kum saati animasyonu + geri sayım aynen kullan
+                            : `<div class="qcard-passive-status qcard-passive-ok">
+                                <svg viewBox="0 0 24 24" width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                                <span>Müsait</span>
+                               </div>`;
+                        card.innerHTML = `
+                        <div class="qcard-inner qcard-inner-passive">
+                            <div class="qcard-passive-avatar">${avatarHtml}</div>
+                            <div class="qcard-passive-info">
+                                <div class="qcard-passive-head">
+                                    <span class="qcard-handle">${acct.name || handle}</span>
+                                    <div class="qcard-passive-badges">
+                                        ${isPro ? '<span class="qcard-pro-badge">PRO</span>' : ''}
+                                    </div>
+                                </div>
+                                <span class="qcard-domain">${acct.email}</span>
+                                ${statusIcon}
+                                <div class="qcard-footer qcard-passive-footer">
+                                    <span>${acct.session_count} oturum</span>
+                                    <span>${acct.exhaustion_count} ihlal</span>
+                                </div>
                             </div>
-                        </div>
-
-                        <!-- agy Canlı Durum (yalnızca aktif kart) -->
-                        ${isActive ? `
-                        <div class="mq-card-section">
-                            <div class="mq-card-section-header">
-                                <span class="mq-card-section-title">Canlı Durum</span>
-                                <span id="slAge" style="font-size: 0.72rem; color: var(--muted); font-weight: 500;"></span>
-                            </div>
-                            <div class="mq-card-section-body" id="statuslineBody">
-                                <div class="loading-text">Yükleniyor…</div>
-                            </div>
-                        </div>
-                        ` : ''}
-
-                        <div class="qcard-footer">
-                            <span>${acct.session_count} oturum</span>
-                            <span>${acct.exhaustion_count} kota ihlali</span>
-                        </div>
-                    `;
+                        </div>`;
+                    }
                     quotaGrid.appendChild(card);
                 });
 
@@ -667,10 +787,24 @@
                 .replace(/'/g, '&#39;');
         }
 
+        function colorDiff(raw) {
+            return raw.split('\n').map(line => {
+                const esc = escapeHtml(line);
+                if (line.startsWith('+++') || line.startsWith('---')) return `<span style="color:#94a3b8">${esc}</span>`;
+                if (line.startsWith('+')) return `<span style="color:#4ade80">${esc}</span>`;
+                if (line.startsWith('-')) return `<span style="color:#f87171">${esc}</span>`;
+                if (line.startsWith('@@')) return `<span style="color:#818cf8">${esc}</span>`;
+                return esc;
+            }).join('\n');
+        }
+
         function loadCodexUsage() {
             if (!codexUsageBody) return;
             codexUsageBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
-            fetch('/api/codex-usage').then(r => r.json()).then(data => {
+            Promise.all([
+                fetch('/api/codex-usage').then(r => r.json()),
+                fetch('/api/codex-status').then(r => r.json()),
+            ]).then(([data, statusData]) => {
                 if (!data.available) {
                     codexUsageBody.innerHTML = `<div class="cq-unavail">${data.warning || 'Codex kullanım verisi bulunamadı.'}</div>`;
                     return;
@@ -689,7 +823,62 @@
                     `).join('')
                     : '<div class="cq-unavail codex-empty">Son prompt yok.</div>';
 
+                const plan = data.plan || {};
+                const planHtml = plan.plan_type
+                    ? `<div class="codex-plan-banner">
+                        <span class="codex-plan-badge">${escapeHtml(plan.plan_type)}</span>
+                        <span class="codex-plan-email">${escapeHtml(plan.email)}</span>
+                        ${plan.subscription_active_until ? `<span class="codex-plan-sub">Abonelik: ${escapeHtml(plan.subscription_active_until)}</span>` : ''}
+                       </div>`
+                    : '';
+
+                // Live quota from codex app-server (primary=5h, secondary=weekly)
+                const quota = (statusData || {}).quota || null;
+                function fmtResetTime(ts) {
+                    if (!ts) return '';
+                    const d = new Date(ts * 1000);
+                    return d.toLocaleString('tr-TR', {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+                }
+                function quotaBar(pct, label, resetTs, windowMins) {
+                    if (pct == null) return '';
+                    const color = pct > 30 ? '#22c55e' : pct > 10 ? '#f59e0b' : '#ef4444';
+                    const resetStr = resetTs ? `· sıfır: ${fmtResetTime(resetTs)}` : '';
+                    const winLabel = windowMins === 300 ? '5 saatlik' : windowMins === 10080 ? 'haftalık' : `${windowMins}dk`;
+                    return `<div class="codex-quota-bar-row">
+                        <span class="codex-quota-bar-label">${label} <span class="codex-quota-bar-win">(${winLabel})</span></span>
+                        <div class="codex-quota-bar-track">
+                            <div class="codex-quota-bar-fill" style="width:${Math.max(1,pct)}%;background:${color}"></div>
+                        </div>
+                        <span class="codex-quota-bar-pct" style="color:${color}">${pct}% kalan</span>
+                        <span class="codex-quota-bar-reset">${resetStr}</span>
+                    </div>`;
+                }
+                const quotaHtml = quota
+                    ? `<div class="codex-quota-live">
+                        ${quotaBar(quota.five_hour?.remaining_pct, 'Kota', quota.five_hour?.resets_at, quota.five_hour?.window_mins)}
+                        ${quotaBar(quota.weekly?.remaining_pct, 'Haftalık', quota.weekly?.resets_at, quota.weekly?.window_mins)}
+                       </div>`
+                    : '';
+
+                // 5-hour rolling token usage (from rollout files — fallback info)
+                const u5h = (statusData || {}).token_usage_5h || {};
+                const tok5h = u5h.total_tokens || 0;
+                const tok5hOut = u5h.output_tokens || 0;
+                const tok5hSess = u5h.sessions || 0;
+                const tok5hInWindow = u5h.in_window !== false;
+                const tok5hLabel = tok5hInWindow ? 'Son 5 saat' : 'Son oturum';
+                const quota5hHtml = tok5h > 0
+                    ? `<div class="codex-quota-5h${tok5hInWindow ? '' : ' codex-quota-stale'}">
+                        <span class="codex-quota-label">${tok5hLabel}</span>
+                        <span class="codex-quota-val">${fmtNum(tok5h)} token</span>
+                        <span class="codex-quota-detail">${tok5hSess} oturum · ${fmtNum(tok5hOut)} çıktı</span>
+                       </div>`
+                    : '';
+
                 codexUsageBody.innerHTML = `
+                    ${planHtml}
+                    ${quotaHtml}
+                    ${quota5hHtml}
                     <div class="codex-stat-grid">
                         <div class="cc-stat-chip"><span class="cc-stat-val">${fmtNum(s.sessions)}</span><span class="cc-stat-lbl">oturum</span></div>
                         <div class="cc-stat-chip"><span class="cc-stat-val">${fmtNum(s.prompts)}</span><span class="cc-stat-lbl">prompt</span></div>
@@ -706,40 +895,6 @@
                 `;
             }).catch(e => {
                 codexUsageBody.innerHTML = `<div class="cq-unavail">Yüklenemedi: ${escapeHtml(e)}</div>`;
-            });
-        }
-
-        // ── Codex Hesap Durumu Kartı ──
-        const codexAccountBody = document.getElementById('codexAccountBody');
-
-        function loadCodexStatus() {
-            if (!codexAccountBody) return;
-            codexAccountBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
-            fetch('/api/codex-status').then(r => r.json()).then(data => {
-                if (!data.available) {
-                    codexAccountBody.innerHTML = `<div class="cq-unavail">${data.warning || 'Codex hesap verisi bulunamadı.'}</div>`;
-                    return;
-                }
-                const acct = data.account || {};
-                const model = data.current_model || '—';
-                const threads = data.thread_count || 0;
-                const tokens = fmtNum(data.total_tokens_used || 0);
-                const email = acct.email || '—';
-                const plan = acct.plan_type || '—';
-                const sub = acct.subscription_active_until ? fmtTime(acct.subscription_active_until) : '—';
-                codexAccountBody.innerHTML = `
-                    <table class="sl-table">
-                        <tr><td class="sl-key">E-posta</td><td class="sl-val">${escapeHtml(email)}</td></tr>
-                        <tr><td class="sl-key">Plan</td><td class="sl-val">${escapeHtml(plan)}</td></tr>
-                        <tr><td class="sl-key">Abonelik</td><td class="sl-val">${escapeHtml(sub)}</td></tr>
-                        <tr><td class="sl-key">Model</td><td class="sl-val">${escapeHtml(model)}</td></tr>
-                        <tr><td class="sl-key">Thread</td><td class="sl-val">${threads}</td></tr>
-                        <tr><td class="sl-key">Token</td><td class="sl-val">${tokens}</td></tr>
-                    </table>
-                    ${data.warning ? `<div class="codex-warning">${escapeHtml(data.warning)}</div>` : ''}
-                `;
-            }).catch(e => {
-                codexAccountBody.innerHTML = `<div class="cq-unavail">Yüklenemedi: ${escapeHtml(e)}</div>`;
             });
         }
 
@@ -1226,6 +1381,14 @@
                        <td class="aj-val"><span class="aj-error-detail-toggle" onclick="this.nextElementSibling.classList.toggle('hidden');this.textContent=this.nextElementSibling.classList.contains('hidden')?'Göster':'Gizle'">Göster</span>
                        <pre class="aj-error-detail-full hidden">${escapeHtml(errorDetail)}</pre></td></tr>`
                     : '';
+                const diffHtml = s.diff_output
+                    ? `<div class="aj-diff-section">
+                         <div class="aj-diff-header" onclick="this.nextElementSibling.classList.toggle('hidden');this.querySelector('.aj-diff-toggle').textContent=this.nextElementSibling.classList.contains('hidden')?'▶ Diff Göster':'▼ Diff Gizle'">
+                           <span class="aj-diff-toggle">▶ Diff Göster</span>
+                         </div>
+                         <pre class="aj-diff-block hidden">${colorDiff(s.diff_output)}</pre>
+                       </div>`
+                    : '';
 
                 el.innerHTML = `
                     <table class="aj-table">
@@ -1238,6 +1401,7 @@
                         ${error ? `<tr><td class="aj-key">Error</td><td class="aj-val" style="color:var(--danger)">${escapeHtml(error.slice(0, 100))} ${catHtml}</td></tr>` : ''}
                         ${detailHtml}
                     </table>
+                    ${diffHtml}
                     <div style="margin-top:0.5rem;font-size:0.78rem;color:var(--muted);font-weight:600;">Son Olaylar</div>
                     ${eventsHtml || '<div style="font-size:0.78rem;color:var(--muted)">Olay yok.</div>'}
                 `;
@@ -1337,7 +1501,6 @@
         loadData();
         loadClaudeQuota();
         loadCodexUsage();
-        loadCodexStatus();
         loadQuota();
         loadStatusline();
         loadLastSession();
@@ -1380,7 +1543,6 @@
             });
             onEvent('codex', function() {
                 loadCodexUsage();
-                loadCodexStatus();
             });
             onEvent('quota', function() {
                 loadQuota();
@@ -1396,7 +1558,7 @@
                         loadData();
                         loadClaudeQuota();
                         loadCodexUsage();
-                        loadCodexStatus();
+        
                         loadQuota();
                         loadLastSession();
                         loadActivityFeed();

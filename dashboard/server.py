@@ -135,6 +135,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 except ValueError:
                     pass
             self.serve_json(collectors.cc_activity(limit=limit))
+        elif path == "/api/omniroute-series":
+            rng = "all"
+            if "range=" in parsed.query:
+                rng = parsed.query.split("range=")[1].split("&")[0]
+            self.serve_json(collectors.omniroute_series(rng))
+        elif path == "/api/omniroute-summary":
+            self.serve_json(collectors.omniroute_summary())
         elif path == "/api/codex-status":
             self.serve_json(collectors.codex_status())
         elif path == "/api/codex-usage":
@@ -181,6 +188,9 @@ class DashboardHandler(BaseHTTPRequestHandler):
                 if j.get("status") in ("starting", "running", "verifying", "rotating", "rolling_back"):
                     events = collectors.job_events(j["job_id"], limit=10)
                     active = {"snapshot": j, "events": events}
+                elif j.get("status") == "succeeded" and j.get("diff_output"):
+                    events = collectors.job_events(j["job_id"], limit=10)
+                    active = {"snapshot": j, "events": events, "completed": True}
             self.serve_json({"active": active})
         elif path == "/events":
             self.serve_events()
@@ -234,7 +244,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
             return
         source = sources[0]
 
-        if source not in ("claude", "agy"):
+        if source not in ("claude", "agy", "omniroute"):
             self.send_json_error(f"Invalid source parameter: {source}", 400)
             return
 
@@ -247,6 +257,8 @@ class DashboardHandler(BaseHTTPRequestHandler):
             if source == "claude":
                 stats_path = os.environ.get("AGYKIT_DASH_STATS")
                 data = collectors.claude_series(range_key, stats_path=stats_path)
+            elif source == "omniroute":
+                data = collectors.omniroute_series(range_key)
             else:
                 brain_dir = os.environ.get("AGYKIT_DASH_BRAIN")
                 data = collectors.agy_series(range_key, brain_dir=brain_dir)

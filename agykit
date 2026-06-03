@@ -9,9 +9,12 @@
 #   AGYKIT_FLAGS    — extra flags for agy (default: --dangerously-skip-permissions)
 #   AGYKIT_TIMEOUT  — agy --print-timeout (default: 15m)
 #   AGYKIT_TERSE    — 0/lite/full/ultra terse output for run/ask (default: 0)
+#   AGYKIT_ARCHITECT_ESCALATE — when set, escalate to architect after LADDER exhausted
+#                                value: "claude" (uses claude CLI) or path to a binary
+#   AGYKIT_TASKS_FILE — default task spec file for `agykit tasks` (default: .agykit-tasks.md)
 set -euo pipefail
 
-AGYKIT_VERSION="1.0.0"
+AGYKIT_VERSION="1.1.6"
 _EMAIL_CACHE=""
 
 GEMINI_DIR="$HOME/.gemini"
@@ -324,7 +327,7 @@ sys.path.insert(0, '')
 from dashboard.collectors.jobs import (
     job_create, job_event, job_snapshot,
     job_events, job_list, job_set_verify_result,
-    job_cancel,
+    job_set_diff, job_cancel,
 )
 op = sys.argv[1]
 if op == "create":
@@ -342,6 +345,8 @@ elif op == "event":
     )
 elif op == "set-verify-result":
     job_set_verify_result(sys.argv[2], sys.argv[3])
+elif op == "set-diff":
+    job_set_diff(sys.argv[2], sys.argv[3])
 elif op == "cancel":
     msg = sys.argv[3] if len(sys.argv) > 3 else ""
     job_cancel(sys.argv[2], msg)
@@ -480,6 +485,8 @@ cmd_do_escalate() {
             if _in_git && [ -n "$snap" ]; then
                 echo "==> agy changes (review before committing):"
                 git --no-pager diff --stat "$snap" 2>/dev/null || true
+                local diff_out; diff_out=$(git --no-pager diff "$snap" 2>/dev/null | head -c 32768 || true)
+                [ -n "$diff_out" ] && _job_op set-diff "$job_id" "$diff_out"
             fi
             echo "==> SUCCESS with $model"; _ops_log "do-escalate" "success" "$a" "$model" "${prompt:0:80}"; _quota_alert; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 0
         else
@@ -495,6 +502,55 @@ Fix the above issues, then complete the original task:
             _rollback_to "$base" "$snap"
         fi
     done
+    # All LADDER models exhausted — optionally escalate to architect
+    if [ -n "${AGYKIT_ARCHITECT_ESCALATE:-}" ]; then
+        echo "==> ESCALATING to architect (AGYKIT_ARCHITECT_ESCALATE=$AGYKIT_ARCHITECT_ESCALATE)"
+        _job_op event "$job_id" "architect_escalate" "running" "architect review" "" "" "All models failed; escalating to architect"
+        local vlog=""; [ -f /tmp/agykit-verify.log ] && vlog=$(tail -50 /tmp/agykit-verify.log 2>/dev/null || true)
+        local diff_ctx=""; _in_git && [ -n "$base" ] && diff_ctx=$(git --no-pager diff "$base" 2>/dev/null | head -c 8192 || true)
+        local arch_prompt
+        arch_prompt="You are the architect reviewing a failed automated coding task.
+
+## Original Task
+${prompt}
+
+## Verify Command
+${VERIFY_CMD:-<none>}
+
+## Last Verify Output
+\`\`\`
+${vlog:-<empty>}
+\`\`\`
+
+## Current Diff (vs pre-task baseline)
+\`\`\`diff
+${diff_ctx:-<no git diff available>}
+\`\`\`
+
+## Your Job
+Analyze why all automated attempts failed. Provide:
+1. Root cause (1-2 sentences)
+2. Concrete fix instructions the coder should apply (numbered steps)
+3. Any code snippets needed
+
+Be specific and actionable. The coder is an AI agent that will re-attempt this task."
+
+        local arch_out
+        case "$AGYKIT_ARCHITECT_ESCALATE" in
+            claude)
+                arch_out=$(claude -p "$arch_prompt" --print 2>/dev/null || echo "Architect unavailable")
+                ;;
+            *)
+                arch_out=$(echo "$arch_prompt" | "$AGYKIT_ARCHITECT_ESCALATE" 2>/dev/null || echo "Architect unavailable")
+                ;;
+        esac
+        echo ""
+        echo "════ ARCHITECT REVIEW ════"
+        echo "$arch_out"
+        echo "══════════════════════════"
+        _job_op event "$job_id" "architect_reviewed" "failed" "architect done" "" "" "$arch_out"
+    fi
+
     echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "all models exhausted" "" "" "All models failed"; restore_model; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 1
 }
 
@@ -1072,11 +1128,96 @@ _quota_alert() {
 }
 
 cmd_dash() {
-    # Resolve symlink (agykit is usually symlinked into PATH) to find the repo.
     local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
-    local dir; dir="$(cd "$(dirname "$self")" && pwd)/dashboard"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    local dir="$repo/dashboard"
     [ -f "$dir/server.py" ] || { echo "dashboard not found at $dir" >&2; exit 1; }
-    exec python3 "$dir/server.py" "$@"
+
+    local port=8787 host=127.0.0.1
+    local bg=0 stop=0 status=0
+    local args=()
+    local skip_next=0
+
+    local i
+    for i in "$@"; do
+        if [ "$skip_next" = "1" ]; then
+            port="$i"; skip_next=0; continue
+        fi
+        case "$i" in
+            --bg|--start)  bg=1 ;;
+            --stop)        stop=1 ;;
+            --status)      status=1 ;;
+            --port=*)      port="${i#--port=}" ;;
+            --port)        skip_next=1 ;;
+            *)             args+=("$i") ;;
+        esac
+    done
+
+    local pidfile="/tmp/agykit-dash-${port}.pid"
+    local logfile="/tmp/agykit-dash-${port}.log"
+
+    if [ "$stop" = "1" ]; then
+        if [ -f "$pidfile" ]; then
+            local pid; pid=$(cat "$pidfile")
+            if kill -0 "$pid" 2>/dev/null; then
+                kill "$pid" && echo "Dashboard durduruldu (PID $pid)"
+            else
+                echo "Dashboard zaten çalışmıyor."
+            fi
+            rm -f "$pidfile"
+        else
+            # PID dosyası yoksa port üzerinden bul
+            local pid; pid=$(lsof -ti tcp:${port} 2>/dev/null | head -1)
+            if [ -n "$pid" ]; then
+                kill "$pid" && echo "Dashboard durduruldu (PID $pid)"
+            else
+                echo "Dashboard çalışmıyor."
+            fi
+        fi
+        return 0
+    fi
+
+    if [ "$status" = "1" ]; then
+        if [ -f "$pidfile" ]; then
+            local pid; pid=$(cat "$pidfile")
+            if kill -0 "$pid" 2>/dev/null; then
+                echo "Dashboard çalışıyor — http://${host}:${port}  (PID $pid)"
+            else
+                echo "Dashboard çalışmıyor (eski PID dosyası var)."
+                rm -f "$pidfile"
+            fi
+        else
+            echo "Dashboard çalışmıyor."
+        fi
+        return 0
+    fi
+
+    if [ "$bg" = "1" ]; then
+        # Varsa durdur, yeniden başlat
+        if [ -f "$pidfile" ]; then
+            local oldpid; oldpid=$(cat "$pidfile")
+            kill "$oldpid" 2>/dev/null; sleep 0.5
+            rm -f "$pidfile"
+        fi
+        PYTHONPATH="$repo" nohup python3 "$dir/server.py" \
+            --host="$host" --port="$port" "${args[@]}" \
+            >"$logfile" 2>&1 &
+        local newpid=$!
+        echo "$newpid" > "$pidfile"
+        sleep 1
+        if kill -0 "$newpid" 2>/dev/null; then
+            echo "Dashboard başlatıldı — http://${host}:${port}  (PID $newpid, log: $logfile)"
+        else
+            echo "Dashboard başlatılamadı. Log: $logfile" >&2
+            cat "$logfile" >&2
+            rm -f "$pidfile"
+            return 1
+        fi
+        return 0
+    fi
+
+    # Varsayılan: foreground
+    exec python3 "$dir/server.py" --host="$host" --port="$port" "${args[@]}"
 }
 
 cmd_quota() {
@@ -1402,7 +1543,14 @@ agykit — portable Antigravity (agy) CLI manager
   agykit switch <email>          Switch to a saved account
   agykit run [--force] "prompt"  Quota-aware run (--force bypasses concurrency guard)
   agykit do-escalate [--force] "prompt"  Model ladder on verify fail (needs AGYKIT_VERIFY)
-  agykit dash [--port N]          Open the usage dashboard (localhost)
+  agykit tasks list [spec.md]            List tasks in .agykit-tasks.md
+  agykit tasks run [--task <id>] [spec.md]  Run tasks via do-escalate
+
+Config: set AGYKIT_ARCHITECT_ESCALATE=claude to enable architect fallback when all models fail.
+  agykit dash [--port N]          Open the usage dashboard (localhost, foreground)
+  agykit dash --bg [--port N]     Start dashboard as background daemon
+  agykit dash --stop [--port N]   Stop background dashboard daemon
+  agykit dash --status [--port N] Check dashboard daemon status
   agykit codex [--json|--status]  Show Codex account/usage information
   agykit quota [--refresh]        Show model quota table (cached 5min)
   agykit quota --json             Machine-readable JSON quota output
@@ -1437,6 +1585,172 @@ Config: .agykit.conf (CWD) or AGYKIT_VERIFY/SYSTEM/FLAGS/TIMEOUT env vars.
 EOF
 }
 
+# ── Task spec runner ──────────────────────────────────────────────────────────
+# Parses .agykit-tasks.md and runs tasks via do-escalate.
+#
+# Spec format:
+#   ## task-<id>: <title>
+#   depends_on: [task-1, task-2]   (optional, space after colon)
+#   verify_hint: <cmd>             (optional — overrides AGYKIT_VERIFY for this task)
+#
+#   <prompt text — everything until next ## or EOF>
+#
+cmd_tasks() {
+    local subcmd="${1:-list}"; shift || true
+    local spec_file="${AGYKIT_TASKS_FILE:-${2:-.agykit-tasks.md}}"
+    # Allow: agykit tasks list [file], agykit tasks run [--task id] [file]
+    local task_filter=""
+    local args=("$@")
+    local i=0
+    while [ $i -lt ${#args[@]} ]; do
+        case "${args[$i]}" in
+            --task) i=$((i+1)); task_filter="${args[$i]:-}" ;;
+            *.md)   spec_file="${args[$i]}" ;;
+        esac
+        i=$((i+1))
+    done
+
+    [ -f "$spec_file" ] || { echo "Task spec not found: $spec_file"; exit 1; }
+
+    # Parse tasks. Supports two ## header formats:
+    #   ## task-<id>: <title>          (canonical)
+    #   ## Task N — <title>  or  ## Task N: <title>  (legacy / design specs)
+    local tasks_json; tasks_json=$(python3 - "$spec_file" <<'PY'
+import sys, re, json
+
+path = sys.argv[1]
+text = open(path).read()
+
+# Match either:  ## task-foo: Title  OR  ## Task 3 — Title  OR  ## Task 3: Title
+HEADER = re.compile(
+    r'^##\s+'
+    r'(?:(task-[\w-]+)[:\s]+(.+)'        # group 1=id, 2=title  (canonical)
+    r'|Task\s+(\d+)\s*[—:–-]+\s*(.+))'  # group 3=num, 4=title (legacy)
+    r'$',
+    re.MULTILINE
+)
+
+tasks = []
+matches = list(HEADER.finditer(text))
+for idx, m in enumerate(matches):
+    if m.group(1):
+        task_id = m.group(1).strip()
+        title   = m.group(2).strip()
+    else:
+        task_id = f"task-{m.group(3)}"
+        title   = m.group(4).strip()
+
+    end = matches[idx+1].start() if idx+1 < len(matches) else len(text)
+    body = text[m.end():end]
+
+    depends_on = []
+    verify_hint = ""
+    prompt_lines = []
+
+    for line in body.split('\n'):
+        dm = re.match(r'^depends_on:\s*\[([^\]]*)\]', line)
+        if dm:
+            depends_on = [x.strip() for x in dm.group(1).split(',') if x.strip()]
+            continue
+        vm = re.match(r'^verify_hint:\s*(.+)', line)
+        if vm:
+            verify_hint = vm.group(1).strip()
+            continue
+        prompt_lines.append(line)
+
+    prompt = '\n'.join(prompt_lines).strip()
+    tasks.append({
+        "id": task_id,
+        "title": title,
+        "depends_on": depends_on,
+        "verify_hint": verify_hint,
+        "prompt": prompt,
+    })
+
+print(json.dumps(tasks))
+PY
+    )
+
+    case "$subcmd" in
+        list)
+            echo "Tasks in $spec_file:"
+            echo "$tasks_json" | python3 -c "
+import json, sys
+tasks = json.load(sys.stdin)
+for t in tasks:
+    dep = ', '.join(t['depends_on']) or '—'
+    print(f\"  {t['id']}: {t['title']}\")
+    if t['depends_on']: print(f\"    depends_on: {dep}\")
+    if t['verify_hint']: print(f\"    verify: {t['verify_hint']}\")
+"
+            ;;
+
+        run)
+            local orig_verify="$VERIFY_CMD"
+            local n_run=0 n_fail=0
+            local completed_ids=()
+
+            while IFS= read -r task_json; do
+                local tid; tid=$(echo "$task_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['id'])")
+                local ttitle; ttitle=$(echo "$task_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['title'])")
+                local tdeps; tdeps=$(echo "$task_json" | python3 -c "import json,sys; t=json.loads(sys.stdin.read()); print(' '.join(t['depends_on']))")
+                local tvhint; tvhint=$(echo "$task_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['verify_hint'])")
+                local tprompt; tprompt=$(echo "$task_json" | python3 -c "import json,sys; print(json.loads(sys.stdin.read())['prompt'])")
+
+                # Filter by --task
+                [ -n "$task_filter" ] && [ "$tid" != "$task_filter" ] && continue
+
+                # Check depends_on
+                local dep_ok=1
+                for dep in $tdeps; do
+                    local found=0
+                    for cid in "${completed_ids[@]:-}"; do
+                        [ "$cid" = "$dep" ] && found=1 && break
+                    done
+                    if [ $found -eq 0 ]; then
+                        echo "==> SKIP $tid: dependency '$dep' not completed"
+                        dep_ok=0; break
+                    fi
+                done
+                [ $dep_ok -eq 0 ] && continue
+
+                echo ""
+                echo "════ TASK: $tid — $ttitle ════"
+
+                # Override VERIFY_CMD if verify_hint provided
+                [ -n "$tvhint" ] && export VERIFY_CMD="$tvhint"
+
+                if cmd_do_escalate "$tprompt"; then
+                    completed_ids+=("$tid")
+                    n_run=$((n_run+1))
+                else
+                    echo "==> TASK FAILED: $tid"
+                    n_fail=$((n_fail+1))
+                    export VERIFY_CMD="$orig_verify"
+                    exit 1
+                fi
+
+                export VERIFY_CMD="$orig_verify"
+            done < <(echo "$tasks_json" | python3 -c "
+import json, sys
+tasks = json.load(sys.stdin)
+for t in tasks:
+    import json
+    print(json.dumps(t))
+")
+
+            echo ""
+            echo "════ TASKS DONE: $n_run succeeded, $n_fail failed ════"
+            ;;
+
+        *)
+            echo "Usage: agykit tasks list [spec.md]"
+            echo "       agykit tasks run [--task <id>] [spec.md]"
+            exit 1
+            ;;
+    esac
+}
+
 # ── Dispatch ─────────────────────────────────────────────────────────────────
 # Guard: when sourced (e.g. by tests) do not run the dispatcher.
 if [ "${BASH_SOURCE[0]}" = "${0}" ]; then
@@ -1451,6 +1765,7 @@ case "${1:-}" in
     switch)        cmd_account_switch "${2:-}" ;;
     run)           cmd_run "${@:2}" ;;
     do-escalate)   cmd_do_escalate "${@:2}" ;;
+    tasks)         cmd_tasks "${@:2}" ;;
     dash)          cmd_dash "${@:2}" ;;
     quota)         cmd_quota "${@:2}" ;;
     codex)         cmd_codex "${@:2}" ;;

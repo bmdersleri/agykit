@@ -55,7 +55,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at  TEXT NOT NULL,
     ended_at    TEXT,
     last_error  TEXT,
-    verify_result TEXT
+    verify_result TEXT,
+    diff_output TEXT
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -82,6 +83,7 @@ _PHASE3_COLUMNS = [
     ("duration_seconds", "REAL"),
     ("error_detail", "TEXT"),
     ("error_category", "TEXT"),
+    ("diff_output", "TEXT"),
 ]
 
 
@@ -595,6 +597,21 @@ def job_set_verify_result(job_id: str, result: str):
         conn.execute(
             "UPDATE jobs SET verify_result=? WHERE job_id=?",
             (result, job_id),
+        )
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
+
+
+def job_set_diff(job_id: str, diff: str):
+    conn = _get_db()
+    try:
+        conn.execute(
+            "UPDATE jobs SET diff_output=? WHERE job_id=?",
+            (diff, job_id),
         )
         conn.commit()
     except Exception:
