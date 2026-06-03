@@ -19,7 +19,9 @@ Before installing or recommending new CLI tools, read:
 - `dashboard/alerts.py` handles quota alert checks and notification side effects.
 - `web/` is the vanilla HTML/CSS/JS dashboard frontend.
 - `tests/` contains Python and shell safety tests.
-- `CLAUDE_AGY_SYSTEM.md` is context injected into delegated `agy` prompts.
+- `CLAUDE_AGY_SYSTEM.md`, `CODEX_AGY_SYSTEM.md`, `OPENCODE_AGY_SYSTEM.md` are
+  system context files injected into delegated `agy` prompts — one per agent.
+  `_agent_system_file()` selects the right one based on `_detect_agent()`.
 - `.agykit.conf` configures this repo's own dogfood setup.
 
 ## Hard Constraints

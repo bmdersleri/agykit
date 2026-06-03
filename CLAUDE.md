@@ -200,6 +200,26 @@ agykit doctor --fix            # auto-fix resolvable issues
 | `AGYKIT_TIMEOUT` | `--print-timeout` value | `15m` |
 | `AGYKIT_JOB_TIMEOUT` | hard job ceiling (s); reap + SIGTERM past this. Keep ≥ `AGYKIT_TIMEOUT` | `1800` |
 | `AGYKIT_TERSE` | output verbosity level | `ultra` |
+| `AGYKIT_AGENT` | force orchestrator agent: `claude`/`codex`/`opencode` (else auto-detect) | auto |
+| `AGYKIT_ARCHITECT_ESCALATE` | architect fallback when ladder fails: `auto`/`claude`/`codex`/`opencode`/path | — |
+| `AGYKIT_ARCHITECT_MODEL` | model for opencode architect (`-m provider/model`) | — |
+
+### Agent compatibility (Claude Code / Codex / OpenCode)
+
+agykit is orchestrator-agnostic — same backend (`agy`), runs from any agent.
+`_detect_agent` resolves which agent is driving, in priority order:
+
+1. `AGYKIT_AGENT` override
+2. **Runtime env** — `CLAUDE_CODE_SESSION_ID`/`CLAUDE_CODE_ENTRYPOINT` → claude;
+   `CODEX_*` → codex; `OPENCODE*` → opencode. (Env beats on-disk config so a box
+   with all three CLIs installed still detects the live one.)
+3. **Installed-file fallback** (plain shell) — `~/.codex/auth.json|config.toml`,
+   `~/.claude/.credentials.json`, `~/.config/opencode/opencode.json`
+4. `unknown`
+
+Detection drives the injected system file (`{CLAUDE,CODEX,OPENCODE}_AGY_SYSTEM.md`)
+and architect-escalate routing. Verified invocations: `claude -p`, `codex exec`,
+`opencode run [-m provider/model]`. Check with `agykit doctor` → Agent Integration.
 
 ### `AGYKIT_FLAGS` — `--add-dir` Trap
 

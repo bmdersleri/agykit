@@ -14,7 +14,7 @@
 #   AGYKIT_TASKS_FILE — default task spec file for `agykit tasks` (default: .agykit-tasks.md)
 set -euo pipefail
 
-AGYKIT_VERSION="1.2.0"
+AGYKIT_VERSION="1.3.1"
 _EMAIL_CACHE=""
 
 GEMINI_DIR="$HOME/.gemini"
@@ -28,16 +28,33 @@ LADDER=("Gemini 3.5 Flash (Medium)" "Gemini 3.1 Pro (High)" "Claude Opus 4.6 (Th
 
 # ── Early helpers (must be defined before global init uses them) ─────────────
 _detect_agent() {
-    # Env vars first (runtime signals) — more reliable than installed-artifact dirs.
-    # Filesystem checks use specific files (credentials/config), not skill dirs.
-    if [ -n "${CODEX_API_KEY:-}" ]; then
+    # Which agent orchestrator is invoking agykit. Priority:
+    #   1. AGYKIT_AGENT explicit override (claude|codex|opencode)
+    #   2. RUNTIME env signals — the agent ACTUALLY running this process. These
+    #      beat installed-artifact checks because a box may have all three CLIs
+    #      installed (so cred/config files for every agent exist on disk) while
+    #      only one is the live orchestrator.
+    #   3. Installed-file fallback — for a plain shell with no agent env. Whichever
+    #      agent is configured on disk; first match wins.
+    #   4. unknown
+    case "${AGYKIT_AGENT:-}" in
+        claude|codex|opencode) echo "$AGYKIT_AGENT"; return ;;
+    esac
+    # Runtime env signals (verified: Claude Code exports CLAUDE_CODE_*; codex and
+    # opencode may export their own — check broadly, not a single brittle var).
+    if [ -n "${CODEX_SANDBOX:-}${CODEX_API_KEY:-}${CODEX_HOME:-}" ]; then
         echo "codex"
-    elif [ -n "${CLAUDE_CODE:-}" ] || [ -f "$HOME/.claude/.credentials.json" ]; then
+    elif [ -n "${CLAUDE_CODE_SESSION_ID:-}${CLAUDE_CODE_ENTRYPOINT:-}${CLAUDECODE:-}" ]; then
         echo "claude"
-    elif [ -n "${OPENCODE:-}" ] || [ -f "$HOME/.config/opencode/opencode.json" ]; then
+    elif [ -n "${OPENCODE_BIN:-}${OPENCODE:-}${OPENCODE_SERVER:-}" ]; then
         echo "opencode"
-    elif [ -n "${CODEX_API_KEY:-}" ] || [ -d "$HOME/.codex/skills" ]; then
+    # Installed-file fallback (plain shell — no agent env present).
+    elif [ -f "$HOME/.codex/auth.json" ] || [ -f "$HOME/.codex/config.toml" ]; then
         echo "codex"
+    elif [ -f "$HOME/.claude/.credentials.json" ]; then
+        echo "claude"
+    elif [ -f "$HOME/.config/opencode/opencode.json" ]; then
+        echo "opencode"
     else
         echo "unknown"
     fi
@@ -49,6 +66,44 @@ _agent_system_file() {
         codex)    echo "CODEX_AGY_SYSTEM.md" ;;
         opencode) echo "OPENCODE_AGY_SYSTEM.md" ;;
         *)        echo "CLAUDE_AGY_SYSTEM.md" ;;
+    esac
+}
+
+# Invoke an external agent CLI as the architect (called when the LADDER is
+# exhausted). Reads the prompt from $1, prints the architect's reply to stdout.
+# $AGYKIT_ARCHITECT_ESCALATE selects the agent; each agent has its own verified
+# non-interactive invocation. "auto" routes to whatever _detect_agent finds.
+# A path/other value falls back to a generic stdin pipe (back-compat). Missing
+# CLI degrades gracefully to an "unavailable" line rather than failing the run.
+_architect_invoke() {
+    local prompt="$1"
+    local target="${AGYKIT_ARCHITECT_ESCALATE:-}"
+    [ "$target" = "auto" ] && target="$(_detect_agent)"
+    case "$target" in
+        claude)
+            command -v claude >/dev/null 2>&1 || { echo "Architect unavailable (claude CLI not found)"; return; }
+            claude -p "$prompt" 2>/dev/null || echo "Architect unavailable"
+            ;;
+        codex)
+            command -v codex >/dev/null 2>&1 || { echo "Architect unavailable (codex CLI not found)"; return; }
+            codex exec "$prompt" 2>/dev/null || echo "Architect unavailable"
+            ;;
+        opencode)
+            command -v opencode >/dev/null 2>&1 || { echo "Architect unavailable (opencode CLI not found)"; return; }
+            if [ -n "${AGYKIT_ARCHITECT_MODEL:-}" ]; then
+                opencode run "$prompt" -m "$AGYKIT_ARCHITECT_MODEL" 2>/dev/null || echo "Architect unavailable"
+            else
+                opencode run "$prompt" 2>/dev/null || echo "Architect unavailable"
+            fi
+            ;;
+        ""|unknown)
+            echo "Architect unavailable (set AGYKIT_ARCHITECT_ESCALATE to claude|codex|opencode|auto)"
+            ;;
+        *)
+            # Treat as a path/command name: generic stdin pipe.
+            command -v "$target" >/dev/null 2>&1 || { echo "Architect unavailable ($target not found)"; return; }
+            echo "$prompt" | "$target" 2>/dev/null || echo "Architect unavailable"
+            ;;
     esac
 }
 
@@ -608,14 +663,7 @@ Analyze why all automated attempts failed. Provide:
 Be specific and actionable. The coder is an AI agent that will re-attempt this task."
 
         local arch_out
-        case "$AGYKIT_ARCHITECT_ESCALATE" in
-            claude)
-                arch_out=$(claude -p "$arch_prompt" --print 2>/dev/null || echo "Architect unavailable")
-                ;;
-            *)
-                arch_out=$(echo "$arch_prompt" | "$AGYKIT_ARCHITECT_ESCALATE" 2>/dev/null || echo "Architect unavailable")
-                ;;
-        esac
+        arch_out=$(_architect_invoke "$arch_prompt")
         echo ""
         echo "════ ARCHITECT REVIEW ════"
         echo "$arch_out"
@@ -1263,6 +1311,24 @@ _quota_alert() {
     PYTHONPATH="$repo" python3 -m dashboard.alerts check >/dev/null 2>&1 || true
 }
 
+_dash_tailscale_remote_url() {
+    local ip
+    ip=$(tailscale ip -4 2>/dev/null | head -1 || true)
+    [ -n "$ip" ] && printf 'http://%s/' "$ip"
+}
+
+_dash_tailscale_enable() {
+    local local_port="$1" remote_port="$2"
+    command -v tailscale >/dev/null 2>&1 || return 1
+    tailscale serve --bg --yes --http="$remote_port" "localhost:$local_port" >/dev/null 2>&1
+}
+
+_dash_tailscale_disable() {
+    local remote_port="$1"
+    command -v tailscale >/dev/null 2>&1 || return 0
+    tailscale serve --yes --http="$remote_port" off >/dev/null 2>&1 || true
+}
+
 cmd_dash() {
     local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
     local repo; repo="$(cd "$(dirname "$self")" && pwd)"
@@ -1270,29 +1336,45 @@ cmd_dash() {
     [ -f "$dir/server.py" ] || { echo "dashboard not found at $dir" >&2; exit 1; }
 
     local port=8787 host=127.0.0.1
+    local tailscale_share=0 tailscale_http_port=80
     local bg=0 stop=0 status=0
     local args=()
-    local skip_next=0
+    local expect_value=""
 
     local i
     for i in "$@"; do
-        if [ "$skip_next" = "1" ]; then
-            port="$i"; skip_next=0; continue
+        if [ -n "$expect_value" ]; then
+            case "$expect_value" in
+                port) port="$i" ;;
+                tailscale_port) tailscale_http_port="$i" ;;
+            esac
+            expect_value=""
+            continue
         fi
         case "$i" in
             --bg|--start)  bg=1 ;;
             --stop)        stop=1 ;;
             --status)      status=1 ;;
+            --tailscale|--share=tailscale) tailscale_share=1 ;;
+            --tailscale-port=*) tailscale_http_port="${i#--tailscale-port=}" ;;
+            --tailscale-port|--share-port) expect_value="tailscale_port" ;;
             --port=*)      port="${i#--port=}" ;;
-            --port)        skip_next=1 ;;
+            --port)        expect_value="port" ;;
             *)             args+=("$i") ;;
         esac
     done
+
+    local tailscale_file="/tmp/agykit-dash-${port}.tailscale"
 
     local pidfile="/tmp/agykit-dash-${port}.pid"
     local logfile="/tmp/agykit-dash-${port}.log"
 
     if [ "$stop" = "1" ]; then
+        if [ -f "$tailscale_file" ]; then
+            local remote_port; remote_port=$(cat "$tailscale_file" 2>/dev/null || echo "")
+            [ -n "$remote_port" ] && _dash_tailscale_disable "$remote_port"
+            rm -f "$tailscale_file"
+        fi
         if [ -f "$pidfile" ]; then
             local pid; pid=$(cat "$pidfile")
             if kill -0 "$pid" 2>/dev/null; then
@@ -1317,7 +1399,12 @@ cmd_dash() {
         if [ -f "$pidfile" ]; then
             local pid; pid=$(cat "$pidfile")
             if kill -0 "$pid" 2>/dev/null; then
-                echo "Dashboard çalışıyor — http://${host}:${port}  (PID $pid)"
+                local remote_url=""
+                if [ -f "$tailscale_file" ]; then
+                    remote_url=$(_dash_tailscale_remote_url)
+                    [ -n "$remote_url" ] && remote_url=" | Tailscale: ${remote_url}"
+                fi
+                echo "Dashboard çalışıyor — http://${host}:${port}${remote_url}  (PID $pid)"
             else
                 echo "Dashboard çalışmıyor (eski PID dosyası var)."
                 rm -f "$pidfile"
@@ -1335,17 +1422,37 @@ cmd_dash() {
             kill "$oldpid" 2>/dev/null; sleep 0.5
             rm -f "$pidfile"
         fi
+        if [ -f "$tailscale_file" ]; then
+            local old_remote_port; old_remote_port=$(cat "$tailscale_file" 2>/dev/null || echo "")
+            [ -n "$old_remote_port" ] && _dash_tailscale_disable "$old_remote_port"
+            rm -f "$tailscale_file"
+        fi
         PYTHONPATH="$repo" nohup python3 "$dir/server.py" \
             --host="$host" --port="$port" "${args[@]}" \
             >"$logfile" 2>&1 &
         local newpid=$!
         echo "$newpid" > "$pidfile"
+        if [ "$tailscale_share" = "1" ]; then
+            if _dash_tailscale_enable "$port" "$tailscale_http_port"; then
+                printf '%s' "$tailscale_http_port" > "$tailscale_file"
+                local remote_url; remote_url=$(_dash_tailscale_remote_url)
+                [ -n "$remote_url" ] && echo "Tailscale share açık — ${remote_url} (port ${tailscale_http_port})"
+            else
+                echo "Uyarı: Tailscale share açılamadı; yerel dashboard çalışıyor." >&2
+            fi
+        fi
         sleep 1
         if kill -0 "$newpid" 2>/dev/null; then
-            echo "Dashboard başlatıldı — http://${host}:${port}  (PID $newpid, log: $logfile)"
+            local remote_url=""
+            if [ -f "$tailscale_file" ]; then
+                remote_url=$(_dash_tailscale_remote_url)
+                [ -n "$remote_url" ] && remote_url=" | Tailscale: ${remote_url}"
+            fi
+            echo "Dashboard başlatıldı — http://${host}:${port}${remote_url}  (PID $newpid, log: $logfile)"
         else
             echo "Dashboard başlatılamadı. Log: $logfile" >&2
             cat "$logfile" >&2
+            [ -f "$tailscale_file" ] && { local remote_port; remote_port=$(cat "$tailscale_file" 2>/dev/null || echo ""); [ -n "$remote_port" ] && _dash_tailscale_disable "$remote_port"; rm -f "$tailscale_file"; }
             rm -f "$pidfile"
             return 1
         fi
@@ -1590,17 +1697,52 @@ print(int((time.time() - d.get('_ts', 0)) / 60))
     fi
     echo
 
-    # ── Claude Code ─────────────────────────────────────────────────────────
-    echo "Claude Code"
-    local creds="$HOME/.claude/.credentials.json"
-    [ -f "$creds" ] \
-        && _ok ".credentials.json" \
-        || _warn ".credentials.json missing — run: claude auth login  (enables Claude quota panel)"
+    # ── Agent Integration ────────────────────────────────────────────────────
+    # agykit is orchestrator-agnostic: it runs from Claude Code, Codex, OpenCode,
+    # or a plain shell. Show which agent is detected and whether each agent's CLI
+    # + config + injected system file are in place.
+    echo "Agent Integration"
+    local det_agent; det_agent="$(_detect_agent)"
+    if [ -n "${AGYKIT_AGENT:-}" ]; then
+        _ok "detected agent: $det_agent (forced via AGYKIT_AGENT)"
+    else
+        _ok "detected agent: $det_agent"
+    fi
 
-    local stats="$HOME/.claude/stats-cache.json"
-    [ -f "$stats" ] \
-        && _ok "stats-cache.json" \
-        || _warn "stats-cache.json missing — populated automatically by Claude Code"
+    # Per-agent: CLI on PATH + its on-disk config/credential marker.
+    command -v claude   >/dev/null 2>&1 && _ok "claude CLI"   || _warn "claude CLI not on PATH"
+    command -v codex    >/dev/null 2>&1 && _ok "codex CLI"    || _warn "codex CLI not on PATH"
+    command -v opencode >/dev/null 2>&1 && _ok "opencode CLI" || _warn "opencode CLI not on PATH"
+
+    [ -f "$HOME/.claude/.credentials.json" ] \
+        && _ok "claude creds (enables Claude quota panel)" \
+        || _warn "~/.claude/.credentials.json missing — run: claude auth login"
+    { [ -f "$HOME/.codex/auth.json" ] || [ -f "$HOME/.codex/config.toml" ]; } \
+        && _ok "codex config" \
+        || _warn "~/.codex not configured — run: codex login"
+    [ -f "$HOME/.config/opencode/opencode.json" ] \
+        && _ok "opencode config" \
+        || _warn "~/.config/opencode/opencode.json missing"
+
+    # Architect-escalate routing target validity.
+    if [ -n "${AGYKIT_ARCHITECT_ESCALATE:-}" ]; then
+        local arch_t="$AGYKIT_ARCHITECT_ESCALATE"
+        [ "$arch_t" = "auto" ] && arch_t="$det_agent"
+        case "$arch_t" in
+            claude|codex|opencode)
+                command -v "$arch_t" >/dev/null 2>&1 \
+                    && _ok "architect-escalate: $AGYKIT_ARCHITECT_ESCALATE → $arch_t CLI ready" \
+                    || _warn "architect-escalate=$AGYKIT_ARCHITECT_ESCALATE but $arch_t CLI not found"
+                ;;
+            *)
+                command -v "$arch_t" >/dev/null 2>&1 \
+                    && _ok "architect-escalate: custom '$arch_t'" \
+                    || _warn "architect-escalate '$arch_t' not found"
+                ;;
+        esac
+    else
+        _ok "architect-escalate: off (set AGYKIT_ARCHITECT_ESCALATE=auto to enable)"
+    fi
     echo
 
     # ── Project Config ───────────────────────────────────────────────────────
@@ -1682,11 +1824,12 @@ agykit — portable Antigravity (agy) CLI manager
   agykit tasks list [spec.md]            List tasks in .agykit-tasks.md
   agykit tasks run [--task <id>] [spec.md]  Run tasks via do-escalate
 
-Config: set AGYKIT_ARCHITECT_ESCALATE=claude to enable architect fallback when all models fail.
-  agykit dash [--port N]          Open the usage dashboard (localhost, foreground)
-  agykit dash --bg [--port N]     Start dashboard as background daemon
-  agykit dash --stop [--port N]   Stop background dashboard daemon
-  agykit dash --status [--port N] Check dashboard daemon status
+Config: AGYKIT_ARCHITECT_ESCALATE=auto|claude|codex|opencode enables architect fallback when all models fail (auto = the detected agent). AGYKIT_AGENT forces the orchestrator agent.
+  agykit dash [--port N]                          Open the usage dashboard (localhost, foreground)
+  agykit dash --bg [--port N]                     Start dashboard as background daemon
+  agykit dash --bg --tailscale [--port N]         Expose the dashboard via Tailscale on port 80
+  agykit dash --stop [--port N]                   Stop background dashboard daemon
+  agykit dash --status [--port N]                 Check dashboard daemon status
   agykit codex [--json|--status]  Show Codex account/usage information
   agykit quota [--refresh]        Show model quota table (cached 5min)
   agykit quota --json             Machine-readable JSON quota output

@@ -36,11 +36,15 @@ case ":$PATH:" in
 esac
 
 # ── Skill install ─────────────────────────────────────────────────────────────
-# OpenCode
+# OpenCode — prefer the OpenCode-specific skill, fall back to the generic one.
 AGENTS_SKILL_DIR="$HOME/.agents/skills/agykit"
 if [ -d "$HOME/.agents/skills" ]; then
     mkdir -p "$AGENTS_SKILL_DIR"
-    cp "$SRC_DIR/skills/SKILL.md" "$AGENTS_SKILL_DIR/SKILL.md"
+    if [ -f "$SRC_DIR/skills/opencode.md" ]; then
+        cp "$SRC_DIR/skills/opencode.md" "$AGENTS_SKILL_DIR/SKILL.md"
+    else
+        cp "$SRC_DIR/skills/SKILL.md" "$AGENTS_SKILL_DIR/SKILL.md"
+    fi
     echo "Installed: opencode skill -> $AGENTS_SKILL_DIR/SKILL.md"
 fi
 
