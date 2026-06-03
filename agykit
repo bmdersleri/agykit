@@ -14,7 +14,7 @@
 #   AGYKIT_TASKS_FILE — default task spec file for `agykit tasks` (default: .agykit-tasks.md)
 set -euo pipefail
 
-AGYKIT_VERSION="1.1.6"
+AGYKIT_VERSION="1.1.7"
 _EMAIL_CACHE=""
 
 GEMINI_DIR="$HOME/.gemini"
