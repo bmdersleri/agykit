@@ -155,9 +155,8 @@ _git_lock_directive() {
 # Quick check: run a trivial prompt with 30s timeout.
 # Returns 0 if agy responds, 1 if it hangs/quota-blocks/errors.
 _agy_ping() {
-    # Strip --add-dir flags; they trigger workspace scan and cause 30s timeout.
-    local ping_flags; ping_flags=$(echo "$AGY_FLAGS" | sed 's/--add-dir [^ ]*//g')
-    timeout 30 "$AGY_BIN" -p "reply: ok" --print-timeout 25s $ping_flags 2>&1 | tee /tmp/agykit-ping.log >/dev/null
+    # Run from /tmp with no flags — avoids workspace scan and permission prompts.
+    ( cd /tmp && timeout 30 "$AGY_BIN" -p "say hello" --print-timeout 25s 2>&1 | tee /tmp/agykit-ping.log >/dev/null )
     local rc=${PIPESTATUS[0]}
     [ $rc -ne 0 ] && return 1
     grep -qiE "$QUOTA_RE|ConnectionError|Connection refused|timed ?out|UNAVAILABLE" /tmp/agykit-ping.log && return 1
