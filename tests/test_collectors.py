@@ -1404,4 +1404,3 @@ def test_omniroute_series_and_summary_success(tmp_path):
     assert summary["by_model"]["claude/claude-3-5-sonnet"]["requests"] == 2
     assert summary["by_model"]["openai/gpt-4"]["requests"] == 1
     assert summary["warning"] is None
-
