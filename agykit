@@ -26,6 +26,32 @@ KEYRING_USER="antigravity"
 QUOTA_RE='quota reached|RESOURCE_EXHAUSTED|rate.?limit|code 429|HTTP.*429|error.*429|exceeded your current|too many request'
 LADDER=("Gemini 3.5 Flash (Medium)" "Gemini 3.1 Pro (High)" "Claude Opus 4.6 (Thinking)")
 
+# ── Early helpers (must be defined before global init uses them) ─────────────
+_detect_agent() {
+    # Env vars first (runtime signals) — more reliable than installed-artifact dirs.
+    # Filesystem checks use specific files (credentials/config), not skill dirs.
+    if [ -n "${CODEX_API_KEY:-}" ]; then
+        echo "codex"
+    elif [ -n "${CLAUDE_CODE:-}" ] || [ -f "$HOME/.claude/.credentials.json" ]; then
+        echo "claude"
+    elif [ -n "${OPENCODE:-}" ] || [ -f "$HOME/.config/opencode/opencode.json" ]; then
+        echo "opencode"
+    elif [ -n "${CODEX_API_KEY:-}" ] || [ -d "$HOME/.codex/skills" ]; then
+        echo "codex"
+    else
+        echo "unknown"
+    fi
+}
+
+_agent_system_file() {
+    local agent; agent="$(_detect_agent)"
+    case "$agent" in
+        codex)    echo "CODEX_AGY_SYSTEM.md" ;;
+        opencode) echo "OPENCODE_AGY_SYSTEM.md" ;;
+        *)        echo "CLAUDE_AGY_SYSTEM.md" ;;
+    esac
+}
+
 # ── Load per-project config ──────────────────────────────────────────────────
 [ -f ".agykit.conf" ] && source ".agykit.conf"
 VERIFY_CMD="${AGYKIT_VERIFY:-}"
@@ -571,27 +597,6 @@ Be specific and actionable. The coder is an AI agent that will re-attempt this t
     fi
 
     echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "all models exhausted" "" "" "All models failed"; restore_model; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 1
-}
-
-_detect_agent() {
-    if [ -n "${CODEX_API_KEY:-}" ] || [ -d "$HOME/.codex/skills" ]; then
-        echo "codex"
-    elif [ -n "${CLAUDE_CODE:-}" ] || [ -d "$HOME/.claude/skills" ]; then
-        echo "claude"
-    elif [ -n "${OPENCODE:-}" ] || [ -f "$HOME/.config/opencode/opencode.json" ] || [ -d "$HOME/.config/opencode" ]; then
-        echo "opencode"
-    else
-        echo "unknown"
-    fi
-}
-
-_agent_system_file() {
-    local agent; agent="$(_detect_agent)"
-    case "$agent" in
-        codex)    echo "CODEX_AGY_SYSTEM.md" ;;
-        opencode) echo "OPENCODE_AGY_SYSTEM.md" ;;
-        *)        echo "CLAUDE_AGY_SYSTEM.md" ;;
-    esac
 }
 
 cmd_init() {
