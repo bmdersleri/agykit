@@ -50,6 +50,7 @@ setup_repo() {
     # fake agy settings + one account so do-escalate proceeds
     AGY_SETTINGS="$d/settings.json"; printf '{"model":"x"}\n' > "$AGY_SETTINGS"
     ACCOUNTS_DIR="$d/accounts"; mkdir -p "$ACCOUNTS_DIR"; : > "$ACCOUNTS_DIR/t@acct.json"
+    export AGYKIT_STATE_DIR="$d"
     echo "$d"
 }
 
