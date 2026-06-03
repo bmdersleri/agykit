@@ -87,6 +87,18 @@ agykit doctor --fix            # otomatik düzeltilebilir sorunları çöz
 | `AGYKIT_TIMEOUT` | `--print-timeout` değeri | `15m` |
 | `AGYKIT_TERSE` | çıktı kısaltma seviyesi | `ultra` |
 
+### `AGYKIT_FLAGS` — `--add-dir` Tuzağı
+
+`--add-dir` flagleri workspace scan başlatır. `_agy_ping` bu flagleri otomatik çıkarır
+ve `/tmp`'den koşar — böylece proje dizini keşfedilmez ve 30s timeout'a çarpmaz.
+`--dangerously-skip-permissions` `/tmp`'de sorun çıkarmaz (işlenecek dosya yok).
+
+**Hesap rotasyonu davranışı:**
+1. Dashboard quota cache'i stale olabilir → `available` gösterip gerçekte exhausted hesap olabilir
+2. Bu yüzden `_agy_ping` her hesap için çalışır (30s) — cache'e güvenmez
+3. Ping fail → hesap skip, bir sonrakine geç (hang yok)
+4. Tüm hesaplar ping fail → job `blocked/failed` durumuna geçer, 15dk hang yaşanmaz
+
 ## Delege Kuralları (agy için)
 
 Bir görev `agykit do-escalate` veya `run` ile devredildiğinde:
