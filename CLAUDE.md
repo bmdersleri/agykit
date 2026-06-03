@@ -46,12 +46,113 @@ agykit account-remove <email>  # remove snapshot (cannot remove active account)
 ```bash
 agykit run "prompt"            # simple query/explanation — quota-aware rotation
 agykit do-escalate "prompt"    # code task — verify fail → model ladder
+agykit tasks list [spec.md]    # list tasks in a spec file
+agykit tasks run [--task <id>] [spec.md]  # run one or all tasks via do-escalate
 ```
 
 **When `run`:** Explanation, research, single-step work. No verify needed.  
 **When `do-escalate`:** Code change + `AGYKIT_VERIFY` defined (test/lint). Escalates to next model on failure.
 
 Model ladder: Flash → Pro → Opus. Git snapshot at each stage; restores WIP on failure.
+
+### Task Spec Format (`.agykit-tasks.md`)
+
+Task specs are Markdown files parsed by `agykit tasks`. The parser uses a strict
+regex — wrong header format means the task is silently skipped.
+
+**File location:** default is `.agykit-tasks.md` in CWD, or set `AGYKIT_TASKS_FILE`
+in `.agykit.conf`, or pass the path explicitly: `agykit tasks list path/to/file.md`.
+
+#### Header formats (both accepted)
+
+**Canonical (preferred):**
+```markdown
+## task-<id>: Title of the task
+```
+- `task-` prefix required, followed by lowercase letters, digits, or hyphens
+- Colon `:` or space after the id — both work
+- Examples: `## task-1: Create base.html`, `## task-auth: Add JWT middleware`
+
+**Legacy numeric (also accepted):**
+```markdown
+## Task 3 — Title of the task
+## Task 3: Title of the task
+## Task 3 - Title of the task
+```
+- `Task` (capital T) + space + digit(s) + separator (`—`, `:`, `-`, `–`)
+- Parser auto-generates id as `task-3`
+
+**NOT accepted (silent skip):**
+```markdown
+### Task 1 — Title    ← wrong level (### not ##)
+## task1: Title       ← missing hyphen in id (task1 not task-1... actually this fails group 1 regex)
+## TASK 1 — Title     ← wrong case
+## 1. Title           ← no "Task" prefix
+```
+
+#### Optional metadata lines (immediately after the header, before the prompt)
+
+```
+depends_on: [task-1, task-2]
+verify_hint: check that src/foo.py exists and imports Bar
+```
+
+- `depends_on` — task IDs that must succeed first (used by `tasks run` ordering)
+- `verify_hint` — extra hint passed to the verifier (not yet enforced, reserved)
+- Both are stripped from the prompt before sending to agy
+
+#### Prompt body
+
+Everything after the header line (and optional metadata) becomes the prompt
+passed verbatim to `agykit do-escalate`. Rules:
+
+- Write the full, self-contained prompt. Do not reference other tasks by "see above" —
+  agy has no context from prior tasks.
+- Use fenced code blocks for file content or CLI commands within the prompt.
+- Include: file path(s) to create/edit, exact requirements, what NOT to do.
+- The prompt is trimmed (leading/trailing whitespace stripped).
+
+#### Full example
+
+```markdown
+# My Feature — agykit Tasks
+
+## task-base: Create base template
+depends_on: []
+verify_hint: src/templates/base.html must exist
+
+Create src/templates/base.html — a Jinja2 base template.
+
+Requirements:
+- DOCTYPE html, lang="en", charset UTF-8
+- Block named "content" for page body
+- Block named "extra_scripts" at body end
+- Do NOT create any Python files
+
+## task-styles: Add shared CSS
+depends_on: [task-base]
+
+Create src/static/style.css with shared card and badge styles:
+
+.card { background: #1a1b23; border-radius: 12px; padding: 1.25rem; }
+.badge { display: inline-block; padding: 0.2rem 0.6rem; border-radius: 6px; }
+
+Do NOT modify any existing file.
+```
+
+#### Running tasks
+
+```bash
+agykit tasks list                        # list all tasks + ids from default file
+agykit tasks list path/to/tasks.md       # list from explicit file
+agykit tasks run                         # run all tasks in order
+agykit tasks run --task task-base        # run one specific task
+agykit tasks run path/to/tasks.md        # run all from explicit file
+agykit tasks run --task task-base path/to/tasks.md
+```
+
+`tasks run` calls `do-escalate --force` per task — verify runs after each one.
+A task that fails verify causes the run to stop (does not cascade to next task).
 
 ### Monitoring
 ```bash
