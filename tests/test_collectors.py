@@ -1,6 +1,8 @@
 import json
 import os
 import sqlite3
+import shutil
+from pathlib import Path
 
 
 from dashboard import collectors
@@ -12,6 +14,12 @@ FIX = os.path.join(
 FIXBRAIN = os.path.join(
     os.path.dirname(__file__), "..", "dashboard", "fixtures", "brain"
 )
+FIX_DASH = Path(__file__).resolve().parent / "fixtures" / "dashboard"
+
+
+def _copy_fixture(src: Path, dst: Path) -> None:
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(src, dst)
 
 
 def test_claude_series_all():
@@ -1541,3 +1549,512 @@ def test_omniroute_series_and_summary_success(tmp_path):
     assert summary["by_model"]["claude/claude-3-5-sonnet"]["requests"] == 2
     assert summary["by_model"]["openai/gpt-4"]["requests"] == 1
     assert summary["warning"] is None
+
+
+def test_job_timeline_derives_events(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    from dashboard.collectors.jobs import job_create, job_event, job_timeline
+
+    jid = job_create("do-escalate", "timeline")
+    job_event(jid, "account_selected", "running", "select", account="a@example.com")
+    job_event(
+        jid,
+        "model_selected",
+        "running",
+        "model",
+        account="a@example.com",
+        model="gemini-2.5-flash",
+    )
+    job_event(
+        jid,
+        "verify_failed",
+        "verifying",
+        "verify",
+        account="a@example.com",
+        model="gemini-2.5-flash",
+        message="verify broke",
+    )
+    job_event(
+        jid,
+        "job_failed",
+        "failed",
+        "done",
+        account="a@example.com",
+        model="gemini-2.5-flash",
+        error="boom",
+    )
+
+    timeline = job_timeline(jid)
+    assert timeline["job_id"] == jid
+    assert timeline["timeline"][0]["label"] == "Started"
+    assert timeline["timeline"][-1]["status"] == "failed"
+    assert timeline["metrics"]["verify_fail_count"] == 1
+    assert timeline["metrics"]["attempt_count"] == 1
+
+
+def test_health_status_detects_missing_dependencies_and_verify(tmp_path, monkeypatch):
+    import dashboard.collectors.insights as insights
+    import time
+
+    project = tmp_path / "project"
+    project.mkdir()
+    home = tmp_path / "home"
+    quota_dir = home / ".gemini" / "antigravity-cli"
+    quota_dir.mkdir(parents=True)
+    (quota_dir / "quota-cache.json").write_text("{}")
+    (quota_dir / "statusline-latest.json").write_text("{}")
+    stale_ts = time.time() - 1000
+    os.utime(quota_dir / "quota-cache.json", (stale_ts, stale_ts))
+    os.utime(quota_dir / "statusline-latest.json", (stale_ts, stale_ts))
+    (project / ".agykit.conf").write_text('AGYKIT_FLAGS="--dangerously-skip-permissions"\n')
+    (project / ".gitignore").write_text(".agykit.conf\n")
+    (project / "CLAUDE_AGY_SYSTEM.md").write_text("context\n")
+    monkeypatch.setenv("HOME", str(home))
+
+    monkeypatch.setattr(
+        insights,
+        "resolve_job_state",
+        lambda: {
+            "db_path": str(tmp_path / "jobs.db"),
+            "state_dir": str(tmp_path / "state"),
+            "socket_path": str(tmp_path / "sock"),
+            "old_job_dir": str(tmp_path / "state" / "agykit-jobs"),
+        },
+    )
+    monkeypatch.setattr(
+        insights,
+        "_which",
+        lambda cmd: f"/usr/bin/{cmd}" if cmd in {"agy", "python3", "git", "jq"} else None,
+    )
+    monkeypatch.setattr(insights, "_has_module", lambda name: False)
+
+    result = collectors.health_status(project_dir=str(project))
+    by_id = {check["id"]: check for check in result["checks"]}
+
+    assert result["overall_status"] in {"warning", "critical"}
+    assert by_id["project.verify"]["status"] == "critical"
+    assert result["stale"] is True
+    assert by_id["storage.quota_cache"]["status"] == "stale"
+    assert any(
+        check["status"] == "warning" for check in result["checks"] if check["category"] == "dependency"
+    )
+
+
+def test_recommendation_and_forecast_mark_stale_cache(monkeypatch, tmp_path):
+    home = tmp_path / "home"
+    quota_dir = home / ".gemini" / "antigravity-cli"
+    quota_dir.mkdir(parents=True)
+    quota_cache = quota_dir / "quota-cache.json"
+    quota_cache.write_text("{}")
+    stale_ts = __import__("time").time() - 1000
+    os.utime(quota_cache, (stale_ts, stale_ts))
+    monkeypatch.setenv("HOME", str(home))
+
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_model_quota",
+        lambda: {
+            "accounts": [
+                {
+                    "email": "a@example.com",
+                    "models": [
+                        {
+                            "model_id": "gemini-2.5-flash",
+                            "display_name": "Gemini 2.5 Flash",
+                            "pct_remaining": 80,
+                            "remaining_fraction": 0.8,
+                            "resets_in_seconds": 0,
+                        }
+                    ],
+                }
+            ],
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_list",
+        lambda limit=500: [],
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_quota_status",
+        lambda: {"accounts": [{"email": "a@example.com", "status": "available", "exhaustion_count": 0, "session_count": 1}], "warning": None},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_active_account",
+        lambda: {"email": "a@example.com", "warning": None},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_statusline_snapshot",
+        lambda: {"email": "a@example.com"},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_stats",
+        lambda: {"error_breakdown": {"verify": 0}},
+    )
+
+    rec = collectors.recommended_account_model(project_dir=str(tmp_path))
+    forecast = collectors.quota_forecast(window="24h", strategy="hybrid")
+
+    assert rec["stale"] is True
+    assert rec["quota_cache_age_seconds"] is not None
+    assert forecast["stale"] is True
+    assert forecast["quota_cache_age_seconds"] is not None
+
+
+def test_recommendation_prefers_high_quota(monkeypatch, tmp_path):
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_quota_status",
+        lambda: {
+            "accounts": [
+                {"email": "a@example.com", "status": "available", "exhaustion_count": 0, "session_count": 3},
+                {"email": "b@example.com", "status": "available", "exhaustion_count": 1, "session_count": 1},
+            ],
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_model_quota",
+        lambda: {
+            "accounts": [
+                {
+                    "email": "a@example.com",
+                    "models": [
+                        {
+                            "model_id": "gemini-2.5-flash",
+                            "display_name": "Gemini 2.5 Flash",
+                            "pct_remaining": 82,
+                            "remaining_fraction": 0.82,
+                            "resets_in_seconds": 0,
+                        },
+                        {
+                            "model_id": "gemini-2.5-pro",
+                            "display_name": "Gemini 2.5 Pro",
+                            "pct_remaining": 60,
+                            "remaining_fraction": 0.60,
+                            "resets_in_seconds": 0,
+                        },
+                    ],
+                },
+                {
+                    "email": "b@example.com",
+                    "models": [
+                        {
+                            "model_id": "gemini-2.5-flash",
+                            "display_name": "Gemini 2.5 Flash",
+                            "pct_remaining": 15,
+                            "remaining_fraction": 0.15,
+                            "resets_in_seconds": 0,
+                        }
+                    ],
+                },
+            ],
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_active_account",
+        lambda: {"email": "a@example.com", "warning": None},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_statusline_snapshot",
+        lambda: {"email": "a@example.com"},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_list",
+        lambda limit=500: [
+            {
+                "job_id": "1",
+                "account": "a@example.com",
+                "model": "gemini-2.5-flash",
+                "status": "succeeded",
+                "started_at": "2026-06-03T10:00:00+00:00",
+                "duration_seconds": 120,
+            },
+            {
+                "job_id": "2",
+                "account": "a@example.com",
+                "model": "gemini-2.5-flash",
+                "status": "succeeded",
+                "started_at": "2026-06-03T11:00:00+00:00",
+                "duration_seconds": 110,
+            },
+            {
+                "job_id": "3",
+                "account": "b@example.com",
+                "model": "gemini-2.5-flash",
+                "status": "failed",
+                "started_at": "2026-06-03T12:00:00+00:00",
+                "duration_seconds": 250,
+                "error_category": "quota",
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_stats",
+        lambda: {"error_breakdown": {"verify": 0}},
+    )
+
+    result = collectors.recommended_account_model(mode="balanced", project_dir=str(tmp_path))
+    rec = result["recommendation"]
+
+    assert rec["account"] == "a@example.com"
+    assert rec["model"] == "gemini-2.5-flash"
+    assert rec["command"].startswith("agykit switch a@example.com")
+    assert rec["confidence"] > 0
+
+
+def test_quota_forecast_reports_eta(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_model_quota",
+        lambda: {
+            "accounts": [
+                {
+                    "email": "a@example.com",
+                    "models": [
+                        {
+                            "model_id": "gemini-2.5-flash",
+                            "display_name": "Gemini 2.5 Flash",
+                            "pct_remaining": 50,
+                            "remaining_fraction": 0.5,
+                            "resets_in_seconds": 0,
+                        }
+                    ],
+                }
+            ],
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_list",
+        lambda limit=500: [
+            {
+                "job_id": "1",
+                "account": "a@example.com",
+                "model": "gemini-2.5-flash",
+                "status": "succeeded",
+                "started_at": "2026-06-03T10:00:00+00:00",
+                "duration_seconds": 120,
+            },
+            {
+                "job_id": "2",
+                "account": "a@example.com",
+                "model": "gemini-2.5-flash",
+                "status": "failed",
+                "started_at": "2026-06-03T11:00:00+00:00",
+                "duration_seconds": 240,
+                "error_category": "quota",
+            },
+        ],
+    )
+
+    result = collectors.quota_forecast(window="24h", strategy="hybrid")
+    assert result["accounts"]
+    model = result["accounts"][0]["models"][0]
+    assert model["eta_label"]
+    assert model["burn_rate_percent_per_hour"] is not None
+    assert result["overall_risk"] in {"low", "medium", "high", "critical", "unknown"}
+
+
+def test_agent_matrix_composes_known_sources(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_stats",
+        lambda: {
+            "total": 3,
+            "by_status": {"succeeded": 2, "failed": 1},
+            "avg_duration_seconds": 120.0,
+            "error_breakdown": {"verify": 1},
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_list",
+        lambda limit=500: [
+            {
+                "job_id": "1",
+                "account": "a@example.com",
+                "model": "gemini-2.5-flash",
+                "status": "succeeded",
+                "started_at": "2026-06-03T10:00:00+00:00",
+                "duration_seconds": 120,
+            },
+            {
+                "job_id": "2",
+                "account": "a@example.com",
+                "model": "gemini-2.5-pro",
+                "status": "failed",
+                "started_at": "2026-06-03T11:00:00+00:00",
+                "duration_seconds": 240,
+                "error_category": "verify",
+            },
+            {
+                "job_id": "3",
+                "account": "b@example.com",
+                "model": "gemini-2.5-flash",
+                "status": "succeeded",
+                "started_at": "2026-06-03T12:00:00+00:00",
+                "duration_seconds": 100,
+            },
+        ],
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.codex_usage",
+        lambda limit=10: {
+            "summary": {"sessions": 4, "tokens_used": 1200, "models": ["gpt-5.5"]},
+            "recent_threads": [{"model": "gpt-5.5"}, {"model": "gpt-5.5"}],
+            "current_project": {"name": "agykit"},
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.claude_series",
+        lambda range_key="30d": {
+            "labels": ["2026-06-01", "2026-06-02"],
+            "tokens_total": [500, 700],
+            "tokens_by_model": {"claude-opus": [200, 300]},
+            "messages": [10, 12],
+            "sessions": [2, 1],
+            "tool_calls": [3, 4],
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.claude_quota",
+        lambda: {"quotas": [], "extra_usage": None, "warning": None},
+    )
+
+    result = collectors.agent_performance_matrix(range_key="7d")
+    assert len(result["agents"]) == 4
+    agy = next(a for a in result["agents"] if a["agent"] == "agy")
+    assert agy["success_rate"] is not None
+    assert result["summary"]["most_used_agent"] in {"agy", "codex", "Claude Code"}
+
+
+def test_dashboard_fixture_bundle_smoke(tmp_path, monkeypatch):
+    import time
+
+    home = tmp_path / "home"
+    project = tmp_path / "project"
+    state_dir = tmp_path / "state"
+    db_path = state_dir / "jobs.db"
+    home.mkdir()
+    project.mkdir()
+
+    _copy_fixture(FIX_DASH / "project" / ".agykit.conf", project / ".agykit.conf")
+    _copy_fixture(FIX_DASH / "project" / ".gitignore", project / ".gitignore")
+    _copy_fixture(
+        FIX_DASH / "project" / "CLAUDE_AGY_SYSTEM.md",
+        project / "CLAUDE_AGY_SYSTEM.md",
+    )
+    _copy_fixture(FIX_DASH / "quota-cache.json", home / ".gemini" / "antigravity-cli" / "quota-cache.json")
+    _copy_fixture(
+        FIX_DASH / "statusline-latest.json",
+        home / ".gemini" / "antigravity-cli" / "statusline-latest.json",
+    )
+
+    stale_ts = time.time() - 1000
+    os.utime(home / ".gemini" / "antigravity-cli" / "quota-cache.json", (stale_ts, stale_ts))
+    os.utime(home / ".gemini" / "antigravity-cli" / "statusline-latest.json", (stale_ts, stale_ts))
+
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setattr(
+        collectors.insights,
+        "resolve_job_state",
+        lambda: {
+            "db_path": str(db_path),
+            "state_dir": str(state_dir),
+            "socket_path": str(tmp_path / "sock"),
+            "old_job_dir": str(state_dir / "agykit-jobs"),
+        },
+    )
+    monkeypatch.setattr(
+        collectors.insights,
+        "_which",
+        lambda cmd: f"/usr/bin/{cmd}" if cmd in {"agy", "python3", "git", "jq"} else None,
+    )
+    monkeypatch.setattr(collectors.insights, "_has_module", lambda name: False)
+
+    with open(FIX_DASH / "jobs" / "example-job.json", encoding="utf-8") as f:
+        job_data = json.load(f)
+    from dashboard.collectors.jobs import job_create, job_event
+
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", str(db_path))
+    monkeypatch.setattr("dashboard.collectors.jobs._OLD_JSON_DIR", str(state_dir / "no-json"))
+
+    jid = job_create(job_data["command"], job_data["prompt"], job_data["owner_pid"])
+    with open(FIX_DASH / "jobs" / "example-job.events.jsonl", encoding="utf-8") as f:
+        for line in f:
+            ev = json.loads(line)
+            job_event(
+                jid,
+                ev["event"],
+                ev["status"],
+                ev["stage"],
+                account=ev.get("account"),
+                model=ev.get("model"),
+                message=ev.get("message"),
+                error=ev.get("error"),
+            )
+
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_quota_status",
+        lambda: {
+            "accounts": [{"email": "a@example.com", "status": "available", "exhaustion_count": 0, "session_count": 1}],
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_model_quota",
+        lambda: json.loads((FIX_DASH / "quota-cache.json").read_text()),
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_active_account",
+        lambda: {"email": "a@example.com", "warning": None},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_statusline_snapshot",
+        lambda: json.loads((FIX_DASH / "statusline-latest.json").read_text()),
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_list",
+        lambda limit=500: [
+            {
+                "job_id": jid,
+                "account": job_data["account"],
+                "model": job_data["model"],
+                "status": job_data["status"],
+                "started_at": job_data["started_at"],
+                "duration_seconds": 400,
+            }
+        ],
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_stats",
+        lambda: {"error_breakdown": {"verify": 1}},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.codex_usage",
+        lambda limit=10: {"summary": {"sessions": 1, "tokens_used": 50, "models": ["gpt-5.5"]}, "recent_threads": [], "current_project": {"name": "agykit"}, "warning": None},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.claude_series",
+        lambda range_key="30d": {"labels": ["2026-06-03"], "tokens_total": [12], "tokens_by_model": {"claude-opus": [12]}, "messages": [1], "sessions": [1], "tool_calls": [0], "warning": None},
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.claude_quota",
+        lambda: {"quotas": [], "warning": None},
+    )
+
+    health = collectors.health_status(project_dir=str(project))
+    timeline = collectors.job_timeline(jid)
+    recommendation = collectors.recommended_account_model(project_dir=str(project))
+    forecast = collectors.quota_forecast(window="24h", strategy="hybrid")
+    matrix = collectors.agent_performance_matrix(range_key="7d")
+
+    assert health["overall_status"] in {"warning", "critical"}
+    assert health["stale"] is True
+    assert timeline["timeline"][-1]["label"] == "Succeeded"
+    assert recommendation["stale"] is True
+    assert recommendation["recommendation"]["account"] == "a@example.com"
+    assert forecast["stale"] is True
+    assert matrix["summary"]["most_used_agent"] == "agy"

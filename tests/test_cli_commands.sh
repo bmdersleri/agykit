@@ -27,6 +27,7 @@ ok "agykit log 5"                 '"$AGYKIT" log 5 >/dev/null 2>&1'
 ok "agykit jobs"                  '"$AGYKIT" jobs >/dev/null 2>&1'
 ok "agykit stats"                 '"$AGYKIT" stats >/dev/null 2>&1'
 ok "agykit quota --status"        '"$AGYKIT" quota --status >/dev/null 2>&1'
+ok "agykit dash --status"         '"$AGYKIT" dash --status >/dev/null 2>&1'
 
 # JSON output validity
 ok "agykit rtk --json valid"      '"$AGYKIT" rtk --json 2>/dev/null | python3 -c "import json,sys; json.load(sys.stdin)"'

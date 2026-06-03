@@ -1312,7 +1312,16 @@ _quota_alert() {
 }
 
 _dash_tailscale_remote_url() {
-    local ip
+    local url ip
+    url=$(tailscale serve status 2>/dev/null | awk '/^http:\/\/.*\.ts\.net([[:space:]]|$)/ { print $1; exit }' 2>/dev/null || true)
+    if [ -n "$url" ]; then
+        case "$url" in
+            */) printf '%s' "$url" ;;
+            *)  printf '%s/' "$url" ;;
+        esac
+        return 0
+    fi
+
     ip=$(tailscale ip -4 2>/dev/null | head -1 || true)
     [ -n "$ip" ] && printf 'http://%s/' "$ip"
 }
@@ -1428,7 +1437,7 @@ cmd_dash() {
             rm -f "$tailscale_file"
         fi
         PYTHONPATH="$repo" nohup python3 "$dir/server.py" \
-            --host="$host" --port="$port" "${args[@]}" \
+            --host="$host" --port="$port" --no-open "${args[@]}" \
             >"$logfile" 2>&1 &
         local newpid=$!
         echo "$newpid" > "$pidfile"

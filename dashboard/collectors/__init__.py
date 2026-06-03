@@ -27,6 +27,13 @@ from .codex import codex_usage, codex_status
 from .rtk import rtk_stats, _parse_suffix, _ROW_RE
 from .omniroute import omniroute_series, omniroute_summary
 from .ops import ops_log
+from .insights import (
+    health_status,
+    job_timeline,
+    recommended_account_model,
+    quota_forecast,
+    agent_performance_matrix,
+)
 from .jobs import (
     job_create,
     job_event,
@@ -69,6 +76,11 @@ __all__ = [
     "omniroute_series",
     "omniroute_summary",
     "ops_log",
+    "health_status",
+    "job_timeline",
+    "recommended_account_model",
+    "quota_forecast",
+    "agent_performance_matrix",
     "job_create",
     "job_event",
     "job_snapshot",

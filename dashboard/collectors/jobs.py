@@ -398,6 +398,210 @@ def job_events(job_id: str, limit: int = 100) -> list[dict]:
         conn.close()
 
 
+def _parse_job_iso(value: str | None):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+_TIMELINE_LABELS = {
+    "job_started": "Started",
+    "account_selected": "Account Selected",
+    "account_switched": "Account Switched",
+    "model_selected": "Model Selected",
+    "model_escalated": "Model Escalated",
+    "model_retried": "Model Retried",
+    "prompt_dispatched": "Prompt Dispatched",
+    "verify_started": "Verification Started",
+    "verify_passed": "Verification Passed",
+    "verify_failed": "Verification Failed",
+    "quota_rotated": "Quota Rotated",
+    "rollback_started": "Rollback Started",
+    "rollback_finished": "Rollback Finished",
+    "rollback_failed": "Rollback Failed",
+    "job_succeeded": "Succeeded",
+    "job_failed": "Failed",
+    "job_blocked": "Blocked",
+    "job_cancelled": "Cancelled",
+    "job_timed_out": "Timed Out",
+}
+
+
+def _timeline_label(event_name: str) -> str:
+    return _TIMELINE_LABELS.get(event_name, event_name.replace("_", " ").title())
+
+
+def _timeline_status(event_name: str, snapshot_status: str, is_last: bool) -> str:
+    if event_name in {
+        "job_failed",
+        "job_blocked",
+        "job_cancelled",
+        "job_timed_out",
+        "verify_failed",
+        "rollback_failed",
+    }:
+        return "failed"
+    if is_last and snapshot_status in _ACTIVE_STATUSES:
+        return "active"
+    return "completed"
+
+
+def _timeline_severity(event_name: str) -> str:
+    if event_name in {"job_failed", "job_blocked", "job_cancelled", "job_timed_out"}:
+        return "critical"
+    if event_name in {"verify_failed", "rollback_started", "rollback_failed", "quota_rotated"}:
+        return "warning"
+    if event_name in {"job_succeeded", "verify_passed", "rollback_finished"}:
+        return "success"
+    return "info"
+
+
+def job_timeline(job_id: str | None = None, limit: int = 100) -> dict:
+    conn = _get_db()
+    try:
+        recover_stale_jobs(conn)
+        if not job_id:
+            row = conn.execute(
+                """SELECT job_id FROM jobs
+                   ORDER BY CASE WHEN status IN ('starting','running','verifying','rotating','rolling_back') THEN 0 ELSE 1 END,
+                            updated_at DESC
+                   LIMIT 1"""
+            ).fetchone()
+            if row:
+                job_id = row["job_id"]
+        if not job_id:
+            return {
+                "ok": True,
+                "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+                "source": "agykit",
+                "stale": False,
+                "job_id": None,
+                "snapshot": None,
+                "timeline": [],
+                "metrics": {
+                    "elapsed_seconds": None,
+                    "attempt_count": 0,
+                    "model_switch_count": 0,
+                    "account_switch_count": 0,
+                    "rollback_count": 0,
+                    "verify_fail_count": 0,
+                },
+                "warning": "No jobs found",
+            }
+
+        snapshot_row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+        ).fetchone()
+        if snapshot_row is None:
+            return {
+                "ok": True,
+                "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+                "source": "agykit",
+                "stale": False,
+                "job_id": job_id,
+                "snapshot": None,
+                "timeline": [],
+                "metrics": {
+                    "elapsed_seconds": None,
+                    "attempt_count": 0,
+                    "model_switch_count": 0,
+                    "account_switch_count": 0,
+                    "rollback_count": 0,
+                    "verify_fail_count": 0,
+                },
+                "warning": "Job not found",
+            }
+
+        snapshot = dict(snapshot_row)
+        rows = conn.execute(
+            "SELECT * FROM events WHERE job_id=? ORDER BY id ASC LIMIT ?",
+            (job_id, limit),
+        ).fetchall()
+        events = [dict(r) for r in rows]
+
+        started = _parse_job_iso(snapshot.get("started_at"))
+        ended = _parse_job_iso(snapshot.get("ended_at"))
+        now = datetime.now(timezone.utc)
+        elapsed_seconds = None
+        if started:
+            elapsed_seconds = int(((ended or now) - started).total_seconds())
+
+        timeline = []
+        prev_ts = None
+        last_account = None
+        last_model = None
+        account_switch_count = 0
+        model_switch_count = 0
+        rollback_count = 0
+        verify_fail_count = 0
+        attempt_count = 0
+
+        for idx, event in enumerate(events, start=1):
+            event_name = event.get("event", "")
+            ts = _parse_job_iso(event.get("ts"))
+            duration_ms = None
+            if ts and prev_ts:
+                duration_ms = int((ts - prev_ts).total_seconds() * 1000)
+            if ts:
+                prev_ts = ts
+            if event_name == "job_started":
+                attempt_count += 1
+            if event_name in {"account_selected", "account_switched"} and event.get("account") != last_account:
+                account_switch_count += 1
+                last_account = event.get("account")
+            if event_name in {"model_selected", "model_escalated", "model_retried"} and event.get("model") != last_model:
+                model_switch_count += 1
+                last_model = event.get("model")
+            if event_name.startswith("rollback_"):
+                rollback_count += 1
+            if event_name == "verify_failed":
+                verify_fail_count += 1
+
+            timeline.append(
+                {
+                    "seq": idx,
+                    "event": event_name,
+                    "label": _timeline_label(event_name),
+                    "timestamp": event.get("ts"),
+                    "status": _timeline_status(event_name, snapshot.get("status", ""), idx == len(events)),
+                    "severity": _timeline_severity(event_name),
+                    "duration_ms": duration_ms,
+                    "account": event.get("account"),
+                    "model": event.get("model"),
+                    "stage": event.get("stage"),
+                    "message": event.get("message", ""),
+                    "error": event.get("error"),
+                }
+            )
+
+        if not attempt_count and events:
+            attempt_count = 1
+
+        return {
+            "ok": True,
+            "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+            "source": "agykit",
+            "stale": False,
+            "job_id": job_id,
+            "snapshot": snapshot,
+            "timeline": timeline,
+            "metrics": {
+                "elapsed_seconds": elapsed_seconds,
+                "attempt_count": attempt_count,
+                "model_switch_count": model_switch_count,
+                "account_switch_count": account_switch_count,
+                "rollback_count": rollback_count,
+                "verify_fail_count": verify_fail_count,
+            },
+            "warning": None,
+        }
+    finally:
+        conn.close()
+
+
 def recover_stale_jobs(conn: sqlite3.Connection, *, force: bool = False) -> list[dict]:
     """Reap active jobs that can no longer be running. Returns recovered rows.
 

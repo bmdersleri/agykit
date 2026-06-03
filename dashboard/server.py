@@ -2,17 +2,28 @@ import os
 import sys
 import json
 import glob
+import re
 from http.server import ThreadingHTTPServer, BaseHTTPRequestHandler
+from urllib.parse import parse_qs
 
 # Always import from the repo containing this server.py — not from cwd
 _REPO_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_DIR not in sys.path:
     sys.path.insert(0, _REPO_DIR)
-# Invalidate any stale cached import before loading
-for _k in list(sys.modules):
-    if _k == "dashboard" or _k.startswith("dashboard.collectors"):
-        del sys.modules[_k]
 from dashboard import collectors  # noqa: E402
+from dashboard.state import resolve_job_state  # noqa: E402
+
+
+def _read_agykit_version():
+    try:
+        with open(os.path.join(_REPO_DIR, "agykit"), encoding="utf-8", errors="replace") as f:
+            for line in f:
+                m = re.match(r'^AGYKIT_VERSION="([^"]+)"\s*$', line.strip())
+                if m:
+                    return m.group(1)
+    except Exception:
+        pass
+    return "unknown"
 
 
 def _get_mtime(path):
@@ -36,7 +47,10 @@ _MTIME_CACHE = {}
 def _check_mtimes():
     """Return dict of changed source types since last call."""
     changes = {}
+    state = resolve_job_state()
+    project_root = os.getcwd()
     checks = {
+        "job-db": state.get("db_path", ""),
         "claude-stats": os.environ.get("AGYKIT_DASH_STATS")
         or os.path.expanduser("~/.claude/stats-cache.json"),
         "claude-brain": os.path.join(
@@ -47,6 +61,7 @@ def _check_mtimes():
             "logs",
             "transcript_full.jsonl",
         ),
+        "claude-history": os.path.expanduser("~/.claude/history.jsonl"),
         "codex-history": os.environ.get("AGYKIT_DASH_CODEX_HISTORY")
         or os.path.expanduser("~/.codex/history.jsonl"),
         "codex-sessions": os.environ.get("AGYKIT_DASH_CODEX_SESSION_INDEX")
@@ -57,6 +72,10 @@ def _check_mtimes():
         "statusline": os.path.expanduser(
             "~/.gemini/antigravity-cli/statusline-latest.json"
         ),
+        "project-config": os.path.join(project_root, ".agykit.conf"),
+        "project-system-claude": os.path.join(project_root, "CLAUDE_AGY_SYSTEM.md"),
+        "project-system-codex": os.path.join(project_root, "CODEX_AGY_SYSTEM.md"),
+        "project-system-opencode": os.path.join(project_root, "OPENCODE_AGY_SYSTEM.md"),
     }
     for key, path in checks.items():
         if key.endswith("-brain"):
@@ -71,14 +90,29 @@ def _check_mtimes():
     # Map source keys to event types
     event_map = {}
     for k in changes:
+        if k == "job-db":
+            event_map["job"] = changes[k]
+            event_map["recommendation"] = changes[k]
+            event_map["forecast"] = changes[k]
+            event_map["agent-matrix"] = changes[k]
+        elif k.startswith("project-"):
+            event_map["health"] = changes[k]
+            event_map["recommendation"] = changes[k]
         if k.startswith("claude-"):
             event_map["claude"] = changes[k]
+            event_map["agent-matrix"] = changes[k]
         elif k.startswith("codex-"):
             event_map["codex"] = changes[k]
+            event_map["agent-matrix"] = changes[k]
         elif k == "quota-cache":
             event_map["quota"] = changes[k]
+            event_map["forecast"] = changes[k]
+            event_map["recommendation"] = changes[k]
+            event_map["health"] = changes[k]
         elif k == "statusline":
             event_map["statusline"] = changes[k]
+            event_map["health"] = changes[k]
+            event_map["recommendation"] = changes[k]
     return event_map
 
 
@@ -100,9 +134,13 @@ class DashboardHandler(BaseHTTPRequestHandler):
 
         parsed = urlparse(self.path)
         path = parsed.path
+        query = parse_qs(parsed.query)
 
         if path == "/":
             self.serve_index()
+        elif path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
         elif path in self._STATIC:
             self.serve_static(path[1:], self._STATIC[path])
         elif path == "/api/data":
@@ -173,13 +211,18 @@ class DashboardHandler(BaseHTTPRequestHandler):
             threshold = int(os.environ.get("AGYKIT_QUOTA_ALERT_PCT", "15"))
             self.serve_json(_alerts.check_quota_alerts(threshold, channels=["log"]))
         elif path.startswith("/api/jobs/"):
-            job_id = path[len("/api/jobs/") :]
-            snap = collectors.job_snapshot(job_id)
-            if snap is None:
-                self.send_json_error("Job not found", 404)
+            if path.endswith("/timeline"):
+                job_id = path[len("/api/jobs/") : -len("/timeline")]
+                limit = int(query.get("limit", [100])[0] or 100)
+                self.serve_json(collectors.job_timeline(job_id=job_id, limit=limit))
             else:
-                events = collectors.job_events(job_id, limit=100)
-                self.serve_json({"snapshot": snap, "events": events})
+                job_id = path[len("/api/jobs/") :]
+                snap = collectors.job_snapshot(job_id)
+                if snap is None:
+                    self.send_json_error("Job not found", 404)
+                else:
+                    events = collectors.job_events(job_id, limit=100)
+                    self.serve_json({"snapshot": snap, "events": events})
         elif path == "/api/jobs":
             limit = 20
             if "limit=" in parsed.query:
@@ -206,6 +249,35 @@ class DashboardHandler(BaseHTTPRequestHandler):
                     events = collectors.job_events(j["job_id"], limit=10)
                     active = {"snapshot": j, "events": events, "completed": True}
             self.serve_json({"active": active})
+        elif path == "/api/health":
+            scope = query.get("scope", ["all"])[0]
+            fixable = query.get("fixable", ["false"])[0].lower() in ("1", "true", "yes")
+            project_dir = query.get("project", [os.getcwd()])[0]
+            self.serve_json(
+                collectors.health_status(
+                    project_dir=project_dir,
+                    scope=scope,
+                    fixable=fixable,
+                )
+            )
+        elif path == "/api/active-job/timeline":
+            limit = int(query.get("limit", [100])[0] or 100)
+            self.serve_json(collectors.job_timeline(limit=limit))
+        elif path == "/api/recommendation":
+            mode = query.get("mode", ["balanced"])[0]
+            project_dir = query.get("project", [os.getcwd()])[0]
+            self.serve_json(
+                collectors.recommended_account_model(mode=mode, project_dir=project_dir)
+            )
+        elif path == "/api/quota-forecast":
+            window = query.get("window", ["24h"])[0]
+            strategy = query.get("strategy", ["hybrid"])[0]
+            self.serve_json(collectors.quota_forecast(window=window, strategy=strategy))
+        elif path == "/api/agent-matrix":
+            range_key = query.get("range", ["7d"])[0]
+            self.serve_json(collectors.agent_performance_matrix(range_key=range_key))
+        elif path == "/api/version":
+            self.serve_json({"ok": True, "version": _read_agykit_version(), "source": "agykit"})
         elif path == "/events":
             self.serve_events()
         else:
@@ -310,7 +382,7 @@ class DashboardHandler(BaseHTTPRequestHandler):
         import time
 
         try:
-            self._write_sse("meta", "connected")
+            self._write_sse("meta", json.dumps({"state": "connected"}))
         except (BrokenPipeError, ConnectionResetError):
             return
 

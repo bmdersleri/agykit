@@ -100,6 +100,61 @@ def test_events_first_line():
         srv.shutdown()
 
 
+def test_check_mtimes_maps_selective_refresh(monkeypatch, tmp_path):
+    project = tmp_path / "project"
+    home = tmp_path / "home"
+    project.mkdir()
+    home.mkdir()
+    monkeypatch.chdir(project)
+    monkeypatch.setenv("HOME", str(home))
+
+    server._MTIME_CACHE.clear()
+    job_db = str(tmp_path / "jobs.db")
+    quota_cache = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
+    statusline = os.path.expanduser("~/.gemini/antigravity-cli/statusline-latest.json")
+
+    monkeypatch.setattr(
+        server,
+        "resolve_job_state",
+        lambda: {
+            "db_path": job_db,
+            "state_dir": str(tmp_path / "state"),
+            "socket_path": str(tmp_path / "sock"),
+            "old_job_dir": str(tmp_path / "state" / "agykit-jobs"),
+        },
+    )
+
+    changed = {
+        job_db,
+        quota_cache,
+        statusline,
+        os.path.expanduser("~/.claude/stats-cache.json"),
+        os.path.expanduser("~/.claude/history.jsonl"),
+        os.path.expanduser("~/.codex/history.jsonl"),
+        os.path.expanduser("~/.codex/session_index.jsonl"),
+        os.path.expanduser("~/.codex/state_5.sqlite"),
+        os.path.join(str(project), ".agykit.conf"),
+        os.path.join(str(project), "CLAUDE_AGY_SYSTEM.md"),
+        os.path.join(str(project), "CODEX_AGY_SYSTEM.md"),
+    }
+
+    def fake_get_mtime(path):
+        return 100.0 if path in changed else 0.0
+
+    def fake_newest_glob(pattern):
+        return 100.0 if "transcript_full.jsonl" in pattern else 0.0
+
+    monkeypatch.setattr(server, "_get_mtime", fake_get_mtime)
+    monkeypatch.setattr(server, "_newest_glob", fake_newest_glob)
+
+    events = server._check_mtimes()
+
+    assert {"job", "forecast", "recommendation", "agent-matrix"}.issubset(events)
+    assert {"quota", "health"}.issubset(events)
+    assert "claude" in events
+    assert "codex" in events
+
+
 # ---------------------------------------------------------------------------
 # new widget endpoints
 # ---------------------------------------------------------------------------
@@ -198,7 +253,7 @@ def test_api_codex_usage(monkeypatch, tmp_path):
 
 def test_api_quota_alerts(monkeypatch):
     monkeypatch.setattr(
-        "dashboard.collectors.agy.agy_model_quota",
+        "dashboard.collectors.agy_model_quota",
         lambda: {
             "accounts": [
                 {
@@ -232,3 +287,92 @@ def test_api_quota_alerts(monkeypatch):
             assert "alerts" in data
         finally:
             srv.shutdown()
+
+
+def test_api_health_route(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.health_status",
+        lambda **kwargs: {
+            "ok": True,
+            "generated_at": "2026-06-03T12:00:00+00:00",
+            "source": "agykit",
+            "stale": False,
+            "overall_status": "ok",
+            "summary": {"passed": 1, "warnings": 0, "critical": 0},
+            "checks": [],
+        },
+    )
+    srv = _boot()
+    try:
+        r = _get(srv.server_address[1], "/api/health")
+        assert r.status == 200
+        data = json.loads(r.read())
+        assert data["ok"] is True
+        assert data["overall_status"] == "ok"
+    finally:
+        srv.shutdown()
+
+
+def test_api_active_job_timeline_route(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.job_timeline",
+        lambda **kwargs: {
+            "ok": True,
+            "generated_at": "2026-06-03T12:00:00+00:00",
+            "source": "agykit",
+            "stale": False,
+            "job_id": "jid-1",
+            "snapshot": {"status": "running"},
+            "timeline": [],
+            "metrics": {"elapsed_seconds": 1},
+            "warning": None,
+        },
+    )
+    srv = _boot()
+    try:
+        r = _get(srv.server_address[1], "/api/active-job/timeline")
+        assert r.status == 200
+        data = json.loads(r.read())
+        assert data["job_id"] == "jid-1"
+    finally:
+        srv.shutdown()
+
+
+def test_api_recommendation_route(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.recommended_account_model",
+        lambda **kwargs: {
+            "ok": True,
+            "generated_at": "2026-06-03T12:00:00+00:00",
+            "source": "agykit",
+            "stale": False,
+            "mode": kwargs.get("mode", "balanced"),
+            "recommendation": {"account": "a@example.com", "model": "gemini-2.5-flash"},
+            "alternatives": [],
+            "rejected": [],
+            "signals": {},
+            "warning": None,
+        },
+    )
+    srv = _boot()
+    try:
+        r = _get(srv.server_address[1], "/api/recommendation?mode=reliability")
+        assert r.status == 200
+        data = json.loads(r.read())
+        assert data["mode"] == "reliability"
+        assert data["recommendation"]["account"] == "a@example.com"
+    finally:
+        srv.shutdown()
+
+
+def test_api_version_route():
+    srv = _boot()
+    try:
+        r = _get(srv.server_address[1], "/api/version")
+        assert r.status == 200
+        data = json.loads(r.read())
+        assert data["ok"] is True
+        assert data["version"] == "1.3.1"
+        assert data["source"] == "agykit"
+    finally:
+        srv.shutdown()

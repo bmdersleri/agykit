@@ -1,0 +1,13 @@
+{
+  "job_id": "20260603T144522-a1b2c3",
+  "command": "agykit do-escalate \"refactor parser\"",
+  "status": "succeeded",
+  "stage": "done",
+  "account": "a@example.com",
+  "model": "gemini-2.5-pro",
+  "prompt": "Refactor the parser.",
+  "started_at": "2026-06-03T14:45:22+03:00",
+  "updated_at": "2026-06-03T14:52:12+03:00",
+  "ended_at": "2026-06-03T14:52:12+03:00",
+  "owner_pid": 12345
+}

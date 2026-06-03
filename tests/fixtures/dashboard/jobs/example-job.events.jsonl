@@ -1,0 +1,6 @@
+{"event": "job_started", "status": "starting", "stage": "starting", "account": null, "model": null, "ts": "2026-06-03T14:45:22+03:00", "message": "Prompt accepted."}
+{"event": "account_selected", "status": "running", "stage": "running", "account": "a@example.com", "model": null, "ts": "2026-06-03T14:45:23+03:00", "message": "Best available quota."}
+{"event": "model_selected", "status": "running", "stage": "running", "account": "a@example.com", "model": "gemini-2.5-flash", "ts": "2026-06-03T14:45:25+03:00", "message": "First ladder step."}
+{"event": "verify_started", "status": "verifying", "stage": "verifying", "account": "a@example.com", "model": "gemini-2.5-flash", "ts": "2026-06-03T14:47:10+03:00", "message": "Running AGYKIT_VERIFY."}
+{"event": "verify_passed", "status": "verifying", "stage": "verifying", "account": "a@example.com", "model": "gemini-2.5-flash", "ts": "2026-06-03T14:48:00+03:00", "message": "Verify passed."}
+{"event": "job_succeeded", "status": "succeeded", "stage": "done", "account": "a@example.com", "model": "gemini-2.5-pro", "ts": "2026-06-03T14:52:12+03:00", "message": "Job completed."}
