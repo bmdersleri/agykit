@@ -1,108 +1,109 @@
-# agykit — Claude Bağlamı
+# agykit — Claude Context
 
-Portable Antigravity (agy) CLI yöneticisi. Çoklu hesap rotasyonu, kota-bilinçli
-sıralama, model merdiveni yükseltmesi, kullanım panosu.
+Portable Antigravity (agy) CLI manager. Multi-account rotation, quota-aware
+sorting, model ladder escalation, usage dashboard.
 
-İşlem yapmadan önce `.claude/memory.md` oku.
+Read `.claude/memory.md` before taking any action.
 
-## Kesin Kısıtlamalar
+## Hard Constraints
 
-- **Sıfır pip bağımlılığı.** Yalnızca Python 3 stdlib (http.server, json, glob, argparse, webbrowser, datetime, urllib). FastAPI/uvicorn/flask/pip YOK.
-- Yalnızca `127.0.0.1`'e bağla. `~/.claude` ve `~/.gemini` üzerinde salt okunur.
-- `agykit` bash değişiklikleri için mevcut stili koru: `cmd_*` fonksiyonları + dispatch case.
-- Web katmanı: vanilla JS/HTML/CSS. Framework yok.
+- **Zero pip dependencies.** Python 3 stdlib only (http.server, json, glob, argparse, webbrowser, datetime, urllib). No FastAPI/uvicorn/flask/pip.
+- Bind to `127.0.0.1` only. Read-only access to `~/.claude` and `~/.gemini`.
+- Preserve existing style for `agykit` bash changes: `cmd_*` functions + dispatch case.
+- Web layer: vanilla JS/HTML/CSS. No frameworks.
 
 ## Test
 
 ```bash
-python3 -m pytest tests -q      # dashboard testleri
-bash tests/run.sh                # bash güvenlik süitleri
+python3 -m pytest tests -q      # dashboard tests
+bash tests/run.sh                # bash safety suites
 ```
 
-İkisi de yeşil kalmalı.
+Both must stay green.
 
-## Temel Dosyalar
+## Key Files
 
-- `agykit` — tek bash betiği, ana CLI
-- `dashboard/server.py` — Python stdlib HTTP/SSE sunucusu
-- `dashboard/collectors/` — veri toplayıcılar (agy snapshot, statusline, quota, activity)
+- `agykit` — single bash script, main CLI
+- `dashboard/server.py` — Python stdlib HTTP/SSE server
+- `dashboard/collectors/` — data collectors (agy snapshot, statusline, quota, activity)
 - `web/app.js` — dashboard frontend JS
-- `web/style.css` — dashboard stilleri
-- `CLAUDE_AGY_SYSTEM.md` — agy delege kuralları (agy için, Claude için değil)
+- `web/style.css` — dashboard styles
+- `CLAUDE_AGY_SYSTEM.md` — agy delegation rules (for agy, not Claude)
 
-## CLI Referansı
+## CLI Reference
 
-### Hesap Yönetimi
+### Account Management
 ```bash
-agykit whoami                  # aktif hesap e-postası
-agykit account-list            # kayıtlı snapshot'lar
-agykit switch <email>          # hesap değiştir (keyring + snapshot)
-agykit account-save            # mevcut oturumu kaydet
-agykit account-add             # yeni hesap: agy başlat → giriş → kaydet
-agykit account-remove <email>  # snapshot sil (aktif hesap silinemez)
+agykit whoami                  # active account email
+agykit account-list            # saved snapshots
+agykit switch <email>          # switch account (keyring + snapshot)
+agykit account-save            # snapshot current session
+agykit account-add             # new account: launch agy → login → snapshot
+agykit account-remove <email>  # remove snapshot (cannot remove active account)
 ```
 
-### Görev Delegasyonu
+### Task Delegation
 ```bash
-agykit run "prompt"            # basit sorgu/açıklama — kota-bilinçli rotasyon
-agykit do-escalate "prompt"    # kod görevi — verify fail → model ladder
+agykit run "prompt"            # simple query/explanation — quota-aware rotation
+agykit do-escalate "prompt"    # code task — verify fail → model ladder
 ```
 
-**`run` ne zaman:** Açıklama, araştırma, tek adımlı iş. Verify gerekmez.  
-**`do-escalate` ne zaman:** Kod değişikliği + `AGYKIT_VERIFY` tanımlı (test/lint). Başarısız olursa sıradaki modele yükseltir.
+**When `run`:** Explanation, research, single-step work. No verify needed.  
+**When `do-escalate`:** Code change + `AGYKIT_VERIFY` defined (test/lint). Escalates to next model on failure.
 
-Model merdiveni: Flash → Pro → Opus. Her aşamada git snapshot alır, başarısız olursa WIP restore eder.
+Model ladder: Flash → Pro → Opus. Git snapshot at each stage; restores WIP on failure.
 
-### İzleme
+### Monitoring
 ```bash
-agykit status                  # tek satır: hesap | model | kota özeti
-agykit quota                   # model kota tablosu (5dk cache)
-agykit quota --refresh         # cache yenile
-agykit quota --status          # script için tek satır
-agykit log [N]                 # son N ops log satırı (default: 20)
-agykit dash [--port N]         # kullanım dashboard'u (localhost:7373)
+agykit status                  # one-liner: account | model | quota summary
+agykit quota                   # model quota table (5min cache)
+agykit quota --refresh         # refresh cache
+agykit quota --status          # one-line for scripts
+agykit log [N]                 # last N ops log entries (default: 20)
+agykit dash [--port N]         # usage dashboard (localhost:7373)
 ```
 
 ### Ops Log (`~/.gemini/agykit-ops.log`)
-Her `run` / `do-escalate` çağrısını JSONL formatında loglar:
+Every `run` / `do-escalate` call logged as JSONL:
 ```json
 {"ts":"2026-05-31T10:00:00Z","cmd":"run","status":"success","account":"x@y.com","model":"","prompt":"..."}
 ```
-`status` değerleri: `success` | `quota-rotate` | `exhausted` | `verify-failed` | `all-exhausted`  
-Rotasyon: dosya >512KB olduğunda son 400 satıra kırpılır.
+`status` values: `success` | `quota-rotate` | `exhausted` | `verify-failed` | `all-exhausted`  
+Rotation: file trimmed to last 400 lines when >512KB.
 
-### Proje Kurulumu
+### Project Setup
 ```bash
-agykit init                    # .agykit.conf + CLAUDE_AGY_SYSTEM.md scaffold
-agykit doctor                  # bağımlılık + yapılandırma kontrolü
-agykit doctor --fix            # otomatik düzeltilebilir sorunları çöz
+agykit init                    # scaffold .agykit.conf + CLAUDE_AGY_SYSTEM.md
+agykit doctor                  # check dependencies and configuration
+agykit doctor --fix            # auto-fix resolvable issues
 ```
 
-### Konfigürasyon (`.agykit.conf` veya env)
-| Değişken | Açıklama | Default |
+### Configuration (`.agykit.conf` or env)
+| Variable | Description | Default |
 |---|---|---|
-| `AGYKIT_VERIFY` | verify komutu (`do-escalate` için) | — |
-| `AGYKIT_SYSTEM` | sistem bağlam dosyası yolu | — |
-| `AGYKIT_FLAGS` | agy'ye ek flagler | `--dangerously-skip-permissions` |
-| `AGYKIT_TIMEOUT` | `--print-timeout` değeri | `15m` |
-| `AGYKIT_TERSE` | çıktı kısaltma seviyesi | `ultra` |
+| `AGYKIT_VERIFY` | verify command (required for `do-escalate`) | — |
+| `AGYKIT_SYSTEM` | system context file path | — |
+| `AGYKIT_FLAGS` | extra flags passed to agy | `--dangerously-skip-permissions` |
+| `AGYKIT_TIMEOUT` | `--print-timeout` value | `15m` |
+| `AGYKIT_TERSE` | output verbosity level | `ultra` |
 
-### `AGYKIT_FLAGS` — `--add-dir` Tuzağı
+### `AGYKIT_FLAGS` — `--add-dir` Trap
 
-`--add-dir` flagleri workspace scan başlatır. `_agy_ping` bu flagleri otomatik çıkarır
-ve `/tmp`'den koşar — böylece proje dizini keşfedilmez ve 30s timeout'a çarpmaz.
-`--dangerously-skip-permissions` `/tmp`'de sorun çıkarmaz (işlenecek dosya yok).
+`--add-dir` flags trigger workspace scan. `_agy_ping` automatically strips them
+and runs from `/tmp` — so the project directory is never scanned and the 30s
+timeout is never hit. `--dangerously-skip-permissions` is harmless in `/tmp`
+(no files to process, no tool loop).
 
-**Hesap rotasyonu davranışı:**
-1. Dashboard quota cache'i stale olabilir → `available` gösterip gerçekte exhausted hesap olabilir
-2. Bu yüzden `_agy_ping` her hesap için çalışır (30s) — cache'e güvenmez
-3. Ping fail → hesap skip, bir sonrakine geç (hang yok)
-4. Tüm hesaplar ping fail → job `blocked/failed` durumuna geçer, 15dk hang yaşanmaz
+**Account rotation behavior:**
+1. Dashboard quota cache can be stale → shows `available` but account is actually exhausted
+2. `_agy_ping` runs for every account (30s) — does not trust the cache
+3. Ping fail → skip account immediately, try next (no hang)
+4. All accounts ping fail → job enters `blocked/failed`, no 15min hang
 
-## Delege Kuralları (agy için)
+## Delegation Rules (for agy)
 
-Bir görev `agykit do-escalate` veya `run` ile devredildiğinde:
-- Verilen plan/test kontratına birebir uy.
-- Testleri silme/değiştirme/zayıflatma.
-- `git` komutu çalıştırma.
-- Yalnızca implementation dosyalarını düzenle.
+When a task is delegated via `agykit do-escalate` or `run`:
+- Follow the given plan/test contract exactly.
+- Do not delete, modify, or weaken tests.
+- Do not run `git` commands.
+- Edit only implementation files.
