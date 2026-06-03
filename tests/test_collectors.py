@@ -1857,6 +1857,58 @@ def test_quota_forecast_reports_eta(monkeypatch):
     assert result["overall_risk"] in {"low", "medium", "high", "critical", "unknown"}
 
 
+def test_quota_forecast_matches_model_family_history(monkeypatch):
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.agy_model_quota",
+        lambda: {
+            "accounts": [
+                {
+                    "email": "a@example.com",
+                    "models": [
+                        {
+                            "model_id": "gemini-2.5-flash",
+                            "display_name": "Gemini 2.5 Flash",
+                            "pct_remaining": 42,
+                            "remaining_fraction": 0.42,
+                            "resets_in_seconds": 3600,
+                        }
+                    ],
+                }
+            ],
+            "warning": None,
+        },
+    )
+    monkeypatch.setattr(
+        "dashboard.collectors.insights.job_list",
+        lambda limit=500: [
+            {
+                "job_id": "1",
+                "account": "a@example.com",
+                "model": "Gemini 3.5 Flash (Medium)",
+                "status": "succeeded",
+                "started_at": "2026-06-03T10:00:00+00:00",
+                "duration_seconds": 120,
+            },
+            {
+                "job_id": "2",
+                "account": "a@example.com",
+                "model": "Gemini 3.5 Flash (Medium)",
+                "status": "failed",
+                "started_at": "2026-06-03T11:00:00+00:00",
+                "duration_seconds": 240,
+                "error_category": "quota",
+            },
+        ],
+    )
+
+    result = collectors.quota_forecast(window="24h", strategy="hybrid")
+    model = result["accounts"][0]["models"][0]
+
+    assert model["estimated_jobs_remaining"] is not None
+    assert any("Matched 2 recent jobs" in note for note in model["notes"])
+    assert result["recommendations"]
+
+
 def test_agent_matrix_composes_known_sources(monkeypatch):
     monkeypatch.setattr(
         "dashboard.collectors.insights.job_stats",
@@ -1927,6 +1979,11 @@ def test_agent_matrix_composes_known_sources(monkeypatch):
     assert len(result["agents"]) == 4
     agy = next(a for a in result["agents"] if a["agent"] == "agy")
     assert agy["success_rate"] is not None
+    codex = next(a for a in result["agents"] if a["agent"] == "codex")
+    claude = next(a for a in result["agents"] if a["agent"] == "Claude Code")
+    assert codex["tokens_per_success"] is not None
+    assert claude["tokens_per_success"] is not None
+    assert result["summary"]["lowest_tokens_per_success"] in {"codex", "Claude Code"}
     assert result["summary"]["most_used_agent"] in {"agy", "codex", "Claude Code"}
 
 

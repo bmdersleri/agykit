@@ -2,6 +2,7 @@ import datetime as _dt
 import importlib.util
 import json
 import os
+import re
 import shutil
 import stat
 from collections import Counter, defaultdict
@@ -691,36 +692,40 @@ def _group_job_history(history: Iterable[dict]) -> dict[tuple[str, str], dict]:
     for job in history:
         account = job.get("account") or ""
         model = job.get("model") or ""
-        if not account and not model:
+        model_keys = _model_match_keys(model)
+        if not account and not model_keys:
             continue
-        key = (account, model)
-        bucket = grouped.setdefault(
-            key,
-            {
-                "jobs": 0,
-                "success": 0,
-                "failed": 0,
-                "blocked": 0,
-                "durations": [],
-                "last_used": None,
-                "verify_failed": 0,
-            },
-        )
-        bucket["jobs"] += 1
         status = job.get("status") or ""
-        if status == "succeeded":
-            bucket["success"] += 1
-        elif status == "blocked":
-            bucket["blocked"] += 1
-        elif status == "failed":
-            bucket["failed"] += 1
-        if job.get("duration_seconds") is not None:
-            bucket["durations"].append(float(job.get("duration_seconds") or 0))
+        duration = float(job.get("duration_seconds") or 0) if job.get("duration_seconds") is not None else None
         started_at = _parse_iso(job.get("started_at"))
-        if started_at and (bucket["last_used"] is None or started_at > bucket["last_used"]):
-            bucket["last_used"] = started_at
-        if (job.get("error_category") or "") == "verify":
-            bucket["verify_failed"] += 1
+        verify_failed = 1 if (job.get("error_category") or "") == "verify" else 0
+        for model_key in model_keys:
+            key = (account, model_key)
+            bucket = grouped.setdefault(
+                key,
+                {
+                    "jobs": 0,
+                    "success": 0,
+                    "failed": 0,
+                    "blocked": 0,
+                    "durations": [],
+                    "last_used": None,
+                    "verify_failed": 0,
+                },
+            )
+            bucket["jobs"] += 1
+            if status == "succeeded":
+                bucket["success"] += 1
+            elif status == "blocked":
+                bucket["blocked"] += 1
+            elif status == "failed":
+                bucket["failed"] += 1
+            if duration is not None:
+                bucket["durations"].append(duration)
+            if started_at and (bucket["last_used"] is None or started_at > bucket["last_used"]):
+                bucket["last_used"] = started_at
+            if verify_failed:
+                bucket["verify_failed"] += 1
     return grouped
 
 
@@ -745,6 +750,28 @@ def _model_family(model: str) -> str:
     if "flash" in name or "haiku" in name or "mini" in name:
         return "fast"
     return "general"
+
+
+def _model_match_keys(model: str) -> list[str]:
+    raw = re.sub(r"[^a-z0-9]+", " ", (model or "").lower()).strip()
+    keys: list[str] = []
+    if raw:
+        keys.append(raw)
+
+    family = _model_family(model)
+    if family and family not in keys:
+        keys.append(family)
+
+    return keys
+
+
+def _lookup_job_history(grouped: dict[tuple[str, str], dict], account: str, model: str) -> dict | None:
+    account_key = account or ""
+    for model_key in _model_match_keys(model):
+        hist = grouped.get((account_key, model_key))
+        if hist:
+            return hist
+    return None
 
 
 def _default_model_for_mode(mode: str) -> str:
@@ -975,7 +1002,7 @@ def recommended_account_model(
                 {"model_id": "gemini-2.5-pro", "display_name": "gemini-2.5-pro", "pct_remaining": None},
             ]
         for model in models:
-            hist = grouped.get((email, model.get("model_id") or model.get("display_name") or ""))
+            hist = _lookup_job_history(grouped, email, model.get("model_id") or model.get("display_name") or "")
             score, payload, _, warnings = _score_candidate(
                 account=account_meta,
                 model=model,
@@ -1107,6 +1134,7 @@ def quota_forecast(
 
     history = _load_job_history(days=max(1, min(30, hours // 24 + 1 if hours >= 24 else 1)), limit=500)
     grouped = _group_job_history(history)
+    total_history_jobs = len(history)
     quota_cache_path = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
 
     try:
@@ -1131,7 +1159,7 @@ def quota_forecast(
                 quota_pct = float(model.get("remaining_fraction") or 0) * 100.0
             quota_pct = None if quota_pct is None else float(quota_pct)
 
-            hist = grouped.get((email or "", model_name))
+            hist = _lookup_job_history(grouped, email or "", model_name)
             job_count = hist["jobs"] if hist else 0
             fail_count = (hist["failed"] + hist["blocked"]) if hist else 0
             total_hours = max(1.0, hours)
@@ -1147,14 +1175,20 @@ def quota_forecast(
             eta_hours = (quota_pct / burn_rate) if quota_pct is not None and burn_rate and burn_rate > 0 else None
             if eta_hours is not None and avg_duration:
                 estimated_jobs_remaining = int(max(0, round((eta_hours * 3600) / avg_duration)))
+            elif eta_hours is not None and jobs_per_hour > 0:
+                estimated_jobs_remaining = int(max(0, round(eta_hours * jobs_per_hour)))
             elif quota_pct is not None and job_count:
                 estimated_jobs_remaining = int(max(0, round(quota_pct / max(1.0, 100.0 / max(1, job_count)))))
+            elif quota_pct is not None and total_history_jobs > 0:
+                estimated_jobs_remaining = int(max(0, round((quota_pct / 100.0) * max(1, total_history_jobs))))
             else:
                 estimated_jobs_remaining = None
 
             risk = _risk_from_eta(eta_hours, quota_pct)
             confidence = "high" if hist and hist["jobs"] >= 5 else "medium" if hist and hist["jobs"] >= 2 else "low"
             notes = [f"Forecast based on the last {hours}h of local job history."]
+            if hist and hist["jobs"]:
+                notes.append(f"Matched {hist['jobs']} recent jobs for this account/model family.")
             if burn_rate is not None:
                 notes.append(f"Estimated burn rate: {burn_rate:.1f}%/hour.")
             if hist and hist["verify_failed"]:
@@ -1199,6 +1233,24 @@ def quota_forecast(
                         f"Use {acct['account']} / {model['model']} for routine work while quota remains healthy."
                     )
 
+    if not recommendations:
+        best_candidate: tuple[tuple[int, float, str, str], str, str] | None = None
+        for acct in accounts:
+            for model in acct["models"]:
+                candidate = (
+                    -overall_risk_rank.get(model["risk"], 0),
+                    float(model.get("remaining_percent") if model.get("remaining_percent") is not None else -1),
+                    acct.get("account") or "",
+                    model.get("model") or "",
+                )
+                if best_candidate is None or candidate > best_candidate[0]:
+                    best_candidate = (candidate, acct.get("account") or "", model.get("model") or "")
+        if best_candidate:
+            _, account_name, model_name = best_candidate
+            recommendations.append(
+                f"Use {account_name} / {model_name} for routine work; preserve stronger models for verification retries."
+            )
+
     if not accounts:
         overall_risk = "unknown"
 
@@ -1220,10 +1272,18 @@ def quota_forecast(
     }
 
 
-def _agent_tokens_per_success(tokens_total: int | None, jobs_succeeded: int | None) -> int | None:
-    if tokens_total is None or not jobs_succeeded:
+def _agent_tokens_per_success(
+    tokens_total: int | None,
+    jobs_succeeded: int | None,
+    jobs_total: int | None,
+) -> int | None:
+    if tokens_total is None:
         return None
-    return int(round(tokens_total / jobs_succeeded)) if jobs_succeeded else None
+    if jobs_succeeded:
+        return int(round(tokens_total / jobs_succeeded))
+    if jobs_total:
+        return int(round(tokens_total / jobs_total))
+    return None
 
 
 def _normalize_distribution(counter: Counter[str]) -> dict[str, float]:
@@ -1271,7 +1331,7 @@ def agent_performance_matrix(
         "avg_duration_seconds": agy_avg_duration,
         "verify_failures": agy_verify_failures,
         "rollback_count": None,
-        "tokens_per_success": _agent_tokens_per_success(agy_tokens_total, agy_success),
+        "tokens_per_success": _agent_tokens_per_success(agy_tokens_total, agy_success, job_total),
         "top_model": top_model,
         "model_distribution": _normalize_distribution(job_models),
         "risk_notes": [],
@@ -1281,6 +1341,8 @@ def agent_performance_matrix(
         agy_agent["risk_notes"].append("Success rate is below 85%.")
     if agy_agent["verify_failures"]:
         agy_agent["risk_notes"].append("Verify failures still occur in local jobs.")
+    if agy_agent["tokens_per_success"] is None:
+        agy_agent["risk_notes"].append("Token efficiency data is unavailable for agy jobs.")
 
     codex = codex_usage(limit=10)
     codex_summary = codex.get("summary", {})
@@ -1295,12 +1357,14 @@ def agent_performance_matrix(
         "avg_duration_seconds": None,
         "verify_failures": None,
         "rollback_count": None,
-        "tokens_per_success": None,
+        "tokens_per_success": _agent_tokens_per_success(codex_summary.get("tokens_used", 0), None, codex_summary.get("sessions", 0)),
         "top_model": codex_summary.get("models", [None])[0] if codex_summary.get("models") else (codex.get("recent_threads", [{}])[0].get("model") if codex.get("recent_threads") else None),
         "model_distribution": _normalize_distribution(codex_models),
         "risk_notes": [codex.get("warning")] if codex.get("warning") else [],
         "confidence": "high" if codex_summary.get("sessions", 0) >= 5 else "medium" if codex_summary.get("sessions", 0) >= 2 else "low",
     }
+    if codex_agent["tokens_per_success"] is not None:
+        codex_agent["risk_notes"].append("Efficiency uses session count because success totals are not exposed by Codex data.")
 
     claude_series_data = claude_series(range_key="30d")
     claude_quota_data = claude_quota()
@@ -1319,12 +1383,14 @@ def agent_performance_matrix(
         "avg_duration_seconds": None,
         "verify_failures": None,
         "rollback_count": None,
-        "tokens_per_success": None,
+        "tokens_per_success": _agent_tokens_per_success(claude_total_tokens, None, claude_sessions),
         "top_model": claude_models.most_common(1)[0][0] if claude_models else None,
         "model_distribution": _normalize_distribution(claude_models),
         "risk_notes": [claude_quota_data.get("warning")] if claude_quota_data.get("warning") else [],
         "confidence": "high" if claude_sessions >= 5 else "medium" if claude_sessions >= 2 else "low",
     }
+    if claude_agent["tokens_per_success"] is not None:
+        claude_agent["risk_notes"].append("Efficiency uses session count because Claude does not expose success totals here.")
 
     opencode_home = os.path.expanduser(os.environ.get("AGYKIT_DASH_OPENCODE_HOME", "~/.config/opencode"))
     opencode_history_candidates = [

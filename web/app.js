@@ -1843,6 +1843,7 @@
                             <div>${model.remaining_percent != null ? `${model.remaining_percent}%` : '—'}</div>
                             <div>${model.burn_rate_percent_per_hour != null ? `${model.burn_rate_percent_per_hour}%/h` : '—'}</div>
                             <div class="forecast-risk-${String(model.risk || 'unknown')}">${escapeHtml(model.eta_label || 'unknown')}</div>
+                            <div>${model.estimated_jobs_remaining != null ? `${model.estimated_jobs_remaining} jobs` : '—'}</div>
                             <div>${model.reset_in_seconds > 0 ? fmtSec(Number(model.reset_in_seconds)) : '—'}</div>
                             <div class="forecast-confidence">${escapeHtml(String(model.confidence || 'unknown'))}</div>
                         </div>
