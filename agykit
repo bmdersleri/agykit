@@ -166,10 +166,13 @@ try:
     from dashboard import collectors
     status = {a['email']: a.get('status', 'available')
               for a in collectors.agy_quota_status().get('accounts', [])}
-    emails.sort(key=lambda e: 0 if status.get(e, 'available') == 'available' else 1)
+    available = [e for e in emails if status.get(e, 'available') == 'available']
+    exhausted = [e for e in emails if status.get(e, 'available') != 'available']
+    # Skip exhausted accounts entirely; fall back to all if none are available
+    result = available if available else emails
+    print('\n'.join(result))
 except Exception:
-    pass
-print('\n'.join(emails))
+    print('\n'.join(emails))
 PY
 }
 
