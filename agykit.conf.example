@@ -14,6 +14,11 @@ AGYKIT_FLAGS="--add-dir $PWD --dangerously-skip-permissions"
 # agy print timeout (optional, default 15m)
 AGYKIT_TIMEOUT="15m"
 
+# Hard job ceiling in seconds (optional, default 1800). Past this a job is
+# reaped and SIGTERM'd regardless of its owner PID — the runaway backstop.
+# Keep >= AGYKIT_TIMEOUT or long agy runs get cut off mid-flight. 0/empty = off.
+AGYKIT_JOB_TIMEOUT="1800"
+
 # Terse (caveman-style) output for `agykit run` — saves output tokens, quota
 # lasts longer. Only affects run/ask explanation prompts, NOT do-escalate code.
 # Levels: 0/off | lite | full | ultra  (default: ultra)

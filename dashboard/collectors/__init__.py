@@ -35,6 +35,7 @@ from .jobs import (
     job_list,
     job_set_verify_result,
     job_stats,
+    recover_stale_jobs,
 )
 
 __all__ = [
@@ -74,4 +75,5 @@ __all__ = [
     "job_events",
     "job_list",
     "job_set_verify_result",
+    "recover_stale_jobs",
 ]

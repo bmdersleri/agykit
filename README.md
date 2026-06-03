@@ -177,6 +177,7 @@ agykit jobs --since 24h        Filter jobs by time range
 agykit jobs --json             Machine-readable JSON job output
 agykit stats                   Job statistics (total, by status, last 24h)
 agykit watch <job-id>          Live-stream a running job (TUI or terminal)
+agykit wait [job-id]           Block until a job ends (exit 0=ok 1=fail 2=timeout)
 agykit tail                    Live-tail all job events (socket)
 agykit cancel <job-id>         Cancel a running/starting job
 agykit cancel --all            Cancel all in-progress jobs
@@ -222,6 +223,7 @@ agykit jobs --since 24h      # filter by time range
 agykit jobs --json           # machine-readable output
 agykit stats                 # job statistics summary
 agykit watch <job-id>        # live-stream (TUI via Textual, polling fallback)
+agykit wait [job-id]         # block until terminal; scriptable exit code
 agykit tail                  # live-tail all job events (socket)
 agykit cancel <job-id>       # cancel a running job
 agykit cancel --all          # cancel all in-progress jobs
@@ -252,6 +254,31 @@ job store to a writable temp directory and keeps using that automatically.
 | `rollback_started` | Git rollback in progress |
 | `job_succeeded` | Final success |
 | `job_failed` | All accounts or all models exhausted |
+| `job_timed_out` | Exceeded `AGYKIT_JOB_TIMEOUT` — reaped (and SIGTERM'd by the daemon) |
+| `job_blocked` (stage `recovered`) | Owner process gone while job was active — reaped |
+
+`run` and `do-escalate` are **synchronous**, so the agykit shell that launched
+the job is recorded as its `owner_pid`. Recovery uses that PID as ground truth:
+a job whose owner is still alive is **never** marked stale, no matter how long
+agy works silently; a job whose owner has died is reaped at once instead of
+waiting out the 5-minute idle window. The hard `AGYKIT_JOB_TIMEOUT` ceiling
+still applies regardless of PID as a runaway backstop.
+
+### Waiting for completion (scripting)
+
+`agykit watch` is an interactive TUI. To gate a script on a job, use `wait`:
+
+```bash
+agykit do-escalate "implement X"      # prints "==> job: <id>" up front
+agykit wait                           # waits on the most-recent job
+echo $?                               # 0 succeeded · 1 failed · 2 wait timed out
+
+agykit wait <job-id> --timeout 1800   # give up after 30 min (exit 2)
+```
+
+`wait` is the supported completion signal for orchestrators (CI, Claude Code,
+cron) — poll-free and exit-code driven. It runs the same PID-aware recovery each
+tick, so a crashed run resolves to `failed` promptly rather than hanging.
 
 ### Storage layout
 
@@ -438,6 +465,7 @@ Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 | `AGYKIT_SYSTEM` | Path to system-context file injected into prompts | Agent-detected: `CLAUDE_AGY_SYSTEM.md`, `CODEX_AGY_SYSTEM.md`, or `OPENCODE_AGY_SYSTEM.md` (also reads `.opencode/commands/agykit.md`) |
 | `AGYKIT_FLAGS` | Extra agy flags | `--dangerously-skip-permissions` |
 | `AGYKIT_TIMEOUT` | agy print timeout | `15m` |
+| `AGYKIT_JOB_TIMEOUT` | Hard job ceiling (s); past this a job is reaped + SIGTERM'd regardless of PID. `0`/empty disables. Keep **≥ `AGYKIT_TIMEOUT`** or long agy runs get cut mid-flight | `1800` |
 | `AGYKIT_TERSE` | Terse output level: `0`/`lite`/`full`/`ultra` | `ultra` |
 | `AGYKIT_QUOTA_ALERT_PCT` | Warn when model quota drops below N% | — |
 

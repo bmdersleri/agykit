@@ -1169,7 +1169,8 @@ def test_recover_stale_jobs_marks_old_active(tmp_path, monkeypatch):
     jobs = job_list()
     snap = next((j for j in jobs if j["job_id"] == jid), None)
     assert snap is not None
-    assert snap["status"] == "blocked"
+    # Unified recovery semantic: stale + dead owner (no owner_pid → dead) → failed.
+    assert snap["status"] == "failed"
     assert snap["stage"] == "recovered"
 
 
@@ -1186,6 +1187,142 @@ def test_recover_stale_jobs_skips_recent(tmp_path, monkeypatch):
     snap = next((j for j in jobs if j["job_id"] == jid), None)
     assert snap is not None
     assert snap["status"] == "starting"
+
+
+def test_job_create_persists_owner_pid(tmp_path, monkeypatch):
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    import os
+    from dashboard.collectors.jobs import job_create, job_snapshot
+
+    jid = job_create("do-escalate", "p", os.getpid())
+    assert job_snapshot(jid)["owner_pid"] == os.getpid()
+
+
+def test_pid_alive_edge_cases():
+    import os
+    from dashboard.collectors.jobs import _pid_alive
+
+    assert _pid_alive(os.getpid()) is True
+    assert _pid_alive(None) is False
+    assert _pid_alive("") is False
+    assert _pid_alive(0) is False
+    assert _pid_alive(-1) is False
+    assert _pid_alive("garbage") is False
+    assert _pid_alive(2**31) is False  # out of range → dead, not a crash
+
+
+def _age_job(tmp_path, jid):
+    """Force a job's updated_at far into the past so it counts as stale."""
+    import sqlite3
+
+    conn = sqlite3.connect(_job_db_path(tmp_path))
+    conn.execute(
+        "UPDATE jobs SET updated_at='2000-01-01T00:00:00' WHERE job_id=?", (jid,)
+    )
+    conn.commit()
+    conn.close()
+
+
+def test_recover_preserves_live_owner(tmp_path, monkeypatch):
+    """Core bug fix: a stale job whose owner is alive must NOT be reaped."""
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    monkeypatch.delenv("AGYKIT_JOB_TIMEOUT", raising=False)
+    import os
+    from dashboard.collectors.jobs import (
+        job_create,
+        job_snapshot,
+        recover_stale_jobs,
+        _get_db,
+    )
+
+    jid = job_create("do-escalate", "live", os.getpid())
+    _age_job(tmp_path, jid)
+    recovered = recover_stale_jobs(_get_db())
+    assert all(r["job_id"] != jid for r in recovered)
+    assert job_snapshot(jid)["status"] == "starting"
+
+
+def test_recover_reaps_dead_owner(tmp_path, monkeypatch):
+    """Stale job with a dead owner is recovered immediately (no 5-min wait)."""
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    monkeypatch.delenv("AGYKIT_JOB_TIMEOUT", raising=False)
+    from dashboard.collectors.jobs import (
+        job_create,
+        job_snapshot,
+        recover_stale_jobs,
+        _get_db,
+    )
+
+    jid = job_create("do-escalate", "dead", 2_000_000_000)  # non-existent pid
+    _age_job(tmp_path, jid)
+    recovered = recover_stale_jobs(_get_db())
+    assert any(r["job_id"] == jid and r["stage"] == "recovered" for r in recovered)
+    snap = job_snapshot(jid)
+    assert snap["status"] == "failed"
+    assert snap["stage"] == "recovered"
+
+
+def test_recover_reaps_null_owner(tmp_path, monkeypatch):
+    """No owner_pid (legacy/daemon-created job) reads as dead → recovered."""
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    monkeypatch.delenv("AGYKIT_JOB_TIMEOUT", raising=False)
+    from dashboard.collectors.jobs import (
+        job_create,
+        job_snapshot,
+        recover_stale_jobs,
+        _get_db,
+    )
+
+    jid = job_create("run", "legacy")  # owner_pid is NULL
+    _age_job(tmp_path, jid)
+    recover_stale_jobs(_get_db())
+    assert job_snapshot(jid)["status"] == "failed"
+
+
+def test_recover_timeout_is_pid_independent(tmp_path, monkeypatch):
+    """A live owner does NOT save a job past the hard timeout ceiling."""
+    monkeypatch.setattr("dashboard.collectors.jobs.DB_PATH", _job_db_path(tmp_path))
+    monkeypatch.setattr(
+        "dashboard.collectors.jobs._OLD_JSON_DIR", str(tmp_path / "no-such-dir")
+    )
+    monkeypatch.setenv("AGYKIT_JOB_TIMEOUT", "1")  # 1s ceiling
+    import os
+    import sqlite3
+    from datetime import datetime, timezone, timedelta
+    from dashboard.collectors.jobs import (
+        job_create,
+        job_snapshot,
+        recover_stale_jobs,
+        _get_db,
+    )
+
+    jid = job_create("do-escalate", "runaway", os.getpid())  # live owner
+    # Age started_at past the 1s timeout but keep updated_at fresh (not stale).
+    old = (datetime.now(timezone.utc) - timedelta(hours=1)).isoformat()
+    fresh = datetime.now(timezone.utc).isoformat()
+    conn = sqlite3.connect(_job_db_path(tmp_path))
+    conn.execute(
+        "UPDATE jobs SET started_at=?, updated_at=? WHERE job_id=?",
+        (old, fresh, jid),
+    )
+    conn.commit()
+    conn.close()
+
+    recovered = recover_stale_jobs(_get_db())
+    assert any(r["job_id"] == jid and r["stage"] == "timed_out" for r in recovered)
+    assert job_snapshot(jid)["status"] == "failed"
 
 
 def test_job_cancel(tmp_path, monkeypatch):

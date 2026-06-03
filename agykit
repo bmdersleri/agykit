@@ -14,7 +14,7 @@
 #   AGYKIT_TASKS_FILE — default task spec file for `agykit tasks` (default: .agykit-tasks.md)
 set -euo pipefail
 
-AGYKIT_VERSION="1.1.7"
+AGYKIT_VERSION="1.2.0"
 _EMAIL_CACHE=""
 
 GEMINI_DIR="$HOME/.gemini"
@@ -214,6 +214,25 @@ except Exception:
 PY
 }
 
+# Account try-order: the currently switched-in account FIRST (if it still has
+# quota), then the rest by quota. This makes a manual `agykit switch` actually
+# decide where the job runs — previously the active account was ignored and the
+# job silently started on whichever account ranked highest by quota, which is
+# why a dashboard could show one account while the CLI used another. If the
+# active account is exhausted/unknown it falls through to pure quota order.
+_accounts_ordered() {
+    local active; active="$(_active_email 2>/dev/null)"
+    local ordered; ordered="$(_accounts_sorted_by_quota "$@")"
+    [ -z "$active" ] && { printf '%s\n' "$ordered"; return; }
+    # active first only if it survived the quota filter (i.e. not exhausted)
+    if printf '%s\n' "$ordered" | grep -qxF "$active"; then
+        printf '%s\n' "$active"
+        printf '%s\n' "$ordered" | grep -vxF "$active"
+    else
+        printf '%s\n' "$ordered"
+    fi
+}
+
 # ── Commands ─────────────────────────────────────────────────────────────────
 cmd_whoami()  { echo "Active: $(_active_email)"; }
 
@@ -372,7 +391,9 @@ from dashboard.collectors.jobs import (
 )
 op = sys.argv[1]
 if op == "create":
-    print(job_create(sys.argv[2], sys.argv[3] if len(sys.argv) > 3 else ""))
+    _prompt = sys.argv[3] if len(sys.argv) > 3 else ""
+    _owner = sys.argv[4] if len(sys.argv) > 4 and sys.argv[4] else None
+    print(job_create(sys.argv[2], _prompt, _owner))
 elif op == "event":
     job_event(
         job_id=sys.argv[2],
@@ -424,9 +445,12 @@ cmd_run() {
     mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
     [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
     _can_start_job "$([ "$force" -eq 1 ] && echo "--force")" || exit 1
-    mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
+    mapfile -t accts < <(_accounts_ordered "${raw_accts[@]}")
     _job_ensure_daemon
-    local job_id; job_id=$(_job_op create "run" "$prompt")
+    # owner_pid = this agykit shell ($$). run is synchronous, so this process IS
+    # the job; its liveness is the recovery ground-truth (see jobs.recover_stale_jobs).
+    local job_id; job_id=$(_job_op create "run" "$prompt" "$$")
+    echo "==> job: $job_id"
     _CURRENT_JOB_ID="$job_id"
     _job_cleanup() {
         [ -n "${_CURRENT_JOB_ID:-}" ] && {
@@ -463,7 +487,7 @@ cmd_do_escalate() {
     local orig; orig=$(python3 -c "import json;print(json.load(open('$AGY_SETTINGS')).get('model',''))")
     mapfile -t raw_accts < <(ls "$ACCOUNTS_DIR"/*.json 2>/dev/null | xargs -n1 basename 2>/dev/null | sed 's/\.json$//')
     [ ${#raw_accts[@]} -eq 0 ] && { echo "No saved accounts."; exit 1; }
-    mapfile -t accts < <(_accounts_sorted_by_quota "${raw_accts[@]}")
+    mapfile -t accts < <(_accounts_ordered "${raw_accts[@]}")
     restore_model() { cmd_model "$orig" >/dev/null 2>&1 || true; }
 
     local base=""; _in_git && base=$(git rev-parse -q --verify HEAD 2>/dev/null || echo "")
@@ -471,7 +495,10 @@ cmd_do_escalate() {
 
     local verify_ctx=""
     _job_ensure_daemon
-    local job_id; job_id=$(_job_op create "do-escalate" "$prompt")
+    # owner_pid = this agykit shell ($$). do-escalate is synchronous, so this
+    # process IS the job; recovery treats it as live until the shell exits.
+    local job_id; job_id=$(_job_op create "do-escalate" "$prompt" "$$")
+    echo "==> job: $job_id"
     _CURRENT_JOB_ID="$job_id"
     _job_cleanup() {
         [ -n "${_CURRENT_JOB_ID:-}" ] && {
@@ -948,6 +975,91 @@ finally:
         except Exception:
             pass
         sock.close()
+PY
+}
+
+# Block until a job reaches a terminal state, then exit with its result code.
+# This is the scriptable counterpart to `watch` (which is an interactive TUI):
+#   exit 0 → succeeded   exit 1 → failed   exit 2 → wait timed out (job still live)
+# With no job-id it waits on the most recent job. Each poll runs the canonical
+# PID-aware recovery first, so a job whose owner died is resolved to `failed`
+# promptly instead of hanging until the 5-minute stale sweep.
+cmd_job_wait() {
+    local job_id="" timeout=0 interval=5
+    while [ $# -gt 0 ]; do
+        case "$1" in
+            --timeout) timeout="${2:-0}"; shift 2 ;;
+            --timeout=*) timeout="${1#*=}"; shift ;;
+            --interval) interval="${2:-5}"; shift 2 ;;
+            --interval=*) interval="${1#*=}"; shift ;;
+            *) job_id="$1"; shift ;;
+        esac
+    done
+    local repo; repo=$(_cmd_job_repo)
+    PYTHONPATH="$repo" python3 - "$job_id" "$timeout" "$interval" <<'PY'
+import sys, time
+sys.path.insert(0, '')
+from dashboard.collectors.jobs import (
+    job_snapshot, job_list, recover_stale_jobs, _get_db,
+)
+
+job_id = sys.argv[1] or ""
+try:
+    timeout = float(sys.argv[2])
+except ValueError:
+    timeout = 0.0
+try:
+    interval = max(1.0, float(sys.argv[3]))
+except ValueError:
+    interval = 5.0
+
+if not job_id:
+    jobs = job_list(limit=1)
+    if not jobs:
+        print("No jobs found.")
+        raise SystemExit(1)
+    job_id = jobs[0]["job_id"]
+
+TERMINAL = ("succeeded", "failed")
+start = time.monotonic()
+last_status = None
+while True:
+    # Resolve dead-owner jobs to failed without waiting for the periodic sweep.
+    conn = _get_db()
+    try:
+        recover_stale_jobs(conn)
+    finally:
+        conn.close()
+
+    snap = job_snapshot(job_id)
+    if snap is None:
+        print(f"Job {job_id} not found.")
+        raise SystemExit(1)
+
+    status = snap.get("status", "")
+    if status != last_status:
+        stage = snap.get("stage", "") or ""
+        acct = snap.get("account") or "-"
+        model = snap.get("model") or "-"
+        print(f"{job_id}  {status}  {stage}  {acct}  {model}")
+        last_status = status
+
+    if status in TERMINAL:
+        verify = snap.get("verify_result")
+        err = snap.get("last_error")
+        if status == "succeeded":
+            print(f"DONE {job_id} succeeded"
+                  + (f" verify={verify}" if verify else ""))
+            raise SystemExit(0)
+        print(f"DONE {job_id} failed"
+              + (f" — {err}" if err else ""))
+        raise SystemExit(1)
+
+    if timeout > 0 and (time.monotonic() - start) >= timeout:
+        print(f"TIMEOUT {job_id} still {status} after {int(timeout)}s")
+        raise SystemExit(2)
+
+    time.sleep(interval)
 PY
 }
 
@@ -1593,6 +1705,8 @@ Config: set AGYKIT_ARCHITECT_ESCALATE=claude to enable architect fallback when a
   agykit jobs --json             Machine-readable JSON output
   agykit jobs --stats            Job statistics summary
   agykit watch <job-id>          Live-stream a job's status and events
+  agykit wait [job-id]           Block until a job ends (exit 0=ok 1=fail 2=timeout)
+  agykit wait --timeout N        Give up waiting after N seconds (exit 2)
   agykit tail                    Live-tail all job events (socket)
   agykit cancel <job-id>         Cancel a running/starting job
   agykit cancel --all            Cancel all in-progress jobs
@@ -1798,6 +1912,7 @@ case "${1:-}" in
     log)           cmd_log "${2:-}" ;;
     jobs)          cmd_jobs "${@:2}" ;;
     watch)         cmd_job_watch "${2:-}" ;;
+    wait)          cmd_job_wait "${@:2}" ;;
     tail)          cmd_job_tail ;;
     cancel)        cmd_job_cancel "${2:-}" ;;
     prune)         cmd_job_prune "${@:2}" ;;

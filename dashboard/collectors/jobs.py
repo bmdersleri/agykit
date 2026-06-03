@@ -30,6 +30,35 @@ _ACTIVE_STATUSES = frozenset(
 )
 JOB_STALE_TIMEOUT = 300  # 5 minutes
 
+
+def _pid_alive(pid) -> bool:
+    """True if a process with this PID is currently running.
+
+    do-escalate/run execute synchronously, so the agykit shell ($$) recorded as
+    owner_pid IS the job's process. Its liveness — not event recency — is the
+    ground truth for "is this job still running". A long, silent agy phase keeps
+    the owner alive; a crashed/killed run leaves it dead. None/blank/garbage and
+    a missing process all read as dead so callers can recover safely.
+    """
+    if pid is None or pid == "":
+        return False
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:  # ESRCH — no such process
+        return False
+    except PermissionError:  # EPERM — exists but not ours
+        return True
+    except (OSError, OverflowError):  # bad/out-of-range pid → treat as dead
+        return False
+
+
 ERROR_CATEGORIES = {
     "quota": r"RESOURCE_EXHAUSTED|quota.*(?:reached|exceeded)|429.*quota|rate.*limit|403.*quota",
     "timeout": r"timeout|timed ?out",
@@ -62,7 +91,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     ended_at    TEXT,
     last_error  TEXT,
     verify_result TEXT,
-    diff_output TEXT
+    diff_output TEXT,
+    owner_pid   INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -90,6 +120,7 @@ _PHASE3_COLUMNS = [
     ("error_detail", "TEXT"),
     ("error_category", "TEXT"),
     ("diff_output", "TEXT"),
+    ("owner_pid", "INTEGER"),
 ]
 
 
@@ -206,18 +237,23 @@ def _notify_socket(event_dict: dict):
         pass
 
 
-def job_create(command: str, prompt: str = "") -> str:
+def job_create(command: str, prompt: str = "", owner_pid: int | None = None) -> str:
     conn = _get_db()
     ts = datetime.now(timezone.utc)
     suffix = uuid.uuid4().hex[:6]
     job_id = f"{ts.strftime('%Y%m%dT%H%M%S')}-{suffix}"
     ts_iso = ts.isoformat()
+    pid_val: int | None
+    try:
+        pid_val = int(owner_pid) if owner_pid not in (None, "") else None
+    except (TypeError, ValueError):
+        pid_val = None
     try:
         conn.execute(
             """INSERT INTO jobs
-               (job_id, command, status, stage, prompt, started_at, updated_at)
-               VALUES (?, ?, 'starting', 'starting', ?, ?, ?)""",
-            (job_id, command, prompt[:200], ts_iso, ts_iso),
+               (job_id, command, status, stage, prompt, started_at, updated_at, owner_pid)
+               VALUES (?, ?, 'starting', 'starting', ?, ?, ?, ?)""",
+            (job_id, command, prompt[:200], ts_iso, ts_iso, pid_val),
         )
         conn.execute(
             """INSERT INTO events
@@ -362,35 +398,90 @@ def job_events(job_id: str, limit: int = 100) -> list[dict]:
         conn.close()
 
 
-def _recover_stale_jobs(conn: sqlite3.Connection, force: bool = False):
+def recover_stale_jobs(conn: sqlite3.Connection, *, force: bool = False) -> list[dict]:
+    """Reap active jobs that can no longer be running. Returns recovered rows.
+
+    Canonical recovery shared by job_list/job_stats and the jobd daemon, so both
+    use one semantic (``status='failed'``) instead of the old split where this
+    module wrote ``blocked`` and the daemon wrote ``failed`` for the same case.
+
+    Two independent reasons to reap an active job:
+
+    * **timed_out** — ``started_at`` older than AGYKIT_JOB_TIMEOUT (default 1800s).
+      A hard wall-clock ceiling, evaluated *regardless of PID*: the final
+      backstop against a wedged or PID-recycled run.
+    * **recovered (stale)** — no event for JOB_STALE_TIMEOUT (300s) *and the
+      owning process is dead*. The PID gate is the fix for the core bug: a live
+      do-escalate sits silent for minutes during agy's real work, so event
+      recency alone wrongly flagged it complete. A live owner is never stale.
+
+    ``force=True`` drops the 300s quiet-period gate but KEEPS the PID gate — it
+    reaps dead-owner jobs immediately, never a live one (that's ``agykit cancel``).
+    """
     from datetime import datetime, timezone, timedelta
 
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(seconds=JOB_STALE_TIMEOUT)
-    ).isoformat()
-    if force:
-        cutoff = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    raw_timeout = os.environ.get("AGYKIT_JOB_TIMEOUT", "1800")
+    try:
+        job_timeout = int(raw_timeout) if raw_timeout else 0
+    except ValueError:
+        job_timeout = 1800
+
     rows = conn.execute(
-        """SELECT job_id, command FROM jobs
-           WHERE status IN ('starting','running','verifying','rotating','rolling_back')
-           AND updated_at < ?""",
-        (cutoff,),
+        """SELECT job_id, owner_pid, started_at, updated_at FROM jobs
+           WHERE status IN ('starting','running','verifying','rotating','rolling_back')"""
     ).fetchall()
+
+    stale_cutoff = (now - timedelta(seconds=JOB_STALE_TIMEOUT)).isoformat()
+    timeout_cutoff = (
+        (now - timedelta(seconds=job_timeout)).isoformat() if job_timeout > 0 else None
+    )
+
+    recovered: list[dict] = []
     for row in rows:
         jid = row["job_id"]
+        pid = row["owner_pid"]
+        started = row["started_at"] or ""
+        updated = row["updated_at"] or ""
+
+        is_timeout = timeout_cutoff is not None and started < timeout_cutoff
+        is_stale = (
+            (force or updated < stale_cutoff)
+            and not _pid_alive(pid)
+        )
+        if not (is_timeout or is_stale):
+            continue
+
+        if is_timeout:
+            event_type, stage = "job_timed_out", "timed_out"
+            msg = f"Timed out after {job_timeout}s — reaped by agykit"
+        else:
+            event_type, stage = "job_blocked", "recovered"
+            msg = f"Recovered — owner process gone, no activity for {JOB_STALE_TIMEOUT}s+"
+
         conn.execute(
             """INSERT INTO events
                (job_id, ts, event, status, stage, message)
-               VALUES (?, ?, 'job_blocked', 'blocked', 'recovered', ?)""",
-            (jid, cutoff, f"Marked stale — no activity for {JOB_STALE_TIMEOUT}s+"),
+               VALUES (?, ?, ?, 'failed', ?, ?)""",
+            (jid, now_iso, event_type, stage, msg),
         )
         conn.execute(
-            """UPDATE jobs SET status='blocked', stage='recovered',
-               updated_at=?, ended_at=? WHERE job_id=?""",
-            (cutoff, cutoff, jid),
+            """UPDATE jobs SET status='failed', stage=?,
+               updated_at=?, ended_at=?, last_error=? WHERE job_id=?""",
+            (stage, now_iso, now_iso, msg, jid),
         )
-    if rows:
+        recovered.append({"job_id": jid, "owner_pid": pid, "stage": stage})
+
+    if recovered:
         conn.commit()
+    return recovered
+
+
+# Back-compat alias: older call sites used the private name.
+def _recover_stale_jobs(conn: sqlite3.Connection, force: bool = False) -> list[dict]:
+    return recover_stale_jobs(conn, force=force)
 
 
 def job_list(
@@ -403,7 +494,7 @@ def job_list(
 ) -> list[dict]:
     conn = _get_db()
     try:
-        _recover_stale_jobs(conn)
+        recover_stale_jobs(conn)
         _auto_prune_if_needed(conn)
         wheres: list[str] = []
         params: list = []
@@ -437,7 +528,7 @@ def job_stats() -> dict:
     from datetime import datetime, timezone, timedelta
 
     try:
-        _recover_stale_jobs(conn)
+        recover_stale_jobs(conn)
         now = datetime.now(timezone.utc)
         total = conn.execute("SELECT COUNT(*) AS c FROM jobs").fetchone()["c"]
         by_status: dict[str, int] = {}

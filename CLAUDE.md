@@ -46,6 +46,7 @@ agykit account-remove <email>  # remove snapshot (cannot remove active account)
 ```bash
 agykit run "prompt"            # simple query/explanation — quota-aware rotation
 agykit do-escalate "prompt"    # code task — verify fail → model ladder
+agykit wait [job-id]           # block until a job ends (exit 0=ok 1=fail 2=timeout)
 agykit tasks list [spec.md]    # list tasks in a spec file
 agykit tasks run [--task <id>] [spec.md]  # run one or all tasks via do-escalate
 ```
@@ -54,6 +55,17 @@ agykit tasks run [--task <id>] [spec.md]  # run one or all tasks via do-escalate
 **When `do-escalate`:** Code change + `AGYKIT_VERIFY` defined (test/lint). Escalates to next model on failure.
 
 Model ladder: Flash → Pro → Opus. Git snapshot at each stage; restores WIP on failure.
+
+**Account order:** `run`/`do-escalate` try the currently switched-in account
+(`agykit switch <email>`) FIRST, then the rest by quota — so a manual switch
+decides where the job runs. If the active account is exhausted it falls through
+to pure quota order.
+
+**Completion:** `run`/`do-escalate` are synchronous and print `==> job: <id>` at
+start. They run under the launching shell's PID, so a job is "done" only when
+that process exits — recovery never marks a live job stale during agy's long
+silent phase. To gate a script on a backgrounded job, use `agykit wait` (its
+exit code is the job result), not `watch` (interactive TUI).
 
 ### Task Spec Format (`.agykit-tasks.md`)
 
@@ -186,6 +198,7 @@ agykit doctor --fix            # auto-fix resolvable issues
 | `AGYKIT_SYSTEM` | system context file path | — |
 | `AGYKIT_FLAGS` | extra flags passed to agy | `--dangerously-skip-permissions` |
 | `AGYKIT_TIMEOUT` | `--print-timeout` value | `15m` |
+| `AGYKIT_JOB_TIMEOUT` | hard job ceiling (s); reap + SIGTERM past this. Keep ≥ `AGYKIT_TIMEOUT` | `1800` |
 | `AGYKIT_TERSE` | output verbosity level | `ultra` |
 
 ### `AGYKIT_FLAGS` — `--add-dir` Trap
