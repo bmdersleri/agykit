@@ -46,6 +46,27 @@
             </div>`;
         }
 
+        // ── Base path support for reverse proxy (set by server --prefix) ──
+        (function () {
+            var base = window.AGYKIT_BASE_PATH || '';
+            if (base) {
+                var origFetch = window.fetch;
+                window.fetch = function (url, opts) {
+                    if (typeof url === 'string' && url.charAt(0) === '/') {
+                        url = base + url;
+                    }
+                    return origFetch.call(this, url, opts);
+                };
+                var origES = window.EventSource;
+                window.EventSource = function (url, cfg) {
+                    if (typeof url === 'string' && url.charAt(0) === '/') {
+                        url = base + url;
+                    }
+                    return new origES(url, cfg);
+                }.bind(this);
+            }
+        })();
+
         let mainChartInstance = null;
         let mixChartInstance = null;
         let currentChartSource = null;
@@ -513,9 +534,14 @@
             Promise.all([
                 fetch('/api/quota').then(r => r.json()),
                 fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null})),
-                fetch('/api/statusline').then(r => r.json()).catch(() => ({email: null}))
-            ]).then(([data, activeData, slData]) => {
-                const activeEmail = activeData.email || slData.email || null;
+                fetch('/api/statusline').then(r => r.json()).catch(() => ({email: null})),
+                fetch('/api/active-job').then(r => r.json()).catch(() => ({active: null}))
+            ]).then(([data, activeData, slData, jobData]) => {
+                // Job running → its account is the true active; keyring is fallback
+                const jobAccount = jobData.active && ['starting','running','verifying','rotating','rolling_back'].includes(jobData.active.snapshot?.status)
+                    ? (jobData.active.snapshot.account || null)
+                    : null;
+                const activeEmail = jobAccount || activeData.email || slData.email || null;
                 const activeWorking = !!(
                     slData.available
                     && slData.email

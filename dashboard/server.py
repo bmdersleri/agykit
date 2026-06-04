@@ -129,11 +129,31 @@ class DashboardHandler(BaseHTTPRequestHandler):
         "/app.js": "application/javascript",
     }
 
+    prefix = ""
+
+    def _strip_prefix(self, raw_path):
+        if not self.prefix:
+            return raw_path
+        if raw_path == self.prefix.rstrip("/"):
+            self.send_response(302)
+            self.send_header("Location", self.prefix + "/")
+            self.end_headers()
+            return None
+        if raw_path == self.prefix + "/":
+            return "/"
+        if not raw_path.startswith(self.prefix + "/"):
+            self.send_error(404, "Not Found")
+            return None
+        return "/" + raw_path[len(self.prefix) :].lstrip("/")
+
     def do_GET(self):
         from urllib.parse import urlparse
 
         parsed = urlparse(self.path)
-        path = parsed.path
+        stripped = self._strip_prefix(parsed.path)
+        if stripped is None:
+            return
+        path = stripped
         query = parse_qs(parsed.query)
 
         if path == "/":
@@ -313,6 +333,12 @@ class DashboardHandler(BaseHTTPRequestHandler):
             self.send_error(500, f"Error reading index.html: {e}")
             return
 
+        if self.prefix:
+            script = (
+                f"<script>window.AGYKIT_BASE_PATH={json.dumps(self.prefix)};</script>"
+            ).encode()
+            content = content.replace(b"<script src=", script + b"<script src=")
+
         self.send_response(200)
         self.send_header("Content-Type", "text/html")
         self.send_header("Content-Length", str(len(content)))
@@ -442,10 +468,14 @@ def main():
     parser.add_argument(
         "--no-open", action="store_true", help="Do not open the browser automatically"
     )
+    parser.add_argument(
+        "--prefix", default="", help="URL path prefix for reverse proxy (e.g. /agykit)"
+    )
     args = parser.parse_args()
 
+    DashboardHandler.prefix = args.prefix.rstrip("/") if args.prefix else ""
     server = make_server(args.host, args.port)
-    url = f"http://{args.host}:{args.port}"
+    url = f"http://{args.host}:{args.port}{args.prefix}"
     print(f"agykit Dashboard running at: {url}")
 
     if not args.no_open:
