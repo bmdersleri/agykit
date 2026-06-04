@@ -40,12 +40,20 @@ ok "agykit codex --status produces output" '[ -n "$CODEX_STAT" ]'
 ok "skills/codex.md exists" '[ -f "$THIS_DIR/../skills/codex.md" ]'
 ok "skills/SKILL.md exists" '[ -f "$THIS_DIR/../skills/SKILL.md" ]'
 ok "skills/agykit.md exists" '[ -f "$THIS_DIR/../skills/agykit.md" ]'
+ok "skills/opencode.md exists" '[ -f "$THIS_DIR/../skills/opencode.md" ]'
 
 # ── Install script references all skill files ──
 ok "install.sh references codex skill" \
     'grep -q "skills/codex.md" "$THIS_DIR/../install.sh"'
 ok "install.sh references SKILL.md" \
     'grep -q "skills/SKILL.md" "$THIS_DIR/../install.sh"'
+ok "install.sh references opencode skill" \
+    'grep -q "skills/opencode.md" "$THIS_DIR/../install.sh"'
+
+# ── Codex detection (env-forced, isolated) ──
+CODEX_DETECT=$(env -i HOME=/nonexistent PATH="$PATH" AGYKIT_AGENT=codex \
+    bash -c "source '$AGYKIT' 2>/dev/null; _detect_agent")
+ok "codex detected via AGYKIT_AGENT override" '[ "$CODEX_DETECT" = "codex" ]'
 
 echo "----"
 echo "PASS=$PASS FAIL=$FAIL"

@@ -1,0 +1,18 @@
+{
+  "_ts": 1748980000,
+  "accounts": [
+    {
+      "email": "a@example.com",
+      "models": [
+        {
+          "model_id": "gemini-2.5-flash",
+          "display_name": "Gemini 2.5 Flash",
+          "pct_remaining": 72,
+          "remaining_fraction": 0.72,
+          "resets_in_seconds": 14400
+        }
+      ]
+    }
+  ],
+  "warning": null
+}

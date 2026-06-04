@@ -30,6 +30,35 @@ _ACTIVE_STATUSES = frozenset(
 )
 JOB_STALE_TIMEOUT = 300  # 5 minutes
 
+
+def _pid_alive(pid) -> bool:
+    """True if a process with this PID is currently running.
+
+    do-escalate/run execute synchronously, so the agykit shell ($$) recorded as
+    owner_pid IS the job's process. Its liveness — not event recency — is the
+    ground truth for "is this job still running". A long, silent agy phase keeps
+    the owner alive; a crashed/killed run leaves it dead. None/blank/garbage and
+    a missing process all read as dead so callers can recover safely.
+    """
+    if pid is None or pid == "":
+        return False
+    try:
+        pid = int(pid)
+    except (TypeError, ValueError):
+        return False
+    if pid <= 0:
+        return False
+    try:
+        os.kill(pid, 0)
+        return True
+    except ProcessLookupError:  # ESRCH — no such process
+        return False
+    except PermissionError:  # EPERM — exists but not ours
+        return True
+    except (OSError, OverflowError):  # bad/out-of-range pid → treat as dead
+        return False
+
+
 ERROR_CATEGORIES = {
     "quota": r"RESOURCE_EXHAUSTED|quota.*(?:reached|exceeded)|429.*quota|rate.*limit|403.*quota",
     "timeout": r"timeout|timed ?out",
@@ -62,7 +91,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     ended_at    TEXT,
     last_error  TEXT,
     verify_result TEXT,
-    diff_output TEXT
+    diff_output TEXT,
+    owner_pid   INTEGER
 );
 
 CREATE TABLE IF NOT EXISTS events (
@@ -90,6 +120,7 @@ _PHASE3_COLUMNS = [
     ("error_detail", "TEXT"),
     ("error_category", "TEXT"),
     ("diff_output", "TEXT"),
+    ("owner_pid", "INTEGER"),
 ]
 
 
@@ -206,18 +237,23 @@ def _notify_socket(event_dict: dict):
         pass
 
 
-def job_create(command: str, prompt: str = "") -> str:
+def job_create(command: str, prompt: str = "", owner_pid: int | None = None) -> str:
     conn = _get_db()
     ts = datetime.now(timezone.utc)
     suffix = uuid.uuid4().hex[:6]
     job_id = f"{ts.strftime('%Y%m%dT%H%M%S')}-{suffix}"
     ts_iso = ts.isoformat()
+    pid_val: int | None
+    try:
+        pid_val = int(owner_pid) if owner_pid not in (None, "") else None
+    except (TypeError, ValueError):
+        pid_val = None
     try:
         conn.execute(
             """INSERT INTO jobs
-               (job_id, command, status, stage, prompt, started_at, updated_at)
-               VALUES (?, ?, 'starting', 'starting', ?, ?, ?)""",
-            (job_id, command, prompt[:200], ts_iso, ts_iso),
+               (job_id, command, status, stage, prompt, started_at, updated_at, owner_pid)
+               VALUES (?, ?, 'starting', 'starting', ?, ?, ?, ?)""",
+            (job_id, command, prompt[:200], ts_iso, ts_iso, pid_val),
         )
         conn.execute(
             """INSERT INTO events
@@ -362,35 +398,294 @@ def job_events(job_id: str, limit: int = 100) -> list[dict]:
         conn.close()
 
 
-def _recover_stale_jobs(conn: sqlite3.Connection, force: bool = False):
+def _parse_job_iso(value: str | None):
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None
+
+
+_TIMELINE_LABELS = {
+    "job_started": "Started",
+    "account_selected": "Account Selected",
+    "account_switched": "Account Switched",
+    "model_selected": "Model Selected",
+    "model_escalated": "Model Escalated",
+    "model_retried": "Model Retried",
+    "prompt_dispatched": "Prompt Dispatched",
+    "verify_started": "Verification Started",
+    "verify_passed": "Verification Passed",
+    "verify_failed": "Verification Failed",
+    "quota_rotated": "Quota Rotated",
+    "rollback_started": "Rollback Started",
+    "rollback_finished": "Rollback Finished",
+    "rollback_failed": "Rollback Failed",
+    "job_succeeded": "Succeeded",
+    "job_failed": "Failed",
+    "job_blocked": "Blocked",
+    "job_cancelled": "Cancelled",
+    "job_timed_out": "Timed Out",
+}
+
+
+def _timeline_label(event_name: str) -> str:
+    return _TIMELINE_LABELS.get(event_name, event_name.replace("_", " ").title())
+
+
+def _timeline_status(event_name: str, snapshot_status: str, is_last: bool) -> str:
+    if event_name in {
+        "job_failed",
+        "job_blocked",
+        "job_cancelled",
+        "job_timed_out",
+        "verify_failed",
+        "rollback_failed",
+    }:
+        return "failed"
+    if is_last and snapshot_status in _ACTIVE_STATUSES:
+        return "active"
+    return "completed"
+
+
+def _timeline_severity(event_name: str) -> str:
+    if event_name in {"job_failed", "job_blocked", "job_cancelled", "job_timed_out"}:
+        return "critical"
+    if event_name in {"verify_failed", "rollback_started", "rollback_failed", "quota_rotated"}:
+        return "warning"
+    if event_name in {"job_succeeded", "verify_passed", "rollback_finished"}:
+        return "success"
+    return "info"
+
+
+def job_timeline(job_id: str | None = None, limit: int = 100) -> dict:
+    conn = _get_db()
+    try:
+        recover_stale_jobs(conn)
+        if not job_id:
+            row = conn.execute(
+                """SELECT job_id FROM jobs
+                   ORDER BY CASE WHEN status IN ('starting','running','verifying','rotating','rolling_back') THEN 0 ELSE 1 END,
+                            updated_at DESC
+                   LIMIT 1"""
+            ).fetchone()
+            if row:
+                job_id = row["job_id"]
+        if not job_id:
+            return {
+                "ok": True,
+                "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+                "source": "agykit",
+                "stale": False,
+                "job_id": None,
+                "snapshot": None,
+                "timeline": [],
+                "metrics": {
+                    "elapsed_seconds": None,
+                    "attempt_count": 0,
+                    "model_switch_count": 0,
+                    "account_switch_count": 0,
+                    "rollback_count": 0,
+                    "verify_fail_count": 0,
+                },
+                "warning": "No jobs found",
+            }
+
+        snapshot_row = conn.execute(
+            "SELECT * FROM jobs WHERE job_id=?", (job_id,)
+        ).fetchone()
+        if snapshot_row is None:
+            return {
+                "ok": True,
+                "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+                "source": "agykit",
+                "stale": False,
+                "job_id": job_id,
+                "snapshot": None,
+                "timeline": [],
+                "metrics": {
+                    "elapsed_seconds": None,
+                    "attempt_count": 0,
+                    "model_switch_count": 0,
+                    "account_switch_count": 0,
+                    "rollback_count": 0,
+                    "verify_fail_count": 0,
+                },
+                "warning": "Job not found",
+            }
+
+        snapshot = dict(snapshot_row)
+        rows = conn.execute(
+            "SELECT * FROM events WHERE job_id=? ORDER BY id ASC LIMIT ?",
+            (job_id, limit),
+        ).fetchall()
+        events = [dict(r) for r in rows]
+
+        started = _parse_job_iso(snapshot.get("started_at"))
+        ended = _parse_job_iso(snapshot.get("ended_at"))
+        now = datetime.now(timezone.utc)
+        elapsed_seconds = None
+        if started:
+            elapsed_seconds = int(((ended or now) - started).total_seconds())
+
+        timeline = []
+        prev_ts = None
+        last_account = None
+        last_model = None
+        account_switch_count = 0
+        model_switch_count = 0
+        rollback_count = 0
+        verify_fail_count = 0
+        attempt_count = 0
+
+        for idx, event in enumerate(events, start=1):
+            event_name = event.get("event", "")
+            ts = _parse_job_iso(event.get("ts"))
+            duration_ms = None
+            if ts and prev_ts:
+                duration_ms = int((ts - prev_ts).total_seconds() * 1000)
+            if ts:
+                prev_ts = ts
+            if event_name == "job_started":
+                attempt_count += 1
+            if event_name in {"account_selected", "account_switched"} and event.get("account") != last_account:
+                account_switch_count += 1
+                last_account = event.get("account")
+            if event_name in {"model_selected", "model_escalated", "model_retried"} and event.get("model") != last_model:
+                model_switch_count += 1
+                last_model = event.get("model")
+            if event_name.startswith("rollback_"):
+                rollback_count += 1
+            if event_name == "verify_failed":
+                verify_fail_count += 1
+
+            timeline.append(
+                {
+                    "seq": idx,
+                    "event": event_name,
+                    "label": _timeline_label(event_name),
+                    "timestamp": event.get("ts"),
+                    "status": _timeline_status(event_name, snapshot.get("status", ""), idx == len(events)),
+                    "severity": _timeline_severity(event_name),
+                    "duration_ms": duration_ms,
+                    "account": event.get("account"),
+                    "model": event.get("model"),
+                    "stage": event.get("stage"),
+                    "message": event.get("message", ""),
+                    "error": event.get("error"),
+                }
+            )
+
+        if not attempt_count and events:
+            attempt_count = 1
+
+        return {
+            "ok": True,
+            "generated_at": datetime.now(timezone.utc).astimezone().isoformat(),
+            "source": "agykit",
+            "stale": False,
+            "job_id": job_id,
+            "snapshot": snapshot,
+            "timeline": timeline,
+            "metrics": {
+                "elapsed_seconds": elapsed_seconds,
+                "attempt_count": attempt_count,
+                "model_switch_count": model_switch_count,
+                "account_switch_count": account_switch_count,
+                "rollback_count": rollback_count,
+                "verify_fail_count": verify_fail_count,
+            },
+            "warning": None,
+        }
+    finally:
+        conn.close()
+
+
+def recover_stale_jobs(conn: sqlite3.Connection, *, force: bool = False) -> list[dict]:
+    """Reap active jobs that can no longer be running. Returns recovered rows.
+
+    Canonical recovery shared by job_list/job_stats and the jobd daemon, so both
+    use one semantic (``status='failed'``) instead of the old split where this
+    module wrote ``blocked`` and the daemon wrote ``failed`` for the same case.
+
+    Two independent reasons to reap an active job:
+
+    * **timed_out** — ``started_at`` older than AGYKIT_JOB_TIMEOUT (default 1800s).
+      A hard wall-clock ceiling, evaluated *regardless of PID*: the final
+      backstop against a wedged or PID-recycled run.
+    * **recovered (stale)** — no event for JOB_STALE_TIMEOUT (300s) *and the
+      owning process is dead*. The PID gate is the fix for the core bug: a live
+      do-escalate sits silent for minutes during agy's real work, so event
+      recency alone wrongly flagged it complete. A live owner is never stale.
+
+    ``force=True`` drops the 300s quiet-period gate but KEEPS the PID gate — it
+    reaps dead-owner jobs immediately, never a live one (that's ``agykit cancel``).
+    """
     from datetime import datetime, timezone, timedelta
 
-    cutoff = (
-        datetime.now(timezone.utc) - timedelta(seconds=JOB_STALE_TIMEOUT)
-    ).isoformat()
-    if force:
-        cutoff = datetime.now(timezone.utc).isoformat()
+    now = datetime.now(timezone.utc)
+    now_iso = now.isoformat()
+
+    raw_timeout = os.environ.get("AGYKIT_JOB_TIMEOUT", "1800")
+    try:
+        job_timeout = int(raw_timeout) if raw_timeout else 0
+    except ValueError:
+        job_timeout = 1800
+
     rows = conn.execute(
-        """SELECT job_id, command FROM jobs
-           WHERE status IN ('starting','running','verifying','rotating','rolling_back')
-           AND updated_at < ?""",
-        (cutoff,),
+        """SELECT job_id, owner_pid, started_at, updated_at FROM jobs
+           WHERE status IN ('starting','running','verifying','rotating','rolling_back')"""
     ).fetchall()
+
+    stale_cutoff = (now - timedelta(seconds=JOB_STALE_TIMEOUT)).isoformat()
+    timeout_cutoff = (
+        (now - timedelta(seconds=job_timeout)).isoformat() if job_timeout > 0 else None
+    )
+
+    recovered: list[dict] = []
     for row in rows:
         jid = row["job_id"]
+        pid = row["owner_pid"]
+        started = row["started_at"] or ""
+        updated = row["updated_at"] or ""
+
+        is_timeout = timeout_cutoff is not None and started < timeout_cutoff
+        is_stale = (
+            (force or updated < stale_cutoff)
+            and not _pid_alive(pid)
+        )
+        if not (is_timeout or is_stale):
+            continue
+
+        if is_timeout:
+            event_type, stage = "job_timed_out", "timed_out"
+            msg = f"Timed out after {job_timeout}s — reaped by agykit"
+        else:
+            event_type, stage = "job_blocked", "recovered"
+            msg = f"Recovered — owner process gone, no activity for {JOB_STALE_TIMEOUT}s+"
+
         conn.execute(
             """INSERT INTO events
                (job_id, ts, event, status, stage, message)
-               VALUES (?, ?, 'job_blocked', 'blocked', 'recovered', ?)""",
-            (jid, cutoff, f"Marked stale — no activity for {JOB_STALE_TIMEOUT}s+"),
+               VALUES (?, ?, ?, 'failed', ?, ?)""",
+            (jid, now_iso, event_type, stage, msg),
         )
         conn.execute(
-            """UPDATE jobs SET status='blocked', stage='recovered',
-               updated_at=?, ended_at=? WHERE job_id=?""",
-            (cutoff, cutoff, jid),
+            """UPDATE jobs SET status='failed', stage=?,
+               updated_at=?, ended_at=?, last_error=? WHERE job_id=?""",
+            (stage, now_iso, now_iso, msg, jid),
         )
-    if rows:
+        recovered.append({"job_id": jid, "owner_pid": pid, "stage": stage})
+
+    if recovered:
         conn.commit()
+    return recovered
+
+
+# Back-compat alias: older call sites used the private name.
+def _recover_stale_jobs(conn: sqlite3.Connection, force: bool = False) -> list[dict]:
+    return recover_stale_jobs(conn, force=force)
 
 
 def job_list(
@@ -403,7 +698,7 @@ def job_list(
 ) -> list[dict]:
     conn = _get_db()
     try:
-        _recover_stale_jobs(conn)
+        recover_stale_jobs(conn)
         _auto_prune_if_needed(conn)
         wheres: list[str] = []
         params: list = []
@@ -437,7 +732,7 @@ def job_stats() -> dict:
     from datetime import datetime, timezone, timedelta
 
     try:
-        _recover_stale_jobs(conn)
+        recover_stale_jobs(conn)
         now = datetime.now(timezone.utc)
         total = conn.execute("SELECT COUNT(*) AS c FROM jobs").fetchone()["c"]
         by_status: dict[str, int] = {}

@@ -32,7 +32,8 @@ CREATE TABLE IF NOT EXISTS jobs (
     updated_at  TEXT NOT NULL,
     ended_at    TEXT,
     last_error  TEXT,
-    verify_result TEXT
+    verify_result TEXT,
+    owner_pid   INTEGER
 );
 CREATE TABLE IF NOT EXISTS events (
     id          INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -129,67 +130,40 @@ class JobDaemon:
             self._sock = None
 
     def _recover_stale_jobs(self):
-        conn = _get_db()
+        # Delegate to the canonical PID-aware recovery in collectors.jobs so the
+        # daemon and the CLI share one semantic (status='failed'). It reaps:
+        #   - timed_out: started_at older than AGYKIT_JOB_TIMEOUT (PID-independent)
+        #   - recovered: stale 300s+ AND owner process dead
+        # A live owner is never reaped here — that is `agykit cancel`'s job. We
+        # use that module's _get_db so its owner_pid ALTER migration is applied
+        # even on a DB created before this column existed.
+        from dashboard.collectors.jobs import recover_stale_jobs
+        from dashboard.collectors.jobs import _get_db as _jobs_get_db
+
+        conn = _jobs_get_db()
         try:
-            now = datetime.now(timezone.utc)
-            now_iso = now.isoformat()
-
-            stale_cutoff = (now - timedelta(seconds=STALE_TIMEOUT)).isoformat()
-            stale_rows = conn.execute(
-                """SELECT job_id, command FROM jobs
-                   WHERE status IN ('starting','running','verifying','rotating','rolling_back')
-                   AND updated_at < ?""",
-                (stale_cutoff,),
-            ).fetchall()
-
-            raw_timeout = os.environ.get("AGYKIT_JOB_TIMEOUT", "1800")
-            job_timeout = int(raw_timeout) if raw_timeout else 0
-            timed_out_rows = []
-            if job_timeout > 0:
-                timeout_cutoff = (now - timedelta(seconds=job_timeout)).isoformat()
-                timed_out_rows = conn.execute(
-                    """SELECT job_id, command FROM jobs
-                       WHERE status IN ('running','verifying','rotating','rolling_back')
-                       AND started_at < ?""",
-                    (timeout_cutoff,),
-                ).fetchall()
-
-            rows = stale_rows + [
-                r
-                for r in timed_out_rows
-                if r["job_id"] not in {x["job_id"] for x in stale_rows}
-            ]
-
-            if not rows:
-                return
-            for row in rows:
-                jid = row["job_id"]
-                is_timeout = row["job_id"] in {x["job_id"] for x in timed_out_rows}
-                if is_timeout:
-                    event_type = "job_timed_out"
-                    stage = "timed_out"
-                    msg = f"Timed out after {job_timeout}s — cancelled by daemon"
-                else:
-                    event_type = "job_blocked"
-                    stage = "recovered"
-                    msg = f"Recovered by daemon — no activity for {STALE_TIMEOUT}s+"
-                conn.execute(
-                    """INSERT INTO events
-                       (job_id, ts, event, status, stage, message)
-                       VALUES (?, ?, ?, 'failed', ?, ?)""",
-                    (jid, now_iso, event_type, stage, msg),
-                )
-                conn.execute(
-                    """UPDATE jobs SET status='failed', stage=?,
-                       updated_at=?, ended_at=?, last_error=?
-                       WHERE job_id=?""",
-                    (stage, now_iso, now_iso, msg, jid),
-                )
-            conn.commit()
+            recovered = recover_stale_jobs(conn)
         except Exception:
-            conn.rollback()
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+            return
         finally:
             conn.close()
+
+        # A timed-out job whose owner is still alive is a genuine runaway: send
+        # SIGTERM so the wedged process actually stops, not just its DB row.
+        for row in recovered:
+            if row.get("stage") != "timed_out":
+                continue
+            pid = row.get("owner_pid")
+            if pid in (None, ""):
+                continue
+            try:
+                os.kill(int(pid), signal.SIGTERM)
+            except (ProcessLookupError, PermissionError, ValueError, OverflowError, OSError):
+                pass
 
     def _handle_signal(self, signum, frame):
         self._running = False

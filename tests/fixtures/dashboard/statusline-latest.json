@@ -1,0 +1,8 @@
+{
+  "email": "a@example.com",
+  "model": "Gemini 2.5 Flash",
+  "available": true,
+  "agent_state": "idle",
+  "context_pct": 12,
+  "captured_at": "2026-06-03 14:45:22"
+}

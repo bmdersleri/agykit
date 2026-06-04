@@ -46,6 +46,27 @@
             </div>`;
         }
 
+        // ── Base path support for reverse proxy (set by server --prefix) ──
+        (function () {
+            var base = window.AGYKIT_BASE_PATH || '';
+            if (base) {
+                var origFetch = window.fetch;
+                window.fetch = function (url, opts) {
+                    if (typeof url === 'string' && url.charAt(0) === '/') {
+                        url = base + url;
+                    }
+                    return origFetch.call(this, url, opts);
+                };
+                var origES = window.EventSource;
+                window.EventSource = function (url, cfg) {
+                    if (typeof url === 'string' && url.charAt(0) === '/') {
+                        url = base + url;
+                    }
+                    return new origES(url, cfg);
+                }.bind(this);
+            }
+        })();
+
         let mainChartInstance = null;
         let mixChartInstance = null;
         let currentChartSource = null;
@@ -57,7 +78,24 @@
         const noDataContainer = document.getElementById('noDataContainer');
         const chartsGrid = document.getElementById('chartsGrid');
         const liveDot = document.getElementById('liveDot');
+        const liveState = document.getElementById('liveState');
+        const dashboardVersionBadge = document.getElementById('dashboardVersionBadge');
         const themeToggleBtn = document.getElementById('themeToggle');
+        const healthCenterBody = document.getElementById('healthCenterBody');
+        const timelineBody = document.getElementById('timelineBody');
+        const recommendationBody = document.getElementById('recommendationBody');
+        const forecastBody = document.getElementById('forecastBody');
+        const agentMatrixBody = document.getElementById('agentMatrixBody');
+
+        let _timelineFilter = 'all';
+        let _agentMatrixMetric = 'reliability';
+        let _agentMatrixRange = '7d';
+        let _recommendationMode = 'balanced';
+        let currentHealthData = null;
+        let currentTimelineData = null;
+        let currentRecommendationData = null;
+        let currentQuotaForecastData = null;
+        let currentAgentMatrixData = null;
 
         const colors = [
             'rgba(56, 189, 248, 1)',   // light blue
@@ -496,9 +534,14 @@
             Promise.all([
                 fetch('/api/quota').then(r => r.json()),
                 fetch('/api/active-account').then(r => r.json()).catch(() => ({email: null})),
-                fetch('/api/statusline').then(r => r.json()).catch(() => ({email: null}))
-            ]).then(([data, activeData, slData]) => {
-                const activeEmail = activeData.email || slData.email || null;
+                fetch('/api/statusline').then(r => r.json()).catch(() => ({email: null})),
+                fetch('/api/active-job').then(r => r.json()).catch(() => ({active: null}))
+            ]).then(([data, activeData, slData, jobData]) => {
+                // Job running → its account is the true active; keyring is fallback
+                const jobAccount = jobData.active && ['starting','running','verifying','rotating','rolling_back'].includes(jobData.active.snapshot?.status)
+                    ? (jobData.active.snapshot.account || null)
+                    : null;
+                const activeEmail = jobAccount || activeData.email || slData.email || null;
                 const activeWorking = !!(
                     slData.available
                     && slData.email
@@ -1482,6 +1525,467 @@
             });
         }
 
+        function copyText(text) {
+            const value = String(text || '').trim();
+            if (!value) return Promise.resolve(false);
+            if (navigator.clipboard && navigator.clipboard.writeText) {
+                return navigator.clipboard.writeText(value).then(() => true).catch(() => false);
+            }
+            const ta = document.createElement('textarea');
+            ta.value = value;
+            ta.style.position = 'fixed';
+            ta.style.opacity = '0';
+            document.body.appendChild(ta);
+            ta.focus();
+            ta.select();
+            let ok = false;
+            try {
+                ok = document.execCommand('copy');
+            } catch (_) {
+                ok = false;
+            }
+            ta.remove();
+            return Promise.resolve(ok);
+        }
+
+        function downloadTextFile(filename, content, mimeType = 'text/plain;charset=utf-8') {
+            const blob = new Blob([String(content || '')], { type: mimeType });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = filename;
+            a.rel = 'noreferrer';
+            document.body.appendChild(a);
+            a.click();
+            a.remove();
+            setTimeout(() => URL.revokeObjectURL(url), 1000);
+        }
+
+        function renderCardMeta(parts) {
+            return `<div class="card-meta-row">${parts.filter(Boolean).join('')}</div>`;
+        }
+
+        function metaItem(label, value, valueClass = '', title = '') {
+            const titleAttr = title ? ` title="${escapeHtml(title)}"` : '';
+            return `<div class="card-meta-item"><span class="card-meta-label">${escapeHtml(label)}</span><span class="card-meta-value ${valueClass}"${titleAttr}>${escapeHtml(value)}</span></div>`;
+        }
+
+        function parseIsoTimestamp(value) {
+            if (!value) return null;
+            const ts = new Date(value);
+            return Number.isNaN(ts.getTime()) ? null : ts;
+        }
+
+        function formatTimestamp(value) {
+            const ts = parseIsoTimestamp(value);
+            return ts ? ts.toLocaleString('tr-TR') : '—';
+        }
+
+        function formatRelativeAge(value) {
+            const ts = parseIsoTimestamp(value);
+            if (!ts) return '—';
+            const diff = Math.max(0, Date.now() - ts.getTime());
+            const sec = Math.floor(diff / 1000);
+            if (sec < 5) return 'just now';
+            if (sec < 60) return `${sec}s ago`;
+            const min = Math.floor(sec / 60);
+            if (min < 60) return `${min}m ago`;
+            const hr = Math.floor(min / 60);
+            if (hr < 24) return `${hr}h ago`;
+            const day = Math.floor(hr / 24);
+            return `${day}d ago`;
+        }
+
+        function renderUpdatedMeta(data, extraItems = []) {
+            const ts = data?.generated_at || data?.updated_at || null;
+            return renderCardMeta([
+                metaItem('Updated', formatRelativeAge(ts), data?.stale ? 'stale' : '', formatTimestamp(ts)),
+                metaItem('Generated', formatTimestamp(ts)),
+                ...extraItems,
+            ]);
+        }
+
+        function setLiveIndicator(state, label) {
+            if (!liveState) return;
+            liveState.dataset.state = state;
+            liveState.textContent = label;
+        }
+
+        function pulseLiveIndicator() {
+            if (!liveDot) return;
+            liveDot.classList.remove('flash');
+            void liveDot.offsetWidth;
+            liveDot.classList.add('flash');
+        }
+
+        function statusPillClass(status) {
+            const key = String(status || '').toLowerCase();
+            if (key === 'critical' || key === 'failed') return 'ops-status-critical';
+            if (key === 'warning' || key === 'medium' || key === 'stale') return 'ops-status-warning';
+            if (key === 'ok' || key === 'success' || key === 'completed' || key === 'low') return 'ops-status-ok';
+            return 'ops-status-unknown';
+        }
+
+        function renderStatusPill(status, label) {
+            const text = label || status || 'unknown';
+            return `<span class="ops-status-pill ${statusPillClass(status)}">${escapeHtml(String(text).replace(/_/g, ' '))}</span>`;
+        }
+
+        function setTimelineFilter(filter) {
+            _timelineFilter = filter || 'all';
+            loadJobTimeline();
+        }
+
+        function setAgentMatrixMetric(metric) {
+            _agentMatrixMetric = metric || 'reliability';
+            loadAgentMatrix();
+        }
+
+        function setAgentMatrixRange(range) {
+            _agentMatrixRange = range || '7d';
+            loadAgentMatrix();
+        }
+
+        function exportAgentMatrixCsv() {
+            if (!currentAgentMatrixData || !Array.isArray(currentAgentMatrixData.agents)) return;
+            const header = ['agent', 'jobs_total', 'success_rate', 'tokens_total', 'avg_duration_seconds', 'verify_failures', 'tokens_per_success', 'top_model'];
+            const escapeCsv = value => {
+                const s = String(value == null ? '' : value);
+                return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+            };
+            const rows = [header.join(',')];
+            currentAgentMatrixData.agents.forEach(agent => {
+                rows.push([
+                    agent.agent,
+                    agent.jobs_total,
+                    agent.success_rate,
+                    agent.tokens_total,
+                    agent.avg_duration_seconds,
+                    agent.verify_failures,
+                    agent.tokens_per_success,
+                    agent.top_model,
+                ].map(escapeCsv).join(','));
+            });
+            downloadTextFile(`agykit-agent-matrix-${_agentMatrixRange}.csv`, rows.join('\n'), 'text/csv;charset=utf-8');
+        }
+
+        function normalizeList(items, fallback = '—') {
+            if (!items || items.length === 0) return `<div class="ops-list-item muted">${escapeHtml(fallback)}</div>`;
+            return items.map(item => `<div class="ops-list-item">${escapeHtml(item)}</div>`).join('');
+        }
+
+        function loadHealthCenter() {
+            if (!healthCenterBody) return;
+            healthCenterBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
+            fetch('/api/health').then(r => r.json()).then(data => {
+                currentHealthData = data;
+                const summary = data.summary || {};
+                const checks = data.checks || [];
+                const overall = data.overall_status || 'unknown';
+                const stale = !!data.stale;
+                const counts = [
+                    { label: 'Passed', value: summary.passed ?? 0 },
+                    { label: 'Warnings', value: summary.warnings ?? 0 },
+                    { label: 'Critical', value: summary.critical ?? 0 },
+                    { label: 'Checks', value: checks.length },
+                ];
+                const summaryHtml = `<div class="ops-summary-grid">${counts.map(item => `
+                    <div class="ops-summary-chip">
+                        <div class="ops-summary-val">${item.value}</div>
+                        <div class="ops-summary-lbl">${escapeHtml(item.label)}</div>
+                    </div>
+                `).join('')}</div>`;
+                const checksHtml = checks.map(check => {
+                    const fix = check.fix || null;
+                    const fixText = fix && fix.command ? fix.command : (fix && fix.file ? fix.file : '');
+                    const status = check.status || 'unknown';
+                    const fixButton = fix && fix.command
+                        ? `<button class="btn ops-small-btn" onclick='copyText(${JSON.stringify(fix.command)}).then(() => { this.textContent = "Copied"; setTimeout(() => { this.textContent = "Copy"; }, 1200); })'>Copy</button>`
+                        : '';
+                    return `<div class="ops-check-item">
+                        <div class="ops-check-head">
+                            <div class="ops-check-label">${escapeHtml(check.label || check.id || 'check')}</div>
+                            ${renderStatusPill(status, status)}
+                        </div>
+                        <div class="ops-check-msg">${escapeHtml(check.message || '')}</div>
+                        ${check.details ? `<div class="ops-check-msg">${escapeHtml(check.details)}</div>` : ''}
+                        ${fixText ? `<div class="ops-fix-row"><span class="ops-fix-code">${escapeHtml(fixText)}</span>${fixButton}</div>` : ''}
+                    </div>`;
+                }).join('');
+                healthCenterBody.innerHTML = `
+                    <div class="forecast-header">
+                        <div class="ops-status-pill ${statusPillClass(overall)}">${escapeHtml(String(overall).replace(/_/g, ' '))}</div>
+                        ${stale ? '<div class="ops-status-pill ops-status-warning">STALE</div>' : ''}
+                    </div>
+                    ${renderUpdatedMeta(data, [
+                        metaItem('Freshness', stale ? 'stale' : 'fresh', stale ? 'stale' : ''),
+                    ])}
+                    ${summaryHtml}
+                    ${overall !== 'ok' ? '<div class="matrix-note">Run <code>agykit doctor --fix</code> for actionable fixes.</div>' : ''}
+                    <div class="ops-check-list">${checksHtml || '<div class="sl-unavail">No checks available.</div>'}</div>
+                `;
+            }).catch(() => {
+                healthCenterBody.innerHTML = '<div class="sl-unavail">Health verisi yüklenemedi.</div>';
+            });
+        }
+
+        function renderJobTimeline(data) {
+            if (!timelineBody) return;
+            currentTimelineData = data;
+            timelineBody.dataset.raw = JSON.stringify(data || {});
+            const snapshot = data.snapshot || {};
+            let events = data.timeline || [];
+            if (_timelineFilter === 'failed') {
+                events = events.filter(ev => ev.status === 'failed');
+            }
+            const metrics = data.metrics || {};
+            const summaryHtml = `
+                <div class="timeline-meta-grid">
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Job</div><div class="timeline-meta-val">${escapeHtml(data.job_id || '—')}</div></div>
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Status</div><div class="timeline-meta-val">${escapeHtml(snapshot.status || '—')}</div></div>
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Stage</div><div class="timeline-meta-val">${escapeHtml(snapshot.stage || '—')}</div></div>
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Elapsed</div><div class="timeline-meta-val">${metrics.elapsed_seconds != null ? fmtDur(Math.round(metrics.elapsed_seconds)) : '—'}</div></div>
+                </div>
+                <div class="timeline-meta-grid">
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Account</div><div class="timeline-meta-val">${escapeHtml(snapshot.account || '—')}</div></div>
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Model</div><div class="timeline-meta-val">${escapeHtml(snapshot.model || '—')}</div></div>
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Attempts</div><div class="timeline-meta-val">${metrics.attempt_count ?? 0}</div></div>
+                    <div class="timeline-meta-chip"><div class="timeline-meta-lbl">Rollbacks</div><div class="timeline-meta-val">${metrics.rollback_count ?? 0}</div></div>
+                </div>`;
+            const listHtml = events.length ? events.map(ev => `
+                <div class="timeline-item ${ev.status || ''} ${ev.severity || ''}">
+                    <div class="timeline-row">
+                        <span class="timeline-dot"></span>
+                        <span class="timeline-label">${escapeHtml(ev.label || ev.event || 'event')}</span>
+                        ${renderStatusPill(ev.status, ev.status)}
+                        <span class="ops-status-pill ${statusPillClass(ev.severity)}">${escapeHtml(ev.severity || 'info')}</span>
+                    </div>
+                    <div class="timeline-meta">
+                        <span>${escapeHtml(ev.timestamp || '—')}</span>
+                        ${ev.account ? `<span>${escapeHtml(ev.account)}</span>` : ''}
+                        ${ev.model ? `<span>${escapeHtml(ev.model)}</span>` : ''}
+                        ${ev.stage ? `<span>${escapeHtml(ev.stage)}</span>` : ''}
+                    </div>
+                    <div class="timeline-message">${escapeHtml(ev.message || '')}</div>
+                </div>
+            `).join('') : '<div class="sl-unavail">No timeline events available.</div>';
+            const jobId = data.job_id || '—';
+            const openLogHref = data.job_id ? `/api/jobs/${encodeURIComponent(data.job_id)}` : '#';
+            timelineBody.innerHTML = `
+                ${summaryHtml}
+                ${renderUpdatedMeta(data, [metaItem('Events', String(events.length))])}
+                <div class="ops-copy-row">
+                    <button class="btn ops-small-btn" onclick='copyText(${JSON.stringify(jobId)})'>Copy Job ID</button>
+                    <button class="btn ops-small-btn" onclick='copyText(${JSON.stringify(timelineBody.dataset.raw || '{}')})'>Copy JSON</button>
+                    <a class="btn ops-small-btn" href="${openLogHref}" target="_blank" rel="noreferrer">Open Raw</a>
+                </div>
+                <div class="timeline-list">${listHtml}</div>
+            `;
+        }
+
+        function loadJobTimeline() {
+            if (!timelineBody) return;
+            timelineBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
+            fetch('/api/active-job/timeline?limit=100').then(r => r.json()).then(data => {
+                renderJobTimeline(data);
+            }).catch(() => {
+                timelineBody.innerHTML = '<div class="sl-unavail">Timeline verisi yüklenemedi.</div>';
+            });
+        }
+
+        function loadRecommendation(mode = _recommendationMode) {
+            if (!recommendationBody) return;
+            _recommendationMode = mode || 'balanced';
+            recommendationBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
+            fetch(`/api/recommendation?mode=${encodeURIComponent(_recommendationMode)}`).then(r => r.json()).then(data => {
+                currentRecommendationData = data;
+                const rec = data.recommendation || {};
+                const alternatives = data.alternatives || [];
+                const rejected = data.rejected || [];
+                const command = rec.command || '';
+                const reasons = normalizeList(rec.reason, 'No recommendation reasons available.');
+                const warnings = normalizeList(rec.warnings, 'No warnings.');
+                const cacheAge = data.quota_cache_age_seconds != null ? fmtSec(Number(data.quota_cache_age_seconds)) : 'unknown';
+                const altHtml = alternatives.length
+                    ? alternatives.map(item => `<div class="ops-list-item"><b>${escapeHtml(item.account || '—')}</b> · ${escapeHtml(item.model || '—')} · ${escapeHtml(String(item.confidence ?? '0'))}</div>`).join('')
+                    : '<div class="ops-list-item muted">No alternatives.</div>';
+                const rejectedHtml = rejected.length
+                    ? rejected.map(item => `<div class="ops-list-item muted"><b>${escapeHtml(item.account || '—')}</b> · ${escapeHtml(item.model || '—')} · ${escapeHtml(item.reason || 'rejected')}</div>`).join('')
+                    : '<div class="ops-list-item muted">No rejected candidates.</div>';
+
+                recommendationBody.innerHTML = `
+                    <div class="recommendation-main">
+                        <div class="recommendation-header">
+                            <div class="recommendation-title">
+                                <div class="recommendation-account">${escapeHtml(rec.account || '—')}</div>
+                                <div class="recommendation-model">${escapeHtml(rec.model || '—')}</div>
+                            </div>
+                            <div class="ops-status-pill ${statusPillClass(rec.risk)}">${escapeHtml(String(rec.risk || 'unknown').toUpperCase())} · ${escapeHtml(String(rec.confidence ?? 0))}</div>
+                        </div>
+                        ${renderUpdatedMeta(data, [metaItem('Quota cache', cacheAge, data.stale ? 'stale' : '')])}
+                        <div class="ops-copy-row">
+                            <div class="ops-command">${escapeHtml(command || 'No copy command available.')}</div>
+                            <button class="btn ops-small-btn" onclick='copyText(${JSON.stringify(command || '')}).then((ok) => { this.textContent = ok ? "Copied" : "Copy"; setTimeout(() => { this.textContent = "Copy"; }, 1200); })'>Copy</button>
+                        </div>
+                        <div class="recommendation-reason">
+                            <div class="ops-list-title">Reasons</div>
+                            ${reasons}
+                        </div>
+                        <div class="recommendation-warnings">
+                            <div class="ops-list-title">Warnings</div>
+                            ${warnings}
+                        </div>
+                        <div class="recommendation-alternatives">
+                            <div class="ops-list-title">Alternatives</div>
+                            ${altHtml}
+                        </div>
+                        <div class="recommendation-rejected">
+                            <div class="ops-list-title">Rejected</div>
+                            ${rejectedHtml}
+                        </div>
+                    </div>
+                `;
+            }).catch(() => {
+                recommendationBody.innerHTML = '<div class="sl-unavail">Recommendation verisi yüklenemedi.</div>';
+            });
+        }
+
+        function loadQuotaForecast() {
+            if (!forecastBody) return;
+            forecastBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
+            fetch('/api/quota-forecast?window=24h&strategy=hybrid').then(r => r.json()).then(data => {
+                currentQuotaForecastData = data;
+                const accounts = data.accounts || [];
+                const recs = data.recommendations || [];
+                const riskClass = statusPillClass(data.overall_risk);
+                const cacheAge = data.quota_cache_age_seconds != null ? fmtSec(Number(data.quota_cache_age_seconds)) : 'unknown';
+                const cards = accounts.map(acct => {
+                    const rows = (acct.models || []).map(model => `
+                        <div class="forecast-model-row">
+                            <div>
+                                <div class="forecast-model-name">${escapeHtml(model.model || '—')}</div>
+                                <div class="forecast-model-note">${escapeHtml((model.notes || []).join(' '))}</div>
+                            </div>
+                            <div>${model.remaining_percent != null ? `${model.remaining_percent}%` : '—'}</div>
+                            <div>${model.burn_rate_percent_per_hour != null ? `${model.burn_rate_percent_per_hour}%/h` : '—'}</div>
+                            <div class="forecast-risk-${String(model.risk || 'unknown')}">${escapeHtml(model.eta_label || 'unknown')}</div>
+                            <div>${model.estimated_jobs_remaining != null ? `${model.estimated_jobs_remaining} jobs` : '—'}</div>
+                            <div>${model.reset_in_seconds > 0 ? fmtSec(Number(model.reset_in_seconds)) : '—'}</div>
+                            <div class="forecast-confidence">${escapeHtml(String(model.confidence || 'unknown'))}</div>
+                        </div>
+                    `).join('');
+                    const topRisk = (acct.models || [])[0]?.risk || 'unknown';
+                    return `<div class="forecast-account">
+                        <div class="forecast-account-head">
+                            <div class="forecast-account-name">${escapeHtml(acct.account || '—')}</div>
+                            <div class="ops-status-pill ${statusPillClass(topRisk)}">${escapeHtml(topRisk)}</div>
+                        </div>
+                        <div class="forecast-model-list">${rows || '<div class="sl-unavail">No model forecast available.</div>'}</div>
+                    </div>`;
+                }).join('');
+                forecastBody.innerHTML = `
+                    <div class="forecast-header">
+                        <div class="ops-status-pill ${riskClass}">${escapeHtml(String(data.overall_risk || 'unknown').toUpperCase())}</div>
+                    </div>
+                    ${renderUpdatedMeta(data, [
+                        metaItem('Window', data.window || '24h'),
+                        metaItem('Cache', cacheAge, data.stale ? 'stale' : ''),
+                    ])}
+                    ${cards || '<div class="sl-unavail">Forecast verisi yüklenemedi.</div>'}
+                    <div class="recommendation-reason">
+                        <div class="ops-list-title">Usage strategy</div>
+                        ${normalizeList(recs, 'No forecast recommendations available.')}
+                    </div>
+                `;
+            }).catch(() => {
+                forecastBody.innerHTML = '<div class="sl-unavail">Forecast verisi yüklenemedi.</div>';
+            });
+        }
+
+        function scoreForAgent(agent, metric) {
+            if (metric === 'speed') {
+                return agent.avg_duration_seconds == null ? -1 : -agent.avg_duration_seconds;
+            }
+            if (metric === 'efficiency') {
+                const tokens = agent.tokens_total ?? 0;
+                const success = agent.jobs_succeeded ?? 0;
+                return success > 0 ? -(tokens / success) : -(tokens || 0);
+            }
+            return agent.success_rate == null ? -1 : agent.success_rate;
+        }
+
+        function formatAgentValue(value, fallback = '—') {
+            if (value == null || value === '') return fallback;
+            if (typeof value === 'number') return Number.isInteger(value) ? String(value) : value.toFixed(1);
+            return String(value);
+        }
+
+        function loadAgentMatrix() {
+            if (!agentMatrixBody) return;
+            agentMatrixBody.innerHTML = '<div class="loading-text">Yükleniyor…</div>';
+            fetch(`/api/agent-matrix?range=${encodeURIComponent(_agentMatrixRange)}`).then(r => r.json()).then(data => {
+                currentAgentMatrixData = data;
+                const agents = [...(data.agents || [])].sort((a, b) => scoreForAgent(b, _agentMatrixMetric) - scoreForAgent(a, _agentMatrixMetric));
+                const rows = agents.map(agent => {
+                    const distribution = Object.entries(agent.model_distribution || {});
+                    const distHtml = distribution.length
+                        ? distribution.map(([name, pct]) => `
+                            <div class="matrix-dist-row">
+                                <span class="matrix-dist-name">${escapeHtml(name)}</span>
+                                <div class="matrix-dist-track"><div class="matrix-dist-fill" style="width:${Math.max(0, Math.min(100, pct * 100))}%"></div></div>
+                                <span class="matrix-dist-pct">${Math.round(pct * 100)}%</span>
+                            </div>
+                        `).join('')
+                        : '<div class="sl-unavail">No distribution data.</div>';
+                    const successRate = agent.success_rate == null ? 'unknown' : `${agent.success_rate}%`;
+                    const tokensPerSuccess = agent.tokens_per_success == null ? '—' : fmtNum(agent.tokens_per_success);
+                    const tokensTotal = agent.tokens_total == null ? '—' : fmtNum(agent.tokens_total);
+                    return `<tr>
+                        <td>
+                            <div class="matrix-agent">${escapeHtml(agent.agent || '—')}</div>
+                            <div class="matrix-note">${escapeHtml((agent.risk_notes || []).join(' | ') || 'No risk notes.')}</div>
+                        </td>
+                        <td>${formatAgentValue(agent.jobs_total)}</td>
+                        <td>${escapeHtml(successRate)}</td>
+                        <td>${escapeHtml(tokensTotal)}</td>
+                        <td>${agent.avg_duration_seconds != null ? fmtDur(Math.round(agent.avg_duration_seconds)) : '—'}</td>
+                        <td>${formatAgentValue(agent.verify_failures)}</td>
+                        <td>${escapeHtml(tokensPerSuccess)}</td>
+                        <td><div class="matrix-distribution">${distHtml}</div></td>
+                    </tr>`;
+                }).join('');
+
+                const summary = data.summary || {};
+                agentMatrixBody.innerHTML = `
+                    <div class="matrix-toolbar">
+                        <div class="ops-status-pill ${statusPillClass('ok')}">Metric: ${escapeHtml(_agentMatrixMetric)}</div>
+                        <div class="ops-status-pill ${statusPillClass('ok')}">Range: ${escapeHtml(data.range || _agentMatrixRange)}</div>
+                        <div class="timeline-meta">Best success rate: <b>${escapeHtml(summary.best_success_rate || '—')}</b></div>
+                        <div class="timeline-meta">Lowest token cost: <b>${escapeHtml(summary.lowest_tokens_per_success || '—')}</b></div>
+                        <div class="timeline-meta">Most used: <b>${escapeHtml(summary.most_used_agent || '—')}</b></div>
+                    </div>
+                    ${renderUpdatedMeta(data)}
+                    <table class="matrix-table">
+                        <thead>
+                            <tr>
+                                <th>Agent</th>
+                                <th>Jobs</th>
+                                <th>Success</th>
+                                <th>Tokens</th>
+                                <th>Avg Time</th>
+                                <th>Verify Fail</th>
+                                <th>Cost/Success</th>
+                                <th>Model Mix</th>
+                            </tr>
+                        </thead>
+                        <tbody>${rows || '<tr><td colspan="8"><div class="sl-unavail">No agent data available.</div></td></tr>'}</tbody>
+                    </table>
+                `;
+            }).catch(() => {
+                agentMatrixBody.innerHTML = '<div class="sl-unavail">Agent matrix verisi yüklenemedi.</div>';
+            });
+        }
+
         // Footer timestamp
         // Doldurma loadData() tamamlandığında yapılır.
 
@@ -1497,7 +2001,17 @@
             }).catch(() => {});
         }
 
+        function loadDashboardVersion() {
+            if (!dashboardVersionBadge) return;
+            fetch('/api/version').then(r => r.json()).then(data => {
+                if (!data || !data.version) return;
+                dashboardVersionBadge.textContent = `v${data.version}`;
+                dashboardVersionBadge.title = `agykit ${data.version}`;
+            }).catch(() => {});
+        }
+
         // Initial Load
+        loadDashboardVersion();
         loadData();
         loadClaudeQuota();
         loadCodexUsage();
@@ -1508,9 +2022,19 @@
         loadActiveJob();
         loadJobAnalytics();
         loadRtkStats();
+        loadHealthCenter();
+        loadJobTimeline();
+        loadRecommendation();
+        loadQuotaForecast();
+        loadAgentMatrix();
         loadQuotaAlerts();
         setInterval(loadRtkStats, 60_000);
         setInterval(loadJobAnalytics, 120_000);
+        setInterval(loadHealthCenter, 120_000);
+        setInterval(loadJobTimeline, 120_000);
+        setInterval(loadRecommendation, 120_000);
+        setInterval(loadQuotaForecast, 120_000);
+        setInterval(loadAgentMatrix, 180_000);
 
         // SSE connection — typed events for selective refresh
         const HEAVY_REFRESH_INTERVAL_MS = 60_000;
@@ -1518,16 +2042,22 @@
 
         function connectSSE() {
             const es = new EventSource('/events');
+            setLiveIndicator('reconnecting', 'Connecting…');
 
             es.addEventListener('meta', function(ev) {
-                // connected
+                let state = 'connected';
+                try {
+                    const meta = JSON.parse(ev.data || '{}');
+                    state = meta.state || state;
+                } catch (_) {}
+                setLiveIndicator(state, state === 'connected' ? 'Connected' : String(state).replace(/_/g, ' '));
+                pulseLiveIndicator();
             });
 
             function onEvent(eventType, fn) {
                 es.addEventListener(eventType, function(ev) {
-                    liveDot.classList.remove('flash');
-                    void liveDot.offsetWidth;
-                    liveDot.classList.add('flash');
+                    setLiveIndicator('connected', 'Connected');
+                    pulseLiveIndicator();
                     fn();
                 });
             }
@@ -1535,19 +2065,40 @@
             // Lightweight — refresh on every change
             onEvent('statusline', loadStatusline);
 
+            onEvent('health', loadHealthCenter);
+
             // Medium weight — refresh on specific source changes
             onEvent('claude', function() {
                 loadClaudeQuota();
                 loadData();
                 loadActivityFeed();
+                loadAgentMatrix();
+                loadRecommendation();
+                loadQuotaForecast();
             });
             onEvent('codex', function() {
                 loadCodexUsage();
+                loadAgentMatrix();
+                loadRecommendation();
             });
             onEvent('quota', function() {
                 loadQuota();
                 loadStatusline();
+                loadRecommendation();
+                loadQuotaForecast();
+                loadHealthCenter();
             });
+            onEvent('job', function() {
+                loadActiveJob();
+                loadJobTimeline();
+                loadJobAnalytics();
+                loadRecommendation();
+                loadQuotaForecast();
+                loadAgentMatrix();
+            });
+            onEvent('recommendation', function() { loadRecommendation(); });
+            onEvent('forecast', function() { loadQuotaForecast(); });
+            onEvent('agent-matrix', function() { loadAgentMatrix(); });
 
             // Catch-all for unknown event types (throttled full refresh)
             es.onmessage = function(ev) {
@@ -1563,6 +2114,11 @@
                         loadLastSession();
                         loadActivityFeed();
                         loadActiveJob();
+                        loadJobTimeline();
+                        loadHealthCenter();
+                        loadRecommendation();
+                        loadQuotaForecast();
+                        loadAgentMatrix();
                         loadJobAnalytics();
                         loadQuotaAlerts();
                     }
@@ -1571,8 +2127,15 @@
 
             es.onerror = function() {
                 es.close();
+                setLiveIndicator('reconnecting', 'Reconnecting…');
                 setTimeout(connectSSE, 5000);
             };
         }
         connectSSE();
+
+        setInterval(() => {
+            if (liveState && liveState.dataset.state === 'connected') {
+                liveState.textContent = 'Connected';
+            }
+        }, 60_000);
     

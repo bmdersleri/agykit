@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>agykit Quota & Usage Dashboard</title>
+    <title>agykit Operations Dashboard</title>
     <!-- Inter Font -->
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -22,13 +22,14 @@
                     <line x1="12" y1="20" x2="12" y2="4"></line>
                     <line x1="6" y1="20" x2="6" y2="14"></line>
                 </svg>
-                <h1 class="logo-title">agykit · Quota Dashboard</h1>
-                <span class="version-badge">v1.1.6</span>
+                <h1 class="logo-title">agykit · Operations Dashboard</h1>
+                <span class="version-badge" id="dashboardVersionBadge">v1.3.1</span>
             </div>
             <div class="header-actions">
                 <div class="live-indicator">
                     <span class="live-dot" id="liveDot"></span>
                     <span class="live-label">Live</span>
+                    <span class="live-state" id="liveState">Connected</span>
                 </div>
                 <button id="themeToggle" class="theme-toggle-btn">🌙</button>
             </div>
@@ -191,6 +192,85 @@
                     </div>
                     <div id="activityFeedStats"></div>
                     <div id="activityFeedBody" class="activity-feed-body">
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+        <!-- 7. Decision Center -->
+        <section class="info-section">
+            <div class="section-header">
+                <h2 class="section-title">Decision Center</h2>
+                <div class="section-actions">
+                    <button class="btn" onclick="loadHealthCenter()">↻ Health</button>
+                    <button class="btn" onclick="loadJobTimeline()">↻ Timeline</button>
+                    <button class="btn" onclick="loadRecommendation()">↻ Recommend</button>
+                    <button class="btn" onclick="loadQuotaForecast()">↻ Forecast</button>
+                    <button class="btn" onclick="loadAgentMatrix()">↻ Matrix</button>
+                </div>
+            </div>
+            <div class="info-grid">
+                <div class="info-card ops-card" id="healthCenterCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">Health Center</h3>
+                        <button class="btn" onclick="loadHealthCenter()">↻ Yenile</button>
+                    </div>
+                    <div id="healthCenterBody" class="ops-card-body">
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+                <div class="info-card ops-card" id="timelineCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">Job Timeline</h3>
+                        <div class="section-actions">
+                            <button class="btn" onclick="setTimelineFilter('all')">All</button>
+                            <button class="btn" onclick="setTimelineFilter('failed')">Failed</button>
+                            <button class="btn" onclick="copyText(document.getElementById('timelineBody').dataset.raw || '{}')">Copy JSON</button>
+                            <button class="btn" onclick="loadJobTimeline()">↻</button>
+                        </div>
+                    </div>
+                    <div id="timelineBody" class="ops-card-body">
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+                <div class="info-card ops-card" id="recommendationCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">Recommended Account/Model</h3>
+                        <div class="section-actions">
+                            <button class="btn" onclick="loadRecommendation('balanced')">Balanced</button>
+                            <button class="btn" onclick="loadRecommendation('reliability')">Reliable</button>
+                            <button class="btn" onclick="loadRecommendation('speed')">Fast</button>
+                        </div>
+                    </div>
+                    <div id="recommendationBody" class="ops-card-body">
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+                <div class="info-card ops-card" id="forecastCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">Quota Forecast</h3>
+                        <button class="btn" onclick="loadQuotaForecast()">↻ Yenile</button>
+                    </div>
+                    <div id="forecastBody" class="ops-card-body">
+                        <div class="sl-unavail">Yükleniyor…</div>
+                    </div>
+                </div>
+                <div class="info-card ops-card ops-card-wide" id="agentMatrixCard">
+                    <div class="info-card-title-group">
+                        <h3 class="info-card-title">Agent Performance Matrix</h3>
+                        <div class="section-actions">
+                            <button class="btn" onclick="setAgentMatrixRange('24h')">24h</button>
+                            <button class="btn" onclick="setAgentMatrixRange('7d')">7d</button>
+                            <button class="btn" onclick="setAgentMatrixRange('30d')">30d</button>
+                            <button class="btn" onclick="setAgentMatrixMetric('reliability')">Reliability</button>
+                            <button class="btn" onclick="setAgentMatrixMetric('speed')">Speed</button>
+                            <button class="btn" onclick="setAgentMatrixMetric('efficiency')">Efficiency</button>
+                            <button class="btn" onclick="loadAgentMatrix()">↻</button>
+                            <button class="btn" onclick="exportAgentMatrixCsv()">Export</button>
+                        </div>
+                    </div>
+                    <div id="agentMatrixBody" class="ops-card-body">
                         <div class="sl-unavail">Yükleniyor…</div>
                     </div>
                 </div>

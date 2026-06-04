@@ -185,6 +185,32 @@ def test_daemon_timeout_auto_cancel():
     del os.environ["AGYKIT_JOB_TIMEOUT"]
 
 
+def test_daemon_preserves_live_owner_job():
+    """Daemon recovery must not reap a stale job whose owner is still alive."""
+    os.environ["AGYKIT_JOB_TIMEOUT"] = ""  # disable timeout ceiling
+    from datetime import datetime, timezone
+
+    old_ts = datetime(2020, 1, 1, tzinfo=timezone.utc).isoformat()
+    conn = jd._get_db()
+    conn.execute(
+        "INSERT INTO jobs (job_id, command, status, stage, started_at, updated_at, owner_pid) "
+        "VALUES (?, ?, 'running', 'running', ?, ?, ?)",
+        ("live-owner-001", "do-escalate", old_ts, old_ts, os.getpid()),
+    )
+    conn.commit()
+    conn.close()
+
+    JobDaemon()._recover_stale_jobs()
+
+    conn2 = jd._get_db()
+    row = conn2.execute(
+        "SELECT status FROM jobs WHERE job_id=?", ("live-owner-001",)
+    ).fetchone()
+    conn2.close()
+    assert row[0] == "running"  # untouched — owner alive
+    del os.environ["AGYKIT_JOB_TIMEOUT"]
+
+
 def test_can_start_job_no_active():
     from dashboard.collectors.jobs import job_list, _ACTIVE_STATUSES
 

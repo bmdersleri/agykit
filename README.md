@@ -177,6 +177,7 @@ agykit jobs --since 24h        Filter jobs by time range
 agykit jobs --json             Machine-readable JSON job output
 agykit stats                   Job statistics (total, by status, last 24h)
 agykit watch <job-id>          Live-stream a running job (TUI or terminal)
+agykit wait [job-id]           Block until a job ends (exit 0=ok 1=fail 2=timeout)
 agykit tail                    Live-tail all job events (socket)
 agykit cancel <job-id>         Cancel a running/starting job
 agykit cancel --all            Cancel all in-progress jobs
@@ -199,11 +200,20 @@ Live localhost web dashboard at `http://127.0.0.1:8787` (light/dark theme):
 - **RTK Tasarruf** — token savings statistics from rtk gain
 - **Aktif Job** — current running job status, stage, account, model, recent events
 - **Aktivite Akışı** — combined feed of recent agy and Claude Code activity
+- **Health Center** — local runtime checks for dependencies, config, storage, and agent data sources
+- **Job Timeline** — structured lifecycle view for the active or most recent job
+- **Recommended Account/Model** — explainable next-run suggestion based on quota, history, and project fit
+- **Quota Forecast** — burn-rate-based estimate for quota exhaustion risk and remaining jobs
+- **Agent Performance Matrix** — cross-agent comparison for reliability, speed, and token efficiency
 
 Dashboard uses **SSE typed events** — when data changes (quota refresh, new job event,
 Codex activity), only the affected card refreshes instead of a full page reload.
 
 Requires `tmux` for model quota capture. First load takes ~30s; results cached for 5 minutes.
+
+For endpoint details and sample data, see [docs/dashboard-api.md](docs/dashboard-api.md),
+[docs/dashboard-usage.md](docs/dashboard-usage.md), and
+[tests/fixtures/dashboard/README.md](tests/fixtures/dashboard/README.md).
 
 ---
 
@@ -222,6 +232,7 @@ agykit jobs --since 24h      # filter by time range
 agykit jobs --json           # machine-readable output
 agykit stats                 # job statistics summary
 agykit watch <job-id>        # live-stream (TUI via Textual, polling fallback)
+agykit wait [job-id]         # block until terminal; scriptable exit code
 agykit tail                  # live-tail all job events (socket)
 agykit cancel <job-id>       # cancel a running job
 agykit cancel --all          # cancel all in-progress jobs
@@ -238,6 +249,16 @@ SSE refresh cycle.
 If `~/.gemini` is not writable in the current environment, agykit copies the
 job store to a writable temp directory and keeps using that automatically.
 
+The job timeline is also exposed as JSON at `/api/active-job/timeline` and
+`/api/jobs/<job_id>/timeline`. The other dashboard data endpoints are:
+
+- `/api/health`
+- `/api/recommendation`
+- `/api/quota-forecast`
+- `/api/agent-matrix`
+
+See `docs/dashboard-api.md` for the response shapes and field notes.
+
 ### Job lifecycle
 
 | Event | Meaning |
@@ -252,6 +273,31 @@ job store to a writable temp directory and keeps using that automatically.
 | `rollback_started` | Git rollback in progress |
 | `job_succeeded` | Final success |
 | `job_failed` | All accounts or all models exhausted |
+| `job_timed_out` | Exceeded `AGYKIT_JOB_TIMEOUT` — reaped (and SIGTERM'd by the daemon) |
+| `job_blocked` (stage `recovered`) | Owner process gone while job was active — reaped |
+
+`run` and `do-escalate` are **synchronous**, so the agykit shell that launched
+the job is recorded as its `owner_pid`. Recovery uses that PID as ground truth:
+a job whose owner is still alive is **never** marked stale, no matter how long
+agy works silently; a job whose owner has died is reaped at once instead of
+waiting out the 5-minute idle window. The hard `AGYKIT_JOB_TIMEOUT` ceiling
+still applies regardless of PID as a runaway backstop.
+
+### Waiting for completion (scripting)
+
+`agykit watch` is an interactive TUI. To gate a script on a job, use `wait`:
+
+```bash
+agykit do-escalate "implement X"      # prints "==> job: <id>" up front
+agykit wait                           # waits on the most-recent job
+echo $?                               # 0 succeeded · 1 failed · 2 wait timed out
+
+agykit wait <job-id> --timeout 1800   # give up after 30 min (exit 2)
+```
+
+`wait` is the supported completion signal for orchestrators (CI, Claude Code,
+cron) — poll-free and exit-code driven. It runs the same PID-aware recovery each
+tick, so a crashed run resolves to `failed` promptly rather than hanging.
 
 ### Storage layout
 
@@ -438,10 +484,25 @@ Per-project `.agykit.conf` (in CWD) or `AGYKIT_*` env vars:
 | `AGYKIT_SYSTEM` | Path to system-context file injected into prompts | Agent-detected: `CLAUDE_AGY_SYSTEM.md`, `CODEX_AGY_SYSTEM.md`, or `OPENCODE_AGY_SYSTEM.md` (also reads `.opencode/commands/agykit.md`) |
 | `AGYKIT_FLAGS` | Extra agy flags | `--dangerously-skip-permissions` |
 | `AGYKIT_TIMEOUT` | agy print timeout | `15m` |
+| `AGYKIT_JOB_TIMEOUT` | Hard job ceiling (s); past this a job is reaped + SIGTERM'd regardless of PID. `0`/empty disables. Keep **≥ `AGYKIT_TIMEOUT`** or long agy runs get cut mid-flight | `1800` |
 | `AGYKIT_TERSE` | Terse output level: `0`/`lite`/`full`/`ultra` | `ultra` |
 | `AGYKIT_QUOTA_ALERT_PCT` | Warn when model quota drops below N% | — |
+| `AGYKIT_AGENT` | Force orchestrator agent: `claude`/`codex`/`opencode` (else auto-detected) | auto |
+| `AGYKIT_ARCHITECT_ESCALATE` | Agent CLI for architect review when ladder fails: `auto`/`claude`/`codex`/`opencode` | — |
+| `AGYKIT_ARCHITECT_MODEL` | Model for opencode architect, format `provider/model` | — |
 
 See `agykit.conf.example` for a full annotated template.
+
+### Agent detection priority
+
+agykit auto-detects which agent is running it:
+
+1. `AGYKIT_AGENT` env override (always wins)
+2. **Runtime signals** — `CLAUDE_CODE_SESSION_ID`/`CLAUDE_CODE_ENTRYPOINT` → claude · `CODEX_*` → codex · `OPENCODE*` → opencode
+3. **On-disk fallback** — `~/.codex/auth.json`, `~/.claude/.credentials.json`, `~/.config/opencode/opencode.json`
+4. `unknown`
+
+The detected agent selects the injected system file (`CLAUDE_AGY_SYSTEM.md`, `CODEX_AGY_SYSTEM.md`, or `OPENCODE_AGY_SYSTEM.md`) and routes architect-escalate to the correct non-interactive invocation (`claude -p`, `codex exec`, `opencode run -m`). Run `agykit doctor` → **Agent Integration** panel for a live check.
 
 ---
 

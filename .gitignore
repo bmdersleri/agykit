@@ -8,3 +8,10 @@ __pycache__/
 
 .superpowers/
 .playwright-mcp/
+.playwright-cli/
+
+# node artifacts (opencode plugin bun install artıkları)
+node_modules/
+package.json
+package-lock.json
+cache/
