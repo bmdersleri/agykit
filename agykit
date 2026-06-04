@@ -1531,6 +1531,48 @@ else:
 PY
 }
 
+cmd_update() {
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    local repo; repo="$(cd "$(dirname "$self")" && pwd)"
+    echo "==> agykit repo: $repo"
+    echo "==> Current version: $AGYKIT_VERSION"
+
+    # Fetch without merging to compare
+    if ! git -C "$repo" fetch --quiet origin 2>/dev/null; then
+        echo "==> ERROR: could not reach remote (no network or remote not set)"
+        return 1
+    fi
+
+    local local_hash remote_hash
+    local_hash=$(git -C "$repo" rev-parse HEAD 2>/dev/null)
+    remote_hash=$(git -C "$repo" rev-parse origin/HEAD 2>/dev/null \
+        || git -C "$repo" rev-parse origin/main 2>/dev/null \
+        || git -C "$repo" rev-parse origin/master 2>/dev/null)
+
+    if [ "$local_hash" = "$remote_hash" ]; then
+        echo "==> Already up to date."
+        return 0
+    fi
+
+    # Show what's coming
+    echo "==> Updates available:"
+    git -C "$repo" log --oneline HEAD..origin/HEAD 2>/dev/null \
+        || git -C "$repo" log --oneline HEAD..origin/main 2>/dev/null \
+        || true
+
+    # Pull
+    if ! git -C "$repo" pull --ff-only origin 2>&1; then
+        echo "==> ERROR: pull failed (local changes? run: git -C '$repo' status)"
+        return 1
+    fi
+
+    # Re-read new version from updated file
+    local new_version
+    new_version=$(grep '^AGYKIT_VERSION=' "$repo/agykit" | head -1 | sed 's/AGYKIT_VERSION="\(.*\)"/\1/')
+    echo "==> Updated: $AGYKIT_VERSION → $new_version"
+    echo "==> Restart your shell or run: source '$repo/agykit'"
+}
+
 cmd_doctor() {
     local fix_mode=0
     [ "${1:-}" = "--fix" ] && fix_mode=1
@@ -1787,6 +1829,7 @@ Config: AGYKIT_ARCHITECT_ESCALATE=auto|claude|codex|opencode enables architect f
   agykit quota --json             Machine-readable JSON quota output
   agykit quota --status           One-line summary for scripts/statusline
   agykit rtk                     Show RTK token savings statistics
+  agykit update                  Pull latest version from git remote
   agykit doctor                  Check installation and system file dependencies
   agykit doctor --fix            Auto-fix resolvable issues
   agykit init                    Interactive project setup (.agykit.conf + system context)
@@ -2016,6 +2059,7 @@ case "${1:-}" in
     rtk)           cmd_rtk "${@:2}" ;;
     doctor)        cmd_doctor "${2:-}" ;;
     init)          cmd_init ;;
+    update)        cmd_update ;;
     -v|--version|version) echo "agykit $AGYKIT_VERSION" ;;
     ""|-h|--help|help) usage ;;
     *)             echo "Unknown command: $1"; usage; exit 1 ;;
