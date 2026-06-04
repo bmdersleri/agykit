@@ -542,13 +542,14 @@
                     ? (jobData.active.snapshot.account || null)
                     : null;
                 const activeEmail = jobAccount || activeData.email || slData.email || null;
-                const activeWorking = !!(
+                // Job running on rotated account → activeWorking true regardless of statusline email
+                const activeWorking = !!(jobAccount || (
                     slData.available
                     && slData.email
                     && slData.email === activeEmail
                     && !['idle', ''].includes(String(slData.agent_state || '').toLowerCase())
                     && Number(slData.age_seconds || 0) <= 300
-                );
+                ));
                 quotaGrid.innerHTML = '';
                 
                 for (const k of Object.keys(qcCountdowns)) {
