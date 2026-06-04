@@ -372,7 +372,7 @@ def test_api_version_route():
         assert r.status == 200
         data = json.loads(r.read())
         assert data["ok"] is True
-        assert data["version"] == "1.3.1"
+        assert data["version"] == "1.3.2"
         assert data["source"] == "agykit"
     finally:
         srv.shutdown()
