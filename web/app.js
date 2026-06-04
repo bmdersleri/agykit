@@ -674,7 +674,7 @@
                                 <div class="qcard-body">${statusHtml}</div>
                                 <div class="qcard-footer">
                                     <span>${acct.session_count} oturum</span>
-                                    <span>${acct.exhaustion_count} kota ihlali</span>
+                                    <span>${acct.exhaustion_count} rotasyon</span>
                                 </div>
                             </div>
                             <div class="qcard-right">
@@ -720,7 +720,7 @@
                                 ${statusIcon}
                                 <div class="qcard-footer qcard-passive-footer">
                                     <span>${acct.session_count} oturum</span>
-                                    <span>${acct.exhaustion_count} ihlal</span>
+                                    <span>${acct.exhaustion_count} rotasyon</span>
                                 </div>
                             </div>
                         </div>`;
