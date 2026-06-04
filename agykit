@@ -547,10 +547,7 @@ cmd_do_escalate() {
     local base=""; _in_git && base=$(git rev-parse -q --verify HEAD 2>/dev/null || echo "")
     _in_git || echo "==> ⚠ not a git repo — rollback safety disabled"
 
-    local verify_ctx=""
     _job_ensure_daemon
-    # owner_pid = this agykit shell ($$). do-escalate is synchronous, so this
-    # process IS the job; recovery treats it as live until the shell exits.
     local job_id; job_id=$(_job_op create "do-escalate" "$prompt" "$$")
     echo "==> job: $job_id"
     _CURRENT_JOB_ID="$job_id"
@@ -561,75 +558,21 @@ cmd_do_escalate() {
         }
     }
     trap _job_cleanup EXIT INT TERM
-
-    for model in "${LADDER[@]}"; do
-        echo "════ MODEL: $model ════"
-        cmd_model "$model" >/dev/null
-        _job_op event "$job_id" "model_selected" "running" "model $model" "" "$model"
-        local snap=""; _in_git && snap=$(_snapshot)
-        local applied=0
-        for a in "${accts[@]}"; do
-            cmd_account_switch "$a" >/dev/null 2>&1 || continue
-            echo "==> Pinging $a (30s)..."
-            if ! _agy_ping; then echo "==> PING FAIL on $a — skipping"; _job_op event "$job_id" "quota_rotated" "rotating" "ping fail $a" "$a" "$model" "Ping failed on $a, rotating"; continue; fi
-            local agy_ok=0 agy_attempt=0
-            while [ $agy_attempt -le 2 ] && [ $agy_ok -eq 0 ]; do
-                [ $agy_attempt -gt 0 ] && {
-                    local w=$((5 * agy_attempt))
-                    echo "==> TRANSIENT ERROR — retry $agy_attempt/2 in ${w}s"
-                    sleep $w
-                }
-                echo "==> $model @ $a${agy_attempt:+" (attempt $((agy_attempt+1))/3)"}"
-                [ $agy_attempt -eq 0 ] && _job_op event "$job_id" "account_selected" "running" "$model @ $a" "$a" "$model"
-                "$AGY_BIN" -p "$(_system_prefix)$(_git_lock_directive)${verify_ctx}TASK: $prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-                agy_attempt=$((agy_attempt + 1))
-                grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && {
-                    echo "==> QUOTA on $a"; _ops_log "do-escalate" "quota-rotate" "$a" "$model" "${prompt:0:80}"
-                    _job_op event "$job_id" "quota_rotated" "rotating" "quota rotate $a" "$a" "$model" "Quota on $a at $model"
-                    _rollback_to "$base" "$snap"
-                    agy_ok=2; break
-                }
-                if [ $agy_attempt -le 2 ] && grep -qiE "ConnectionError|Connection refused|reset by peer|Name or service not known|timed ?out|DeadlineExceeded|UNAVAILABLE" /tmp/agykit-out.log; then
-                    _job_op event "$job_id" "job_retrying" "running" "retry $agy_attempt/2 $model @ $a" "$a" "$model" "Transient error, retry ${agy_attempt}/2"
-                    continue
-                fi
-                agy_ok=1
-            done
-            [ "$agy_ok" = "1" ] && { applied=1; break; }
-            [ "$agy_ok" = "2" ] && continue
-            echo "==> FAILED on $model @ $a (transient)"
-        done
-        [ "$applied" -eq 0 ] && { echo "==> ACCOUNTS EXHAUSTED at $model"; _ops_log "do-escalate" "exhausted" "" "$model" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "accounts exhausted" "" "$model" "Accounts exhausted at $model"; _rollback_to "$base" "$snap"; restore_model; exit 1; }
-
-        _normalize_head "$base"
-
-        _job_op event "$job_id" "verify_started" "verifying" "verify $model" "$a" "$model"
-        if eval "$VERIFY_CMD" >/tmp/agykit-verify.log 2>&1; then
-            restore_model
-            _job_op event "$job_id" "verify_passed" "succeeded" "done" "$a" "$model" "Verify passed on $model"
-            _job_op set-verify-result "$job_id" "passed"
-            if _in_git && [ -n "$snap" ]; then
-                echo "==> agy changes (review before committing):"
-                git --no-pager diff --stat "$snap" 2>/dev/null || true
-                local diff_out; diff_out=$(git --no-pager diff "$snap" 2>/dev/null | head -c 32768 || true)
-                [ -n "$diff_out" ] && _job_op set-diff "$job_id" "$diff_out"
-            fi
-            echo "==> SUCCESS with $model"; _ops_log "do-escalate" "success" "$a" "$model" "${prompt:0:80}"; _quota_alert; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 0
-        else
-            local vout; vout=$(tail -30 /tmp/agykit-verify.log 2>/dev/null || echo "")
-            [ -n "$vout" ] && verify_ctx="Previous attempt with model '$model' failed verification. Error:
-${vout}
-
-Fix the above issues, then complete the original task:
-"
-            echo "==> verify FAILED on $model — escalating"; _ops_log "do-escalate" "verify-failed" "$a" "$model" "${prompt:0:80}"
-            _job_op event "$job_id" "verify_failed" "rolling_back" "verify failed $model" "$a" "$model" "" "$vout"
-            _job_op event "$job_id" "rollback_started" "rolling_back" "rollback $model" "" "$model" "Rolling back after verify failure on $model"
-            _rollback_to "$base" "$snap"
-        fi
-    done
-    # All LADDER models exhausted — optionally escalate to architect
-    if [ -n "${AGYKIT_ARCHITECT_ESCALATE:-}" ]; then
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    AGYKIT_SELF="$self" PYTHONPATH="$(cd "$(dirname "$self")" && pwd)" \
+        python3 -m dashboard.orchestrator escalate \
+            --job-id "$job_id" \
+            --prompt "$prompt" \
+            --accounts "${accts[@]}" \
+            --ladder "${LADDER[@]}" \
+            --verify-cmd "$VERIFY_CMD" \
+            --git-base "$base" \
+            --system-prefix "$(_system_prefix)" \
+            --terse-prefix "$(_terse_prefix)"
+    local rc=$?
+    restore_model
+    # Architect escalation on full failure (AGYKIT_ARCHITECT_ESCALATE set)
+    if [ $rc -ne 0 ] && [ -n "${AGYKIT_ARCHITECT_ESCALATE:-}" ]; then
         echo "==> ESCALATING to architect (AGYKIT_ARCHITECT_ESCALATE=$AGYKIT_ARCHITECT_ESCALATE)"
         _job_op event "$job_id" "architect_escalate" "running" "architect review" "" "" "All models failed; escalating to architect"
         local vlog=""; [ -f /tmp/agykit-verify.log ] && vlog=$(tail -50 /tmp/agykit-verify.log 2>/dev/null || true)
@@ -660,7 +603,6 @@ Analyze why all automated attempts failed. Provide:
 3. Any code snippets needed
 
 Be specific and actionable. The coder is an AI agent that will re-attempt this task."
-
         local arch_out
         arch_out=$(_architect_invoke "$arch_prompt")
         echo ""
@@ -669,9 +611,11 @@ Be specific and actionable. The coder is an AI agent that will re-attempt this t
         echo "══════════════════════════"
         _job_op event "$job_id" "architect_reviewed" "failed" "architect done" "" "" "$arch_out"
     fi
-
-    echo "==> FAILED — all models exhausted"; _ops_log "do-escalate" "all-exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "all models exhausted" "" "" "All models failed"; restore_model; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 1
+    trap - EXIT INT TERM
+    _CURRENT_JOB_ID=""
+    return $rc
 }
+
 
 cmd_init() {
     echo "═══ agykit init — project setup ═══"
