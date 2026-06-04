@@ -59,6 +59,78 @@ def test_run_agy_quota_detected():
     assert not result.ok
 
 
+from dashboard.orchestrator import RunOrchestrator, EscalateOrchestrator, invalidate_quota_cache
+
+
+def _make_run_orch(accounts=None, prompt="do task"):
+    return RunOrchestrator(
+        job_id="j-run",
+        accounts=accounts or ["acct1@g.com", "acct2@g.com"],
+        prompt=prompt,
+    )
+
+
+def test_run_succeeds_first_account():
+    orch = _make_run_orch()
+    with patch.object(orch, "account_switch", return_value=True), \
+         patch.object(orch, "ping", return_value=True), \
+         patch.object(orch, "run_agy", return_value=AgyResult(ok=True)), \
+         patch.object(orch, "ops_log") as mock_log, \
+         patch.object(orch, "job_event"):
+        result = orch.run()
+    assert result == 0
+    mock_log.assert_called_once_with("run", "success", "acct1@g.com", "", "do task")
+
+
+def test_run_rotates_on_quota():
+    orch = _make_run_orch()
+    call_count = [0]
+    def run_agy_side(prompt, flags):
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return AgyResult(quota_hit=True)
+        return AgyResult(ok=True)
+
+    with patch.object(orch, "account_switch", return_value=True), \
+         patch.object(orch, "ping", return_value=True), \
+         patch.object(orch, "run_agy", side_effect=run_agy_side), \
+         patch.object(orch, "ops_log"), \
+         patch.object(orch, "job_event"), \
+         patch("dashboard.orchestrator.invalidate_quota_cache"):
+        result = orch.run()
+    assert result == 0
+    assert call_count[0] == 2
+
+
+def test_run_fails_all_accounts_exhausted():
+    orch = _make_run_orch()
+    with patch.object(orch, "account_switch", return_value=True), \
+         patch.object(orch, "ping", return_value=True), \
+         patch.object(orch, "run_agy", return_value=AgyResult(quota_hit=True)), \
+         patch.object(orch, "ops_log"), \
+         patch.object(orch, "job_event"), \
+         patch("dashboard.orchestrator.invalidate_quota_cache"):
+        result = orch.run()
+    assert result == 1
+
+
+def test_run_skips_ping_fail():
+    orch = _make_run_orch(accounts=["dead@g.com", "alive@g.com"])
+    ping_calls = []
+    def ping_side(acct):
+        ping_calls.append(acct)
+        return acct == "alive@g.com"
+
+    with patch.object(orch, "account_switch", return_value=True), \
+         patch.object(orch, "ping", side_effect=ping_side), \
+         patch.object(orch, "run_agy", return_value=AgyResult(ok=True)), \
+         patch.object(orch, "ops_log"), \
+         patch.object(orch, "job_event"):
+        result = orch.run()
+    assert result == 0
+    assert ping_calls == ["dead@g.com", "alive@g.com"]
+
+
 def test_run_agy_transient_on_nonzero_exit():
     """Non-zero exit + no quota → transient_error."""
     orch = ConcreteOrchestrator(job_id="j1", accounts=["a@b.com"], prompt="hi")
