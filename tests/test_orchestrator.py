@@ -131,6 +131,84 @@ def test_run_skips_ping_fail():
     assert ping_calls == ["dead@g.com", "alive@g.com"]
 
 
+def _make_esc_orch(accounts=None, ladder=None):
+    return EscalateOrchestrator(
+        job_id="j-esc",
+        accounts=accounts or ["acct1@g.com"],
+        prompt="fix the bug",
+        ladder=ladder or ["flash", "pro"],
+        verify_cmd="true",
+        git_base="",
+    )
+
+
+def test_escalate_succeeds_first_model():
+    orch = _make_esc_orch()
+    with patch.object(orch, "account_switch", return_value=True), \
+         patch.object(orch, "ping", return_value=True), \
+         patch.object(orch, "run_agy", return_value=AgyResult(ok=True)), \
+         patch.object(orch, "switch_model", return_value=True), \
+         patch.object(orch, "run_verify", return_value=(True, "")), \
+         patch.object(orch, "ops_log"), \
+         patch.object(orch, "job_event"), \
+         patch.object(orch, "git_snapshot", return_value="abc123"), \
+         patch.object(orch, "git_rollback"):
+        result = orch.run()
+    assert result == 0
+
+
+def test_escalate_retries_transient():
+    orch = _make_esc_orch()
+    call_count = [0]
+    def run_agy_side(prompt, flags):
+        call_count[0] += 1
+        if call_count[0] < 3:
+            return AgyResult(transient_error=True)
+        return AgyResult(ok=True)
+
+    with patch.object(orch, "account_switch", return_value=True), \
+         patch.object(orch, "ping", return_value=True), \
+         patch.object(orch, "run_agy", side_effect=run_agy_side), \
+         patch.object(orch, "switch_model", return_value=True), \
+         patch.object(orch, "run_verify", return_value=(True, "")), \
+         patch.object(orch, "ops_log"), \
+         patch.object(orch, "job_event"), \
+         patch.object(orch, "git_snapshot", return_value=""), \
+         patch.object(orch, "git_rollback"), \
+         patch("time.sleep"):
+        result = orch.run()
+    assert result == 0
+    assert call_count[0] == 3
+
+
+def test_escalate_escalates_model_on_verify_fail():
+    orch = _make_esc_orch(ladder=["flash", "pro"])
+    model_calls = []
+    def switch_model_side(m):
+        model_calls.append(m)
+        return True
+
+    verify_calls = [0]
+    def run_verify_side():
+        verify_calls[0] += 1
+        if verify_calls[0] == 1:
+            return (False, "test failed")
+        return (True, "")
+
+    with patch.object(orch, "account_switch", return_value=True), \
+         patch.object(orch, "ping", return_value=True), \
+         patch.object(orch, "run_agy", return_value=AgyResult(ok=True)), \
+         patch.object(orch, "switch_model", side_effect=switch_model_side), \
+         patch.object(orch, "run_verify", side_effect=run_verify_side), \
+         patch.object(orch, "ops_log"), \
+         patch.object(orch, "job_event"), \
+         patch.object(orch, "git_snapshot", return_value=""), \
+         patch.object(orch, "git_rollback"):
+        result = orch.run()
+    assert result == 0
+    assert model_calls == ["flash", "pro"]
+
+
 def test_run_agy_transient_on_nonzero_exit():
     """Non-zero exit + no quota → transient_error."""
     orch = ConcreteOrchestrator(job_id="j1", accounts=["a@b.com"], prompt="hi")
