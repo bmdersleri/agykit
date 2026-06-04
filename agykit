@@ -502,8 +502,6 @@ cmd_run() {
     _can_start_job "$([ "$force" -eq 1 ] && echo "--force")" || exit 1
     mapfile -t accts < <(_accounts_ordered "${raw_accts[@]}")
     _job_ensure_daemon
-    # owner_pid = this agykit shell ($$). run is synchronous, so this process IS
-    # the job; its liveness is the recovery ground-truth (see jobs.recover_stale_jobs).
     local job_id; job_id=$(_job_op create "run" "$prompt" "$$")
     echo "==> job: $job_id"
     _CURRENT_JOB_ID="$job_id"
@@ -514,17 +512,18 @@ cmd_run() {
         }
     }
     trap _job_cleanup EXIT INT TERM
-    for a in "${accts[@]}"; do
-        cmd_account_switch "$a" >/dev/null 2>&1 || continue
-        echo "==> Pinging $a (30s)..."
-        if ! _agy_ping; then echo "==> PING FAIL on $a — skipping"; _job_op event "$job_id" "quota_rotated" "rotating" "ping fail $a" "$a" "" "Ping failed on $a, rotating"; continue; fi
-        echo "==> Trying account: $a"
-        _job_op event "$job_id" "account_selected" "running" "account $a" "$a"
-        "$AGY_BIN" -p "$(_system_prefix)$(_terse_prefix)$prompt" $AGY_FLAGS --print-timeout "$TIMEOUT" 2>&1 | tee /tmp/agykit-out.log
-        grep -qiE "$QUOTA_RE" /tmp/agykit-out.log && { echo "==> QUOTA on $a — rotating"; _ops_log "run" "quota-rotate" "$a" "" "${prompt:0:80}"; _job_op event "$job_id" "quota_rotated" "rotating" "quota rotate $a" "$a" "" "Quota on $a, rotating"; continue; }
-        echo "==> Success on: $a"; _ops_log "run" "success" "$a" "" "${prompt:0:80}"; _job_op event "$job_id" "job_succeeded" "succeeded" "done" "$a"; _quota_alert; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 0
-    done
-    echo "==> ALL ACCOUNTS EXHAUSTED"; _ops_log "run" "exhausted" "" "" "${prompt:0:80}"; _job_op event "$job_id" "job_failed" "failed" "exhausted" "" "" "All accounts exhausted"; trap - EXIT INT TERM; _CURRENT_JOB_ID=""; return 1
+    local self; self="$(readlink -f "${BASH_SOURCE[0]}" 2>/dev/null || echo "${BASH_SOURCE[0]}")"
+    AGYKIT_SELF="$self" PYTHONPATH="$(cd "$(dirname "$self")" && pwd)" \
+        python3 -m dashboard.orchestrator run \
+            --job-id "$job_id" \
+            --prompt "$prompt" \
+            --system-prefix "$(_system_prefix)" \
+            --terse-prefix "$(_terse_prefix)" \
+            --accounts "${accts[@]}"
+    local rc=$?
+    trap - EXIT INT TERM
+    _CURRENT_JOB_ID=""
+    return $rc
 }
 
 # Escalating do: model ladder on verify failure + quota rotation + git safety.
