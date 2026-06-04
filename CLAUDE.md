@@ -1,13 +1,12 @@
 # agykit — Claude Context
 
-Portable Antigravity (agy) CLI manager. Multi-account rotation, quota-aware
-sorting, model ladder escalation, usage dashboard.
+agykit v1.4.0 — Portable Antigravity (agy) CLI manager. Multi-account rotation, quota-aware sorting, model ladder escalation, Python subprocess orchestrator, usage dashboard.
 
 Read `.claude/memory.md` before taking any action.
 
 ## Hard Constraints
 
-- **Zero pip dependencies.** Python 3 stdlib only (http.server, json, glob, argparse, webbrowser, datetime, urllib). No FastAPI/uvicorn/flask/pip.
+- **Zero pip dependencies.** Python 3 stdlib only (http.server, json, glob, argparse, webbrowser, datetime, urllib, subprocess). No FastAPI/uvicorn/flask/pip.
 - Bind to `127.0.0.1` only. Read-only access to `~/.claude` and `~/.gemini`.
 - Preserve existing style for `agykit` bash changes: `cmd_*` functions + dispatch case.
 - Web layer: vanilla JS/HTML/CSS. No frameworks.
@@ -15,7 +14,7 @@ Read `.claude/memory.md` before taking any action.
 ## Test
 
 ```bash
-python3 -m pytest tests -q      # dashboard tests
+python3 -m pytest tests -q      # dashboard + orchestrator tests
 bash tests/run.sh                # bash safety suites
 ```
 
@@ -23,9 +22,12 @@ Both must stay green.
 
 ## Key Files
 
-- `agykit` — single bash script, main CLI
+- `agykit` — bash entrypoint; `cmd_run` and `cmd_do_escalate` delegate to Python orchestrator
+- `dashboard/orchestrator.py` — Python subprocess orchestrator (RunOrchestrator, EscalateOrchestrator)
 - `dashboard/server.py` — Python stdlib HTTP/SSE server
 - `dashboard/collectors/` — data collectors (agy snapshot, statusline, quota, activity)
+- `dashboard/collectors/agy.py` — quota cache with dynamic TTL (`_effective_quota_ttl`)
+- `dashboard/collectors/jobs.py` — SQLite job store, PID-aware recovery
 - `web/app.js` — dashboard frontend JS
 - `web/style.css` — dashboard styles
 - `CLAUDE_AGY_SYSTEM.md` — agy delegation rules (for agy, not Claude)
@@ -187,6 +189,7 @@ Rotation: file trimmed to last 400 lines when >512KB.
 ### Project Setup
 ```bash
 agykit init                    # scaffold .agykit.conf + CLAUDE_AGY_SYSTEM.md
+agykit update                  # git fetch + ff-only pull, prints old → new version
 agykit doctor                  # check dependencies and configuration
 agykit doctor --fix            # auto-fix resolvable issues
 ```
@@ -197,7 +200,8 @@ agykit doctor --fix            # auto-fix resolvable issues
 | `AGYKIT_VERIFY` | verify command (required for `do-escalate`) | — |
 | `AGYKIT_SYSTEM` | system context file path | — |
 | `AGYKIT_FLAGS` | extra flags passed to agy | `--dangerously-skip-permissions` |
-| `AGYKIT_TIMEOUT` | `--print-timeout` value | `15m` |
+| `AGYKIT_TIMEOUT` | agy `--print-timeout` value | `15m` |
+| `AGYKIT_SILENCE_TIMEOUT` | seconds without output before orchestrator kills agy | `120` |
 | `AGYKIT_JOB_TIMEOUT` | hard job ceiling (s); reap + SIGTERM past this. Keep ≥ `AGYKIT_TIMEOUT` | `1800` |
 | `AGYKIT_TERSE` | output verbosity level | `ultra` |
 | `AGYKIT_AGENT` | force orchestrator agent: `claude`/`codex`/`opencode` (else auto-detect) | auto |
