@@ -209,6 +209,22 @@ def test_escalate_escalates_model_on_verify_fail():
     assert model_calls == ["flash", "pro"]
 
 
+from dashboard.collectors.agy import _effective_quota_ttl, _QUOTA_CACHE_TTL
+
+
+def test_effective_ttl_normal():
+    assert _effective_quota_ttl(3600) == _QUOTA_CACHE_TTL
+
+
+def test_effective_ttl_near_reset():
+    assert _effective_quota_ttl(300) == 60
+
+
+def test_effective_ttl_at_boundary():
+    assert _effective_quota_ttl(600) == 60
+    assert _effective_quota_ttl(601) == _QUOTA_CACHE_TTL
+
+
 def test_run_agy_transient_on_nonzero_exit():
     """Non-zero exit + no quota → transient_error."""
     orch = ConcreteOrchestrator(job_id="j1", accounts=["a@b.com"], prompt="hi")

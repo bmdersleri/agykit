@@ -35,6 +35,13 @@ _CLIENT_SEC = "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"  # from agy binary
 
 _QUOTA_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/quota-cache.json")
 _QUOTA_CACHE_TTL = 300  # 5 minutes
+
+
+def _effective_quota_ttl(reset_in_seconds: int) -> int:
+    """Return a shorter TTL when the account is close to resetting."""
+    if reset_in_seconds <= 600:
+        return 60
+    return _QUOTA_CACHE_TTL
 _PLANS_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/account-plans.json")
 _PROFILES_CACHE = os.path.expanduser("~/.gemini/antigravity-cli/account-profiles.json")
 _ACCOUNTS_DIR = "~/.gemini/accounts"
@@ -712,7 +719,9 @@ def agy_model_quota_cached(*, force: bool = False) -> dict:
         try:
             cached = json.load(open(_QUOTA_CACHE))
             age = _time.time() - cached.get("_ts", 0)
-            if age < _QUOTA_CACHE_TTL:
+            reset_in = cached.get("resets_in_seconds", 9999)
+            ttl = _effective_quota_ttl(reset_in)
+            if age < ttl:
                 cached["_cache_age_seconds"] = int(age)
                 cached["_from_cache"] = True
                 return cached
